@@ -21,6 +21,11 @@ const PORT = process.env.PORT || 3000;
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
 
+// Root route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
 // Middleware
 app.use(cors({
   origin: [
@@ -928,11 +933,6 @@ app.post('/api/contact', async (req, res) => {
     console.error('Fel vid kontaktmail:', err);
     res.status(500).json({ error: 'Kunde inte skicka meddelandet.' });
   }
-});
-
-// Catch-all route för React Router
-app.get('*', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
