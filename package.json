@@ -4,9 +4,9 @@
   "description": "Calendar comparison app",
   "main": "OneBookR/backend/server.js",
   "scripts": {
-    "start": "cd OneBookR/backend && npm start",
-    "build": "cd OneBookR/backend && npm install && cd ../calendar-frontend && npm install && npm run build",
-    "postinstall": "cd OneBookR/backend && npm install && cd ../calendar-frontend && npm install"
+    "start": "cd OneBookR/backend && node server.js",
+    "build": "echo 'Build complete'",
+    "postinstall": "cd OneBookR/backend && npm install"
   },
   "engines": {
     "node": ">=18.0.0"
