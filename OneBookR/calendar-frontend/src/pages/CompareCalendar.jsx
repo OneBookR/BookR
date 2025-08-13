@@ -87,12 +87,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
   // Hämta förslag
   useEffect(() => {
     if (groupId) {
-      fetch(`http://localhost:3000/api/group/${groupId}/suggestions`)
+      fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
         .then(res => res.json())
         .then(data => setSuggestions(data.suggestions || []));
       // Poll för realtidsuppdatering
       const interval = setInterval(() => {
-        fetch(`http://localhost:3000/api/group/${groupId}/suggestions`)
+        fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
           .then(res => res.json())
           .then(data => setSuggestions(data.suggestions || []));
       }, 3000);
@@ -163,7 +163,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         requestBody.timeMax = new Date(timeMax).toISOString();
       }
       
-      const res = await fetch('http://localhost:3000/api/availability', {
+      const res = await fetch(`${API_BASE_URL}/api/availability`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -241,7 +241,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
     };
     
     try {
-      const response = await fetch(`http://localhost:3000/api/group/${groupId}/suggest`, {
+      const response = await fetch(`${API_BASE_URL}/api/group/${groupId}/suggest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(suggestionData),
@@ -286,7 +286,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
     const targetGroup = targetGroupId || groupId;
     if (!targetGroup) return;
     try {
-      const response = await fetch(`http://localhost:3000/api/group/${targetGroup}/suggestion/${suggestionId}/vote`, {
+      const response = await fetch(`${API_BASE_URL}/api/group/${targetGroup}/suggestion/${suggestionId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -299,7 +299,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         setToast({ open: true, message: `Du har ${voteText} tidsförslaget!`, severity: 'success' });
         // Uppdatera förslag direkt om vi är i samma grupp
         if (targetGroup === groupId) {
-          fetch(`http://localhost:3000/api/group/${groupId}/suggestions`)
+          fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
             .then(res => res.json())
             .then(data => setSuggestions(data.suggestions || []));
         }
@@ -572,7 +572,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
     const tokens = Array.from(new Set([myToken, ...invitedTokens]));
     if (tokens.length < 2) return;
     try {
-      const res = await fetch('http://localhost:3000/api/availability', {
+      const res = await fetch(`${API_BASE_URL}/api/availability`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -605,12 +605,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
 
   // Logga ut-funktion
   const handleLogout = () => {
-    window.location.href = 'http://localhost:3000/auth/logout';
+    window.location.href = `${API_BASE_URL}/auth/logout`;
   };
 
   // Logga in-funktion
   const handleLogin = () => {
-    window.location.href = 'http://localhost:3000/auth/google?redirect=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+    window.location.href = `${API_BASE_URL}/auth/google?redirect=` + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
   };
 
   // Tutorial-steg
@@ -749,7 +749,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
       if (!userEmail) return;
       
-      const response = await fetch(`http://localhost:3000/api/invitations/${encodeURIComponent(userEmail)}`);
+      const response = await fetch(`${API_BASE_URL}/api/invitations/${encodeURIComponent(userEmail)}`);
       if (response.ok) {
         const data = await response.json();
         setInvitations(data.invitations.filter(inv => !inv.responded));
@@ -764,14 +764,14 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
       if (!userEmail) return;
       
-      const invitationsResponse = await fetch(`http://localhost:3000/api/invitations/${encodeURIComponent(userEmail)}`);
+      const invitationsResponse = await fetch(`${API_BASE_URL}/api/invitations/${encodeURIComponent(userEmail)}`);
       if (invitationsResponse.ok) {
         const invitationsData = await invitationsResponse.json();
         const allProposals = [];
         
         for (const invitation of invitationsData.invitations) {
           if (invitation.accepted || invitation.responded) {
-            const suggestionsResponse = await fetch(`http://localhost:3000/api/group/${invitation.groupId}/suggestions`);
+            const suggestionsResponse = await fetch(`${API_BASE_URL}/api/group/${invitation.groupId}/suggestions`);
             if (suggestionsResponse.ok) {
               const suggestionsData = await suggestionsResponse.json();
               const userSuggestions = suggestionsData.suggestions.filter(s => 
@@ -791,7 +791,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
 
   const handleInvitationResponse = async (invitationId, response) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/invitation/${invitationId}/respond`, {
+      const res = await fetch(`${API_BASE_URL}/api/invitation/${invitationId}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ response })
@@ -814,7 +814,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
 
   const handleProposalResponse = async (proposalId, response) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/proposal/${proposalId}/respond`, {
+      const res = await fetch(`${API_BASE_URL}/api/proposal/${proposalId}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -1873,7 +1873,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                               onClick={async () => {
                                 if (window.confirm('Är du säker på att du vill ta bort detta tidsförslag?')) {
                                   try {
-                                    const response = await fetch(`http://localhost:3000/api/group/${groupId}/suggestion/${s.id}`, {
+                                    const response = await fetch(`${API_BASE_URL}/api/group/${groupId}/suggestion/${s.id}`, {
                                       method: 'DELETE',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ email: user.email || user.emails?.[0]?.value || user.emails?.[0] })

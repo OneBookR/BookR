@@ -1,9 +1,10 @@
 import React from 'react';
+import { API_BASE_URL } from '../config';
 
 const LoginPrompt = () => {
   // NYTT: Skicka med redirect-parametern
   const redirectUrl = window.location.pathname + window.location.search + window.location.hash;
-  const googleLoginUrl = `http://localhost:3000/auth/google?redirect=${encodeURIComponent(redirectUrl)}`;
+  const googleLoginUrl = `${API_BASE_URL}/auth/google?redirect=${encodeURIComponent(redirectUrl)}`;
 
   const handleLogin = () => {
     window.location.href = googleLoginUrl;
