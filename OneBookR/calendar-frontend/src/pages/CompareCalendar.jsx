@@ -28,6 +28,7 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import EventIcon from '@mui/icons-material/Event';
 import GroupIcon from '@mui/icons-material/Group';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import { API_BASE_URL } from '../config';
 
 // --- NYTT: Modernare typsnitt och färger, minimalistiskt ---
 const calendarFontFamily = "'Inter', 'Segoe UI', 'Roboto', 'Arial', sans-serif";
@@ -314,7 +315,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
     const groupId = urlParams.get('group');
     const inviteeId = urlParams.get('invitee');
     
-    let googleLoginUrl = 'http://localhost:3000/auth/google';
+    let googleLoginUrl = `${API_BASE_URL}/auth/google`;
     if (groupId) {
       const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
       googleLoginUrl += `?state=${encodeURIComponent(state)}`;
