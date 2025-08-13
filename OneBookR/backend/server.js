@@ -11,11 +11,15 @@ import fetch from 'node-fetch';
 import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
+import path from 'path';
 
 const app = express();
 app.use(express.json());
 app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
+
+// Servera frontend static files
+app.use(express.static('OneBookR/calendar-frontend/dist'));
 
 // Middleware
 app.use(cors({
@@ -924,6 +928,11 @@ app.post('/api/contact', async (req, res) => {
     console.error('Fel vid kontaktmail:', err);
     res.status(500).json({ error: 'Kunde inte skicka meddelandet.' });
   }
+});
+
+// Catch-all route för React Router
+app.get('*', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
