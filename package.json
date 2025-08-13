@@ -5,8 +5,8 @@
   "main": "OneBookR/backend/server.js",
   "scripts": {
     "start": "cd OneBookR/backend && npm start",
-    "build": "cd OneBookR/calendar-frontend && npm run build",
-    "install-deps": "cd OneBookR/backend && npm install && cd ../calendar-frontend && npm install"
+    "build": "cd OneBookR/backend && npm install && cd ../calendar-frontend && npm install && npm run build",
+    "postinstall": "cd OneBookR/backend && npm install && cd ../calendar-frontend && npm install"
   },
   "engines": {
     "node": ">=18.0.0"
