@@ -115,7 +115,10 @@ app.get('/auth/google/callback',
       }
     }
     
-    res.redirect(`http://localhost:5173${redirectUrl}`);
+    const frontendUrl = process.env.NODE_ENV === 'production' 
+      ? 'https://bookr-production.up.railway.app' 
+      : 'http://localhost:5173';
+    res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
 
@@ -133,7 +136,10 @@ app.get('/auth/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
     req.session.destroy(() => {
-      res.redirect('http://localhost:5173');
+      const frontendUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://bookr-production.up.railway.app' 
+        : 'http://localhost:5173';
+      res.redirect(frontendUrl);
     });
   });
 });
@@ -562,8 +568,11 @@ app.post('/api/invite', async (req, res) => {
   });
 
   // Skicka ut unika länkar
+  const frontendUrl = process.env.NODE_ENV === 'production' 
+    ? 'https://bookr-production.up.railway.app' 
+    : 'http://localhost:5173';
   const inviteLinks = invitees.map(inv =>
-    `http://localhost:5173?group=${groupId}&invitee=${inv.id}`
+    `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
   );
   console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
