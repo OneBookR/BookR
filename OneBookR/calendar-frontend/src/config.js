@@ -1,3 +1,1 @@
-export const API_BASE_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:3000' 
-  : window.location.origin;
+export const API_BASE_URL = 'https://bookr-production.up.railway.app';

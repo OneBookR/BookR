@@ -29,7 +29,6 @@ app.get('/', (req, res) => {
 // Middleware
 app.use(cors({
   origin: [
-    'http://localhost:5173',
     'https://bookr-production.up.railway.app',
   ],
   credentials: true,
@@ -119,10 +118,7 @@ app.get('/auth/google/callback',
       }
     }
     
-    // Använd samma origin som requesten kom från
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const frontendUrl = `${protocol}://${host}`;
+    const frontendUrl = 'https://bookr-production.up.railway.app';
     
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
@@ -142,10 +138,7 @@ app.get('/auth/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
     req.session.destroy(() => {
-      const frontendUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://bookr-production.up.railway.app' 
-        : 'http://localhost:5173';
-      res.redirect(frontendUrl);
+      res.redirect('https://bookr-production.up.railway.app');
     });
   });
 });
@@ -574,9 +567,7 @@ app.post('/api/invite', async (req, res) => {
   });
 
   // Skicka ut unika länkar
-  const frontendUrl = process.env.NODE_ENV === 'production' 
-    ? 'https://bookr-production.up.railway.app' 
-    : 'http://localhost:5173';
+  const frontendUrl = 'https://bookr-production.up.railway.app';
   const inviteLinks = invitees.map(inv =>
     `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
   );
