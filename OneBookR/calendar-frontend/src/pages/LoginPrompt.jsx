@@ -2,11 +2,11 @@ import React from 'react';
 import { API_BASE_URL } from '../config';
 
 const LoginPrompt = () => {
-  // NYTT: Skicka med redirect-parametern
-  const redirectUrl = window.location.pathname + window.location.search + window.location.hash;
-  const googleLoginUrl = `${API_BASE_URL}/auth/google?redirect=${encodeURIComponent(redirectUrl)}`;
-
   const handleLogin = () => {
+    // Skapa state med aktuell URL för att komma tillbaka hit efter login
+    const currentUrl = window.location.pathname + window.location.search + window.location.hash;
+    const state = btoa(JSON.stringify({ returnUrl: currentUrl }));
+    const googleLoginUrl = `${API_BASE_URL}/auth/google?state=${encodeURIComponent(state)}`;
     window.location.href = googleLoginUrl;
   };
 

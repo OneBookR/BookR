@@ -99,15 +99,19 @@ app.get('/auth/google/callback',
     if (state) {
       try {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
-        const { groupId, inviteeId, hash } = decoded;
         
-        if (groupId) {
-          redirectUrl = `/?group=${groupId}`;
-          if (inviteeId) {
-            redirectUrl += `&invitee=${inviteeId}`;
+        // Kolla om det är en returnUrl från frontend
+        if (decoded.returnUrl) {
+          redirectUrl = decoded.returnUrl;
+        }
+        // Eller om det är gruppdata
+        else if (decoded.groupId) {
+          redirectUrl = `/?group=${decoded.groupId}`;
+          if (decoded.inviteeId) {
+            redirectUrl += `&invitee=${decoded.inviteeId}`;
           }
-          if (hash) {
-            redirectUrl += hash;
+          if (decoded.hash) {
+            redirectUrl += decoded.hash;
           }
         }
       } catch (e) {
@@ -115,9 +119,11 @@ app.get('/auth/google/callback',
       }
     }
     
-    const frontendUrl = process.env.NODE_ENV === 'production' 
-      ? 'https://bookr-production.up.railway.app' 
-      : 'http://localhost:5173';
+    // Använd samma origin som requesten kom från
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const frontendUrl = `${protocol}://${host}`;
+    
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
