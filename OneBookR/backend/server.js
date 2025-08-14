@@ -30,7 +30,7 @@ app.get('/', (req, res) => {
 app.use(cors({
   origin: [
     'http://localhost:5173',
-    'https://din-domän.se', // Lägg till din riktiga domän här
+    'https://bookr-production.up.railway.app',
   ],
   credentials: true,
 }));
@@ -39,8 +39,8 @@ app.use(session({
   resave: false,
   saveUninitialized: true,
   cookie: {
-    sameSite: 'lax', // eller 'none' om du kör https
-    secure: false    // true om du kör https i produktion
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
   }
 }));
 app.use(passport.initialize());
@@ -50,7 +50,7 @@ app.use(passport.session());
 passport.use(new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
-  callbackURL: "/auth/google/callback"
+  callbackURL: '/auth/google/callback'
 }, (accessToken, refreshToken, profile, done) => {
   // Sätt alltid profile.email till första e-post om den finns
   if (!profile.email && profile.emails && profile.emails.length > 0) {
