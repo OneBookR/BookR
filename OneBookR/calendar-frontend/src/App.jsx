@@ -29,7 +29,7 @@ function App() {
   }, [user]);
 
   useEffect(() => {
-    fetch('http://localhost:3000/api/user', {
+    fetch('https://bookr-production.up.railway.app/api/user', {
       credentials: 'include',
     })
       .then(res => res.json())
@@ -122,7 +122,7 @@ function App() {
     const groupId = urlParams.get('group');
     const inviteeId = urlParams.get('invitee');
     
-    let googleLoginUrl = 'http://localhost:3000/auth/google';
+    let googleLoginUrl = 'https://bookr-production.up.railway.app/auth/google';
     if (groupId) {
       const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
       googleLoginUrl += `?state=${encodeURIComponent(state)}`;

@@ -30,7 +30,7 @@ export default function Dashboard({ user }) {
       }
       
       // Kontrollera om gruppen existerar först
-      fetch(`http://localhost:3000/api/group/${groupId}/status`)
+      fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/status`)
         .then(res => {
           if (!res.ok) {
             // Gruppen finns inte, rensa URL:en
@@ -44,7 +44,7 @@ export default function Dashboard({ user }) {
           if (!statusData) return;
           
           // Gruppen finns, fortsätt med join
-          fetch('http://localhost:3000/api/group/join', {
+          fetch('https://bookr-production.up.railway.app/api/group/join', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -55,7 +55,7 @@ export default function Dashboard({ user }) {
             }),
           })
             .then(() =>
-              fetch(`http://localhost:3000/api/group/${groupId}/tokens`)
+              fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/tokens`)
             )
             .then(res => res.json())
             .then(data => setGroupTokens(data.tokens || []));
@@ -72,11 +72,11 @@ export default function Dashboard({ user }) {
     if (groupId) {
       // Hämta status för gruppen
       const pollStatus = () => {
-        fetch(`http://localhost:3000/api/group/${groupId}/status`)
+        fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/status`)
           .then(res => res.json())
           .then(status => setGroupStatus(status));
         // Hämta anslutna e-postadresser (om backend stödjer det)
-        fetch(`http://localhost:3000/api/group/${groupId}/joined`)
+        fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/joined`)
           .then(res => res.json())
           .then(data => setJoinedEmails(data.joined || []))
           .catch(() => setJoinedEmails([]));
@@ -130,7 +130,7 @@ export default function Dashboard({ user }) {
     sessionStorage.setItem('postLoginRedirect', redirectUrl);
 
     // Tvinga alltid Google-login
-    window.location.href = 'http://localhost:3000/auth/google';
+    window.location.href = 'https://bookr-production.up.railway.app/auth/google';
     return null;
   }
 

@@ -145,7 +145,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
     }
 
     try {
-      const res = await fetch('http://localhost:3000/api/invite', {
+      const res = await fetch('https://bookr-production.up.railway.app/api/invite', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
