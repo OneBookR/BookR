@@ -98,19 +98,21 @@ app.get('/auth/google/callback',
     const state = req.session.oauthState;
     delete req.session.oauthState;
     
-    let redirectUrl = '/dashboard';
+    // Skapa en temporär token för användaren
+    const tempToken = Buffer.from(JSON.stringify({
+      user: req.user,
+      timestamp: Date.now()
+    })).toString('base64');
+    
+    let redirectUrl = `/dashboard?token=${tempToken}`;
     
     if (state) {
       try {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
         
-        // Kolla om det är en returnUrl från frontend
-        if (decoded.returnUrl) {
-          redirectUrl = decoded.returnUrl;
-        }
         // Eller om det är gruppdata
-        else if (decoded.groupId) {
-          redirectUrl = `/dashboard?group=${decoded.groupId}`;
+        if (decoded.groupId) {
+          redirectUrl = `/dashboard?token=${tempToken}&group=${decoded.groupId}`;
           if (decoded.inviteeId) {
             redirectUrl += `&invitee=${decoded.inviteeId}`;
           }

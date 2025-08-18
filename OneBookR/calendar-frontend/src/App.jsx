@@ -29,6 +29,27 @@ function App() {
   }, [user]);
 
   useEffect(() => {
+    // Kolla först om det finns en token i URL:en
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    
+    if (token) {
+      try {
+        const userData = JSON.parse(atob(token));
+        if (userData.user && userData.timestamp > Date.now() - 10 * 60 * 1000) { // 10 min giltig
+          setUser(userData.user);
+          // Ta bort token från URL
+          urlParams.delete('token');
+          const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+          window.history.replaceState({}, '', newUrl);
+          return;
+        }
+      } catch (e) {
+        console.error('Invalid token:', e);
+      }
+    }
+    
+    // Fallback till session-baserad auth
     const checkAuth = async (retries = 3) => {
       console.log('Checking user authentication, retries left:', retries);
       try {
@@ -48,7 +69,6 @@ function App() {
         if (data.user) {
           setUser(data.user);
         } else if (retries > 0) {
-          // Retry efter 1 sekund om ingen användare hittades
           setTimeout(() => checkAuth(retries - 1), 1000);
         }
       } catch (err) {
