@@ -29,18 +29,37 @@ function App() {
   }, [user]);
 
   useEffect(() => {
-    fetch('https://bookr-production.up.railway.app/api/user', {
-      credentials: 'include',
-    })
-      .then(res => res.json())
-      .then(data => {
+    const checkAuth = async (retries = 3) => {
+      console.log('Checking user authentication, retries left:', retries);
+      try {
+        const res = await fetch('https://bookr-production.up.railway.app/api/user', {
+          credentials: 'include',
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        console.log('Auth response status:', res.status);
+        const data = await res.json();
+        console.log('Auth response data:', data);
+        
         if (data.user) {
           setUser(data.user);
+        } else if (retries > 0) {
+          // Retry efter 1 sekund om ingen användare hittades
+          setTimeout(() => checkAuth(retries - 1), 1000);
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.error('Kunde inte hämta användardata:', err);
-      });
+        if (retries > 0) {
+          setTimeout(() => checkAuth(retries - 1), 1000);
+        }
+      }
+    };
+    
+    checkAuth();
   }, []);
 
   // Efter inloggning, återställ URL om det finns sparade parametrar
