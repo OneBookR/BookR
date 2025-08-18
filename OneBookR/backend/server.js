@@ -94,17 +94,13 @@ app.get('/auth/google', (req, res, next) => {
 app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
   (req, res) => {
+    console.log('OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
+    
     // Hämta state från session
     const state = req.session.oauthState;
     delete req.session.oauthState;
     
-    // Skapa en temporär token för användaren
-    const tempToken = Buffer.from(JSON.stringify({
-      user: req.user,
-      timestamp: Date.now()
-    })).toString('base64');
-    
-    let redirectUrl = `/dashboard?token=${tempToken}`;
+    let redirectUrl = '/dashboard';
     
     if (state) {
       try {
@@ -112,7 +108,7 @@ app.get('/auth/google/callback',
         
         // Eller om det är gruppdata
         if (decoded.groupId) {
-          redirectUrl = `/dashboard?token=${tempToken}&group=${decoded.groupId}`;
+          redirectUrl = `/dashboard?group=${decoded.groupId}`;
           if (decoded.inviteeId) {
             redirectUrl += `&invitee=${decoded.inviteeId}`;
           }
