@@ -136,6 +136,16 @@ function App() {
   }
   if (path === '/dashboard') {
     // Dashboard-sida - visa dashboard även om user inte är laddat än
+    // Om ingen user efter 3 sekunder, redirecta till login
+    React.useEffect(() => {
+      const timer = setTimeout(() => {
+        if (!user) {
+          window.location.href = '/';
+        }
+      }, 3000);
+      return () => clearTimeout(timer);
+    }, [user]);
+    
     return (
       <>
         {loginIndicator}
