@@ -26,6 +26,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
+// Dashboard route
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
 // Middleware
 app.use(cors({
   origin: 'https://bookr-production.up.railway.app',
@@ -949,15 +954,6 @@ app.post('/api/contact', async (req, res) => {
     console.error('Fel vid kontaktmail:', err);
     res.status(500).json({ error: 'Kunde inte skicka meddelandet.' });
   }
-});
-
-// Catch-all route för SPA routing - MÅSTE vara sist!
-app.get('*', (req, res) => {
-  // Skippa API routes
-  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) {
-    return res.status(404).json({ error: 'Route not found' });
-  }
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
