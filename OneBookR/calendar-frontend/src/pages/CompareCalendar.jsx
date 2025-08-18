@@ -89,14 +89,23 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
     if (groupId) {
       fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
         .then(res => res.json())
-        .then(data => setSuggestions(data.suggestions || []));
+        .then(data => setSuggestions(data.suggestions || []))
+        .catch(error => {
+          console.error('Fel vid hämtning av tidsförslag:', error);
+          setSuggestions([]);
+        });
       // Poll för realtidsuppdatering
       const interval = setInterval(() => {
         fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
           .then(res => res.json())
-          .then(data => setSuggestions(data.suggestions || []));
+          .then(data => setSuggestions(data.suggestions || []))
+          .catch(error => {
+            console.error('Fel vid hämtning av tidsförslag:', error);
+          });
       }, 3000);
       return () => clearInterval(interval);
+    } else {
+      setSuggestions([]);
     }
   }, [groupId]);
 
