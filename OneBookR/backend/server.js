@@ -96,34 +96,40 @@ app.get('/auth/google/callback',
   (req, res) => {
     console.log('OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
     
-    // Hämta state från session
-    const state = req.session.oauthState;
-    delete req.session.oauthState;
-    
-    let redirectUrl = '/dashboard';
-    
-    if (state) {
-      try {
-        const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
-        
-        // Eller om det är gruppdata
-        if (decoded.groupId) {
-          redirectUrl = `/dashboard?group=${decoded.groupId}`;
-          if (decoded.inviteeId) {
-            redirectUrl += `&invitee=${decoded.inviteeId}`;
-          }
-          if (decoded.hash) {
-            redirectUrl += decoded.hash;
-          }
-        }
-      } catch (e) {
-        console.error('Fel vid dekodning av state:', e);
+    // Spara användardata direkt i sessionen
+    req.session.user = req.user;
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
       }
-    }
-    
-    const frontendUrl = 'https://bookr-production.up.railway.app';
-    
-    res.redirect(`${frontendUrl}${redirectUrl}`);
+      
+      // Hämta state från session
+      const state = req.session.oauthState;
+      delete req.session.oauthState;
+      
+      let redirectUrl = '/dashboard';
+      
+      if (state) {
+        try {
+          const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
+          
+          if (decoded.groupId) {
+            redirectUrl = `/dashboard?group=${decoded.groupId}`;
+            if (decoded.inviteeId) {
+              redirectUrl += `&invitee=${decoded.inviteeId}`;
+            }
+            if (decoded.hash) {
+              redirectUrl += decoded.hash;
+            }
+          }
+        } catch (e) {
+          console.error('Fel vid dekodning av state:', e);
+        }
+      }
+      
+      const frontendUrl = 'https://bookr-production.up.railway.app';
+      res.redirect(`${frontendUrl}${redirectUrl}`);
+    });
   }
 );
 
@@ -132,11 +138,15 @@ app.get('/api/user', (req, res) => {
     isAuthenticated: req.isAuthenticated(),
     sessionID: req.sessionID,
     user: req.user ? 'User exists' : 'No user',
+    sessionUser: req.session.user ? 'Session user exists' : 'No session user',
     cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
   });
   
-  if (req.isAuthenticated()) {
-    res.json({ user: req.user, token: req.user.accessToken });
+  // Kolla både passport auth och session
+  const user = req.user || req.session.user;
+  
+  if (user) {
+    res.json({ user: user, token: user.accessToken });
   } else {
     res.status(401).json({ error: 'Not authenticated' });
   }
