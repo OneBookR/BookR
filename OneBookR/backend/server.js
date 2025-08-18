@@ -49,7 +49,7 @@ app.use(passport.session());
 passport.use(new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
-  callbackURL: '/auth/google/callback'
+  callbackURL: 'https://bookr-production.up.railway.app/auth/google/callback'
 }, (accessToken, refreshToken, profile, done) => {
   // Sätt alltid profile.email till första e-post om den finns
   if (!profile.email && profile.emails && profile.emails.length > 0) {
