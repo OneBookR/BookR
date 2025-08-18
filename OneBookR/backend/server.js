@@ -28,18 +28,21 @@ app.get('/', (req, res) => {
 
 // Middleware
 app.use(cors({
-  origin: [
-    'https://bookr-production.up.railway.app',
-  ],
+  origin: 'https://bookr-production.up.railway.app',
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  exposedHeaders: ['Set-Cookie']
 }));
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
-  saveUninitialized: true,
+  saveUninitialized: false,
   cookie: {
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    sameSite: 'none',
+    secure: true,
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 timmar
   }
 }));
 app.use(passport.initialize());
@@ -125,6 +128,13 @@ app.get('/auth/google/callback',
 );
 
 app.get('/api/user', (req, res) => {
+  console.log('API /user called:', {
+    isAuthenticated: req.isAuthenticated(),
+    sessionID: req.sessionID,
+    user: req.user ? 'User exists' : 'No user',
+    cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
+  });
+  
   if (req.isAuthenticated()) {
     res.json({ user: req.user, token: req.user.accessToken });
   } else {
