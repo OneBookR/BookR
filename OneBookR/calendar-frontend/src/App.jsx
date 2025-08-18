@@ -29,32 +29,41 @@ function App() {
   }, [user]);
 
   useEffect(() => {
-    const checkAuth = async (retries = 5) => {
-      console.log('Checking user authentication, retries left:', retries);
+    // Kolla först efter cookie
+    const getCookie = (name) => {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+    };
+    
+    const authToken = getCookie('auth_token');
+    if (authToken) {
+      try {
+        const userData = JSON.parse(atob(authToken));
+        if (userData.user && userData.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
+          console.log('User found in cookie:', userData.user);
+          setUser(userData.user);
+          return;
+        }
+      } catch (e) {
+        console.error('Invalid auth token:', e);
+      }
+    }
+    
+    // Fallback till API
+    const checkAuth = async () => {
+      console.log('No valid cookie, checking API...');
       try {
         const res = await fetch('https://bookr-production.up.railway.app/api/user', {
-          credentials: 'include',
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
+          credentials: 'include'
         });
         
-        console.log('Auth response status:', res.status);
-        const data = await res.json();
-        console.log('Auth response data:', data);
-        
-        if (data.user) {
+        if (res.ok) {
+          const data = await res.json();
           setUser(data.user);
-        } else if (retries > 0) {
-          setTimeout(() => checkAuth(retries - 1), 2000);
         }
       } catch (err) {
-        console.error('Kunde inte hämta användardata:', err);
-        if (retries > 0) {
-          setTimeout(() => checkAuth(retries - 1), 2000);
-        }
+        console.error('API auth failed:', err);
       }
     };
     

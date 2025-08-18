@@ -96,40 +96,46 @@ app.get('/auth/google/callback',
   (req, res) => {
     console.log('OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
     
-    // Spara användardata direkt i sessionen
-    req.session.user = req.user;
-    req.session.save((err) => {
-      if (err) {
-        console.error('Session save error:', err);
-      }
-      
-      // Hämta state från session
-      const state = req.session.oauthState;
-      delete req.session.oauthState;
-      
-      let redirectUrl = '/';
-      
-      if (state) {
-        try {
-          const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
-          
-          if (decoded.groupId) {
-            redirectUrl = `/?group=${decoded.groupId}`;
-            if (decoded.inviteeId) {
-              redirectUrl += `&invitee=${decoded.inviteeId}`;
-            }
-            if (decoded.hash) {
-              redirectUrl += decoded.hash;
-            }
-          }
-        } catch (e) {
-          console.error('Fel vid dekodning av state:', e);
-        }
-      }
-      
-      const frontendUrl = 'https://bookr-production.up.railway.app';
-      res.redirect(`${frontendUrl}${redirectUrl}`);
+    // Skapa en enkel auth token
+    const authToken = Buffer.from(JSON.stringify({
+      user: req.user,
+      timestamp: Date.now()
+    })).toString('base64');
+    
+    // Sätt cookie
+    res.cookie('auth_token', authToken, {
+      httpOnly: false,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000 // 24 timmar
     });
+    
+    // Hämta state från session
+    const state = req.session.oauthState;
+    delete req.session.oauthState;
+    
+    let redirectUrl = '/';
+    
+    if (state) {
+      try {
+        const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
+        
+        if (decoded.groupId) {
+          redirectUrl = `/?group=${decoded.groupId}`;
+          if (decoded.inviteeId) {
+            redirectUrl += `&invitee=${decoded.inviteeId}`;
+          }
+          if (decoded.hash) {
+            redirectUrl += decoded.hash;
+          }
+        }
+      } catch (e) {
+        console.error('Fel vid dekodning av state:', e);
+      }
+    }
+    
+    const frontendUrl = 'https://bookr-production.up.railway.app';
+    res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
 
