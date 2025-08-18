@@ -2582,7 +2582,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                           Vill jämföra kalendrar med dig
                         </Typography>
                         <Typography variant="caption" sx={{ color: '#999', fontSize: 11 }}>
-                          {new Date(invitation.createdAt).toLocaleDateString()}
+                          {new Date(invitation.createdAt).toLocaleDateString()} {new Date(invitation.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Typography>
                         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                           <Button 
