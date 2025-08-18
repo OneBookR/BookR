@@ -951,6 +951,15 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
+// Catch-all route för SPA routing - MÅSTE vara sist!
+app.get('*', (req, res) => {
+  // Skippa API routes
+  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) {
+    return res.status(404).json({ error: 'Route not found' });
+  }
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
