@@ -96,7 +96,7 @@ app.get('/auth/google/callback',
     const state = req.session.oauthState;
     delete req.session.oauthState;
     
-    let redirectUrl = '/';
+    let redirectUrl = '/dashboard';
     
     if (state) {
       try {
@@ -108,7 +108,7 @@ app.get('/auth/google/callback',
         }
         // Eller om det är gruppdata
         else if (decoded.groupId) {
-          redirectUrl = `/?group=${decoded.groupId}`;
+          redirectUrl = `/dashboard?group=${decoded.groupId}`;
           if (decoded.inviteeId) {
             redirectUrl += `&invitee=${decoded.inviteeId}`;
           }
@@ -148,7 +148,7 @@ app.get('/auth/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
     req.session.destroy(() => {
-      res.redirect('https://bookr-production.up.railway.app');
+      res.redirect('https://bookr-production.up.railway.app/');
     });
   });
 });

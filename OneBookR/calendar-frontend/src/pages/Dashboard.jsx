@@ -125,13 +125,13 @@ export default function Dashboard({ user }) {
   const waitingForOthers = groupId && tokens.length < 2;
 
   if (!user) {
-    // Spara redirect i sessionStorage
-    const redirectUrl = window.location.pathname + window.location.search;
-    sessionStorage.setItem('postLoginRedirect', redirectUrl);
-
-    // Tvinga alltid Google-login
-    window.location.href = 'https://bookr-production.up.railway.app/auth/google';
-    return null;
+    return (
+      <Container maxWidth="md" sx={{ mt: 10 }}>
+        <Typography variant="h5" gutterBottom sx={{ mt: 20 }}>
+          Laddar...
+        </Typography>
+      </Container>
+    );
   }
 
 

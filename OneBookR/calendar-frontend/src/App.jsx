@@ -134,6 +134,16 @@ function App() {
   if (path === '/about') {
     return <About />;
   }
+  if (path === '/dashboard') {
+    // Dashboard-sida - visa dashboard även om user inte är laddat än
+    return (
+      <>
+        {loginIndicator}
+        <Box sx={{ mt: 12 }} />
+        {user ? <Dashboard user={user} /> : <div>Laddar...</div>}
+      </>
+    );
+  }
 
   if (!user) {
     // Använd state-parameter för OAuth istället för redirect
