@@ -133,26 +133,7 @@ function App() {
   if (path === '/about') {
     return <About />;
   }
-  if (path === '/dashboard') {
-    // Dashboard-sida - visa dashboard även om user inte är laddat än
-    // Om ingen user efter 3 sekunder, redirecta till login
-    React.useEffect(() => {
-      const timer = setTimeout(() => {
-        if (!user) {
-          window.location.href = '/';
-        }
-      }, 3000);
-      return () => clearTimeout(timer);
-    }, [user]);
-    
-    return (
-      <>
-        {loginIndicator}
-        <Box sx={{ mt: 12 }} />
-        {user ? <Dashboard user={user} /> : <div>Laddar...</div>}
-      </>
-    );
-  }
+
 
   if (!user) {
     // Använd state-parameter för OAuth istället för redirect

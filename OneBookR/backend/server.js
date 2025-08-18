@@ -107,14 +107,14 @@ app.get('/auth/google/callback',
       const state = req.session.oauthState;
       delete req.session.oauthState;
       
-      let redirectUrl = '/dashboard';
+      let redirectUrl = '/';
       
       if (state) {
         try {
           const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
           
           if (decoded.groupId) {
-            redirectUrl = `/dashboard?group=${decoded.groupId}`;
+            redirectUrl = `/?group=${decoded.groupId}`;
             if (decoded.inviteeId) {
               redirectUrl += `&invitee=${decoded.inviteeId}`;
             }
