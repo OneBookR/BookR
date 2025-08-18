@@ -34,18 +34,15 @@ app.get('/dashboard', (req, res) => {
 // Middleware
 app.use(cors({
   origin: 'https://bookr-production.up.railway.app',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
-  exposedHeaders: ['Set-Cookie']
+  credentials: true
 }));
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
-  saveUninitialized: false,
+  saveUninitialized: true,
   cookie: {
-    sameSite: 'none',
-    secure: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000 // 24 timmar
   }
