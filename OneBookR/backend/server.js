@@ -17,16 +17,6 @@ import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByE
 const app = express();
 app.use(express.json());
 app.use(bodyParser.json());
-
-// Set UTF-8 encoding for all responses
-app.use((req, res, next) => {
-  if (req.path.endsWith('.html') || req.path.includes('policy') || req.path.includes('terms')) {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  } else {
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  }
-  next();
-});
 const PORT = process.env.PORT || 3000;
 
 // Servera frontend static files
