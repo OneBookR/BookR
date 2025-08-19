@@ -564,31 +564,29 @@ app.post('/api/invite', async (req, res) => {
     return res.status(400).json({ error: 'Alla fält krävs (emails, fromUser, fromToken)' });
   }
 
-  const groupId = randomUUID();
-  const invitees = emails.map(email => ({ id: randomUUID(), email }));
-
-  groups[groupId] = {
-    creator: { token: fromToken, email: creatorEmail },
-    tokens: [fromToken],
-    invitees,
-    joinedEmails: [creatorEmail],
-    groupName: groupName || 'Namnlös grupp'
-  };
-
-  groupNames[groupId] = groupName || 'Namnlös grupp';
-
-  // Spara inbjudningar för varje användare
-  invitees.forEach(inv => {
-    if (!userInvitations[inv.email]) userInvitations[inv.email] = [];
-    userInvitations[inv.email].push({
-      groupId,
-      inviteeId: inv.id,
-      fromEmail: creatorEmail,
+  try {
+    // Skapa grupp i Firebase
+    const groupId = await createGroup({
+      creatorEmail,
+      creatorToken: fromToken,
       groupName: groupName || 'Namnlös grupp',
-      createdAt: new Date().toISOString(),
-      responded: false
+      tokens: [fromToken],
+      joinedEmails: [creatorEmail]
     });
-  });
+
+    // Skapa inbjudningar i Firebase
+    const invitees = [];
+    for (const email of emails) {
+      const inviteeId = randomUUID();
+      await createInvitation({
+        groupId,
+        inviteeId,
+        email,
+        fromEmail: creatorEmail,
+        groupName: groupName || 'Namnlös grupp'
+      });
+      invitees.push({ id: inviteeId, email });
+    }
 
   // Skicka ut unika länkar
   const frontendUrl = 'https://bookr-production.up.railway.app';
@@ -618,8 +616,12 @@ app.post('/api/invite', async (req, res) => {
 
   await Promise.all(emailPromises);
 
-  // Returnera även länkarna i svaret!
-  res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
+    // Returnera även länkarna i svaret!
+    res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
+  } catch (error) {
+    console.error('Error creating group:', error);
+    res.status(500).json({ error: 'Kunde inte skapa grupp' });
+  }
 });
 
 // När någon öppnar länken och loggar in

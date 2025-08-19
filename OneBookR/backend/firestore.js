@@ -65,6 +65,12 @@ export async function updateSuggestion(suggestionId, updateData) {
   await updateDoc(docRef, updateData);
 }
 
+export async function getSuggestion(suggestionId) {
+  const docRef = doc(db, 'suggestions', suggestionId);
+  const docSnap = await getDoc(docRef);
+  return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+}
+
 // GDPR - Radera användardata
 export async function deleteUserData(email) {
   const batch = [];
