@@ -80,7 +80,7 @@ export async function createSuggestion(suggestionData) {
     ...suggestionData,
     createdAt: serverTimestamp(),
     finalized: false,
-    votes: {}
+    votes: suggestionData.votes || {}
   });
   return docRef.id;
 }

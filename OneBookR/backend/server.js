@@ -715,32 +715,38 @@ app.get('/api/group/:groupId/joined', async (req, res) => {
 const suggestions = {}; // { [groupId]: [{ id, start, end, title, withMeet, location, votes: { email: 'accepted'|'declined' } }] }
 
 // Föreslå en tid
-app.post('/api/group/:groupId/suggest', (req, res) => {
-  const { groupId } = req.params;
-  const { start, end, email, title, withMeet, location, isMultiDay, multiDayStart, multiDayEnd, durationPerDay, dayStart, dayEnd } = req.body;
-  if (!groupId || !start || !end || !email) return res.status(400).json({ error: 'groupId, start, end, email krävs' });
+app.post('/api/group/:groupId/suggest', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { start, end, email, title, withMeet, location, isMultiDay, multiDayStart, multiDayEnd, durationPerDay, dayStart, dayEnd } = req.body;
+    if (!groupId || !start || !end || !email) return res.status(400).json({ error: 'groupId, start, end, email krävs' });
 
-  if (!suggestions[groupId]) suggestions[groupId] = [];
-  const id = randomUUID();
-  const group = groups[groupId];
-  suggestions[groupId].push({
-    id,
-    start,
-    end,
-    title: title || '',
-    withMeet: typeof withMeet === 'boolean' ? withMeet : true,
-    location: location || '',
-    votes: { [email]: 'accepted' },
-    fromEmail: email,
-    groupName: group?.groupName || 'Namnlös grupp',
-    isMultiDay: isMultiDay || false,
-    multiDayStart,
-    multiDayEnd,
-    durationPerDay,
-    dayStart,
-    dayEnd
-  });
-  res.json({ success: true, id });
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
+
+    const suggestionId = await createSuggestion({
+      groupId,
+      start,
+      end,
+      title: title || '',
+      withMeet: typeof withMeet === 'boolean' ? withMeet : true,
+      location: location || '',
+      votes: { [email]: 'accepted' },
+      fromEmail: email,
+      groupName: group.groupName || 'Namnlös grupp',
+      isMultiDay: isMultiDay || false,
+      multiDayStart,
+      multiDayEnd,
+      durationPerDay,
+      dayStart,
+      dayEnd
+    });
+    
+    res.json({ success: true, id: suggestionId });
+  } catch (error) {
+    console.error('Error creating suggestion:', error);
+    res.status(500).json({ error: 'Kunde inte skapa förslag' });
+  }
 });
 
 // Hämta alla förslag för en grupp
