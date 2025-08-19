@@ -29,22 +29,24 @@ export default function Dashboard({ user }) {
         return;
       }
       
+      console.log('Joining group:', { groupId, email, inviteeId });
+      
       // Kontrollera om gruppen existerar först
       fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/status`)
         .then(res => {
+          console.log('Group status response:', res.status);
           if (!res.ok) {
-            // Gruppen finns inte, rensa URL:en
-            window.history.replaceState({}, '', window.location.pathname);
-            window.location.reload();
+            console.error('Group not found');
             return;
           }
           return res.json();
         })
         .then(statusData => {
           if (!statusData) return;
+          console.log('Group exists, joining...');
           
           // Gruppen finns, fortsätt med join
-          fetch('https://bookr-production.up.railway.app/api/group/join', {
+          return fetch('https://bookr-production.up.railway.app/api/group/join', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -53,17 +55,27 @@ export default function Dashboard({ user }) {
               invitee: inviteeId,
               email: email,
             }),
-          })
-            .then(() =>
-              fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/tokens`)
-            )
-            .then(res => res.json())
-            .then(data => setGroupTokens(data.tokens || []));
+          });
         })
-        .catch(() => {
-          // Fel vid API-anrop, rensa URL:en
-          window.history.replaceState({}, '', window.location.pathname);
-          window.location.reload();
+        .then(joinRes => {
+          if (joinRes) {
+            console.log('Join response:', joinRes.status);
+            return fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/tokens`);
+          }
+        })
+        .then(tokensRes => {
+          if (tokensRes) {
+            return tokensRes.json();
+          }
+        })
+        .then(data => {
+          if (data) {
+            console.log('Group tokens:', data.tokens);
+            setGroupTokens(data.tokens || []);
+          }
+        })
+        .catch(error => {
+          console.error('Error in group join flow:', error);
         });
     }
   }, [groupId, user.accessToken, inviteeId, user.email, user.emails]);

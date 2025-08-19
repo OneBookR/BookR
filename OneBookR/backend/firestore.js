@@ -22,9 +22,22 @@ export async function createGroup(groupData) {
 }
 
 export async function getGroup(groupId) {
-  const docRef = doc(db, 'groups', groupId);
-  const docSnap = await getDoc(docRef);
-  return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+  try {
+    const docRef = doc(db, 'groups', groupId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate?.() || data.createdAt
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting group:', error);
+    throw error;
+  }
 }
 
 export async function updateGroup(groupId, updateData) {
