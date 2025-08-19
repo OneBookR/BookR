@@ -786,41 +786,27 @@ app.delete('/api/group/:groupId/suggestion/:suggestionId', (req, res) => {
 
 // Rösta på ett förslag och skapa Google Meet-länk + mejl när alla accepterat
 app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) => {
-  const { groupId, suggestionId } = req.params;
-  const { email, vote } = req.body;
-  if (!groupId || !suggestionId || !email || !vote) return res.status(400).json({ error: 'groupId, suggestionId, email, vote krävs' });
+  try {
+    const { groupId, suggestionId } = req.params;
+    const { email, vote } = req.body;
+    if (!groupId || !suggestionId || !email || !vote) return res.status(400).json({ error: 'groupId, suggestionId, email, vote krävs' });
 
-  const groupSuggestions = suggestions[groupId] || [];
-  const suggestion = groupSuggestions.find(s => s.id === suggestionId);
-  if (!suggestion) return res.status(404).json({ error: 'Förslag finns inte' });
+    const suggestion = await getSuggestion(suggestionId);
+    if (!suggestion) return res.status(404).json({ error: 'Förslag finns inte' });
+    
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
 
-  suggestion.votes[email] = vote;
+    // Uppdatera röster
+    const updatedVotes = { ...suggestion.votes, [email]: vote };
+    await updateSuggestion(suggestionId, { votes: updatedVotes });
 
-  // Markera tidsförslag som besvarat för användaren
-  if (userInvitations[email]) {
-    userInvitations[email].forEach(inv => {
-      if (inv.groupId === groupId) {
-        inv.hasVotedOnSuggestion = true;
-      }
-    });
-  }
+    // Hämta alla e-postadresser i gruppen
+    const invitations = await getInvitationsByGroup(groupId);
+    const allEmails = [group.creatorEmail, ...invitations.map(inv => inv.email)].filter(Boolean);
 
-  const group = groups[groupId];
-  let allEmails = [];
-
-  if (group?.creator?.email && group.creator.email.includes('@')) {
-    allEmails.push(group.creator.email);
-  }
-  if (Array.isArray(group?.invitees)) {
-    allEmails = allEmails.concat(
-      group.invitees
-        .map(inv => inv.email)
-        .filter(email => email && email.includes('@'))
-    );
-  }
-
-  const allAccepted = allEmails.every(e => suggestion.votes[e] === 'accepted');
-  if (allAccepted && !suggestion.finalized) {
+    const allAccepted = allEmails.every(e => updatedVotes[e] === 'accepted');
+    if (allAccepted && !suggestion.finalized) {
     try {
       let meetLink = null;
       let meetEventId = suggestion.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
@@ -865,9 +851,12 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
       if (suggestion.withMeet && response.data.conferenceData?.entryPoints) {
         meetLink = response.data.conferenceData.entryPoints.find(ep => ep.entryPointType === 'video')?.uri;
       }
-      suggestion.meetLink = meetLink || '';
-
-      suggestion.finalized = true;
+      
+      // Uppdatera suggestion i Firebase
+      await updateSuggestion(suggestionId, {
+        meetLink: meetLink || '',
+        finalized: true
+      });
 
       // Skicka ut mejl till ALLA parter
       const transporter = nodemailer.createTransport({
@@ -897,19 +886,21 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         text: mailText,
       });
 
-      console.log('Mejl skickat till:', allEmails, 'med länk:', suggestion.meetLink);
-
-      suggestion.confirmationMessage = suggestion.withMeet
-        ? `Alla har accepterat mötestiden! Händelsen är nu bokad i kalendern och Google Meet-länk är skapad.`
-        : `Alla har accepterat mötestiden! Händelsen är nu bokad i kalendern.`;
+      console.log('Mejl skickat till:', allEmails, 'med länk:', meetLink);
 
     } catch (err) {
       console.error('Fel vid Google Calendar-bokning eller mejl:', err, err?.response?.data);
       return res.status(500).json({ error: 'Kunde inte boka kalenderhändelse eller skicka mejl.', details: err?.message });
     }
-  }
+    }
 
-  res.json({ success: true, suggestion });
+    // Hämta uppdaterat förslag
+    const updatedSuggestion = await getSuggestion(suggestionId);
+    res.json({ success: true, suggestion: updatedSuggestion });
+  } catch (error) {
+    console.error('Error voting on suggestion:', error);
+    res.status(500).json({ error: 'Kunde inte rösta på förslag' });
+  }
 });
 
 // Sätt gruppnamn
