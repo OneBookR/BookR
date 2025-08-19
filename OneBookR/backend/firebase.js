@@ -11,6 +11,12 @@ const firebaseConfig = {
   appId: process.env.FIREBASE_APP_ID
 };
 
+// Kontrollera att alla Firebase-variabler finns
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+  console.error('Firebase configuration missing! Please set environment variables.');
+  process.exit(1);
+}
+
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);

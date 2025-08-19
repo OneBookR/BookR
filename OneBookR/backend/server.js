@@ -12,7 +12,7 @@ import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
-import { createGroup, getGroup, createInvitation, getInvitationsByEmail, createSuggestion, getSuggestionsByGroup, updateSuggestion, deleteUserData } from './firestore.js';
+import { createGroup, getGroup, createInvitation, getInvitationsByEmail, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
 
 const app = express();
 app.use(express.json());
@@ -745,9 +745,15 @@ app.post('/api/group/:groupId/suggest', (req, res) => {
 });
 
 // Hämta alla förslag för en grupp
-app.get('/api/group/:groupId/suggestions', (req, res) => {
-  const { groupId } = req.params;
-  res.json({ suggestions: suggestions[groupId] || [] });
+app.get('/api/group/:groupId/suggestions', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const suggestions = await getSuggestionsByGroup(groupId);
+    res.json({ suggestions });
+  } catch (error) {
+    console.error('Error fetching suggestions:', error);
+    res.status(500).json({ error: 'Kunde inte hämta förslag' });
+  }
 });
 
 // Ta bort ett förslag
@@ -926,10 +932,16 @@ app.post('/api/group/:groupId/setname', (req, res) => {
 });
 
 // Hämta inbjudningar för en användare
-app.get('/api/invitations/:email', (req, res) => {
-  const { email } = req.params;
-  const invitations = userInvitations[decodeURIComponent(email)] || [];
-  res.json({ invitations });
+app.get('/api/invitations/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const decodedEmail = decodeURIComponent(email);
+    const invitations = await getInvitationsByEmail(decodedEmail);
+    res.json({ invitations });
+  } catch (error) {
+    console.error('Error fetching invitations:', error);
+    res.status(500).json({ error: 'Kunde inte hämta inbjudningar' });
+  }
 });
 
 // Kontaktformulär: Skicka mail till onebookr@gmail.com
