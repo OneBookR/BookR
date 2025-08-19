@@ -287,6 +287,7 @@ export default function Dashboard({ user }) {
           myToken={user.accessToken}
           invitedTokens={invitedTokens}
           user={user}
+          groupId={groupId}
         />
       )}
 
