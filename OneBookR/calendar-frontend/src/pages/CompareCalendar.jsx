@@ -73,7 +73,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [tutorialStep, setTutorialStep] = useState(-1);
   const [showTutorial, setShowTutorial] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
   const [sidebarTab, setSidebarTab] = useState('invitations');
   const [sidebarMode, setSidebarMode] = useState('notifications'); // 'notifications' eller 'contacts'
   const [invitations, setInvitations] = useState([]);
@@ -379,7 +379,9 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
   };
 
   // Spara vy och datum i state för att kunna byta vy och navigera
-  const [calendarView, setCalendarView] = useState('week');
+  const [calendarView, setCalendarView] = useState(
+    window.innerWidth < 768 ? 'agenda' : 'week'
+  );
   const [calendarDate, setCalendarDate] = useState(new Date());
 
 
@@ -858,7 +860,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           transition: 'all 0.3s ease'
         }}
       >
-        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', minHeight: 64, px: { xs: 1, sm: 3 } }}>
+        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 3 } }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 3 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Box sx={{
@@ -2234,7 +2236,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           overflow: 'hidden',
           border: `1px solid ${calendarBorder}`,
           background: calendarBg,
-          minWidth: { xs: '800px', md: 'auto' }
+          minWidth: { xs: '320px', md: 'auto' }
         }}>
           <Calendar
             localizer={localizer}
@@ -2284,7 +2286,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           top: 112,
           right: 0,
           height: 'calc(100vh - 112px)',
-          width: sidebarOpen ? 480 : 60,
+          width: sidebarOpen ? (window.innerWidth < 768 ? '100vw' : 480) : 60,
           backgroundColor: theme.colors.bg,
           boxShadow: theme.isDark ? '-2px 0 8px rgba(0,0,0,0.3)' : '-2px 0 8px rgba(0,0,0,0.1)',
           border: `1px solid ${theme.colors.border}`,
