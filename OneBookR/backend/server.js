@@ -12,7 +12,7 @@ import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
-import { createGroup, getGroup, createInvitation, getInvitationsByEmail, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
+import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
 
 const app = express();
 app.use(express.json());
@@ -617,54 +617,43 @@ app.post('/api/invite', async (req, res) => {
 });
 
 // När någon öppnar länken och loggar in
-app.post('/api/group/join', (req, res) => {
-  const { groupId, token, invitee, email: frontendEmail } = req.body;
-  if (!groupId || !token) return res.status(400).json({ error: 'groupId och token krävs' });
-  if (!groups[groupId]) return res.status(404).json({ error: 'Grupp finns inte' });
+app.post('/api/group/join', async (req, res) => {
+  try {
+    const { groupId, token, invitee, email: frontendEmail } = req.body;
+    if (!groupId || !token) return res.status(400).json({ error: 'groupId och token krävs' });
+    
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
 
-  // Koppla invitee-id till e-post
-  let email = null;
-  if (invitee) {
-    const found = groups[groupId].invitees.find(inv => inv.id === invitee);
-    if (found) email = found.email;
-  }
-  if (!email) {
-    email = frontendEmail || groups[groupId].creator.email;
-  }
-  if (!email || !email.includes('@')) {
-    return res.status(400).json({ error: 'Kunde inte hitta en giltig e-postadress för användaren.' });
-  }
-
-  // Lägg alltid till token och email om de inte redan finns
-  if (!groups[groupId].tokens.includes(token)) {
-    groups[groupId].tokens.push(token);
-  }
-  if (email) {
-    if (!groups[groupId].joinedEmails) groups[groupId].joinedEmails = [];
-    if (!groups[groupId].joinedEmails.includes(email)) {
-      groups[groupId].joinedEmails.push(email);
+    // Använd frontendEmail direkt
+    const email = frontendEmail;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Giltig e-postadress krävs' });
     }
-  }
 
-  // Markera inbjudan som besvarad
-  if (email && userInvitations[email]) {
-    const invitation = userInvitations[email].find(inv => inv.groupId === groupId);
-    if (invitation) {
-      invitation.responded = true;
-      invitation.accepted = true;
+    // Uppdatera gruppen med ny medlem
+    const updatedTokens = group.tokens || [];
+    const updatedEmails = group.joinedEmails || [];
+    
+    if (!updatedTokens.includes(token)) {
+      updatedTokens.push(token);
     }
+    if (!updatedEmails.includes(email)) {
+      updatedEmails.push(email);
+    }
+
+    // Uppdatera gruppen i Firebase
+    await updateGroup(groupId, {
+      tokens: updatedTokens,
+      joinedEmails: updatedEmails
+    });
+
+    console.log('User joined group:', { groupId, email });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error joining group:', error);
+    res.status(500).json({ error: 'Kunde inte gå med i grupp' });
   }
-
-  // Extra loggning för felsökning
-  console.log('Grupp-join:', {
-    groupId,
-    tokens: groups[groupId].tokens,
-    joinedEmails: groups[groupId].joinedEmails,
-    invitees: groups[groupId].invitees,
-    creator: groups[groupId].creator,
-  });
-
-  res.json({ success: true });
 });
 
 // Hämta alla tokens för en grupp
@@ -675,33 +664,32 @@ app.get('/api/group/:groupId/tokens', (req, res) => {
 });
 
 // Hämta status för grupp (om alla är inne)
-app.get('/api/group/:groupId/status', (req, res) => {
-  const { groupId } = req.params;
-  const group = groups[groupId];
-  if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
+app.get('/api/group/:groupId/status', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
 
-  const expected = 1 + (group.invitees ? group.invitees.length : 0);
-  const uniqueTokens = Array.from(new Set(group.tokens));
-  const current = uniqueTokens.length;
+    // Hämta inbjudningar för gruppen
+    const invitations = await getInvitationsByGroup(groupId);
+    const invitedEmails = invitations.map(inv => inv.email);
+    
+    const expected = 1 + invitedEmails.length;
+    const current = group.joinedEmails ? group.joinedEmails.length : 1;
+    const allJoined = current >= expected;
 
-  // Lista på alla e-postadresser (skapare + invitees)
-  const allEmails = [
-    group.creator?.email,
-    ...(group.invitees?.map(inv => inv.email) || [])
-  ].filter(Boolean);
-
-  // NYTT: Räkna allJoined baserat på joinedEmails istället för tokens
-  const joined = group.joinedEmails || [];
-  const allJoined = allEmails.every(email => joined.includes(email));
-
-  res.json({
-    allJoined,
-    current,
-    expected,
-    invited: allEmails,
-    joined,
-    groupName: group.groupName
-  });
+    res.json({
+      allJoined,
+      current,
+      expected,
+      invited: invitedEmails,
+      joined: group.joinedEmails || [],
+      groupName: group.groupName || 'Namnlös grupp'
+    });
+  } catch (error) {
+    console.error('Error fetching group status:', error);
+    res.status(500).json({ error: 'Kunde inte hämta gruppstatus' });
+  }
 });
 
 // Hämta e-postadresser som gått med i gruppen

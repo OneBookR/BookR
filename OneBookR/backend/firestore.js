@@ -27,6 +27,11 @@ export async function getGroup(groupId) {
   return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
 }
 
+export async function updateGroup(groupId, updateData) {
+  const docRef = doc(db, 'groups', groupId);
+  await updateDoc(docRef, updateData);
+}
+
 // Inbjudningar
 export async function createInvitation(invitationData) {
   const docRef = await addDoc(collection(db, 'invitations'), {
@@ -39,6 +44,12 @@ export async function createInvitation(invitationData) {
 
 export async function getInvitationsByEmail(email) {
   const q = query(collection(db, 'invitations'), where('email', '==', email));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+export async function getInvitationsByGroup(groupId) {
+  const q = query(collection(db, 'invitations'), where('groupId', '==', groupId));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
