@@ -45,7 +45,14 @@ export async function createInvitation(invitationData) {
 export async function getInvitationsByEmail(email) {
   const q = query(collection(db, 'invitations'), where('email', '==', email));
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return querySnapshot.docs.map(doc => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      ...data,
+      createdAt: data.createdAt?.toDate?.() || data.createdAt
+    };
+  });
 }
 
 export async function getInvitationsByGroup(groupId) {

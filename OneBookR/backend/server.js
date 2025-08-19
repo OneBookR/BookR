@@ -657,10 +657,16 @@ app.post('/api/group/join', async (req, res) => {
 });
 
 // Hämta alla tokens för en grupp
-app.get('/api/group/:groupId/tokens', (req, res) => {
-  const { groupId } = req.params;
-  if (!groups[groupId]) return res.status(404).json({ error: 'Grupp finns inte' });
-  res.json({ tokens: groups[groupId].tokens });
+app.get('/api/group/:groupId/tokens', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
+    res.json({ tokens: group.tokens || [] });
+  } catch (error) {
+    console.error('Error fetching group tokens:', error);
+    res.status(500).json({ error: 'Kunde inte hämta tokens' });
+  }
 });
 
 // Hämta status för grupp (om alla är inne)
@@ -693,11 +699,16 @@ app.get('/api/group/:groupId/status', async (req, res) => {
 });
 
 // Hämta e-postadresser som gått med i gruppen
-app.get('/api/group/:groupId/joined', (req, res) => {
-  const { groupId } = req.params;
-  const group = groups[groupId];
-  if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
-  res.json({ joined: group.joinedEmails || [] });
+app.get('/api/group/:groupId/joined', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
+    res.json({ joined: group.joinedEmails || [] });
+  } catch (error) {
+    console.error('Error fetching joined members:', error);
+    res.status(500).json({ error: 'Kunde inte hämta medlemmar' });
+  }
 });
 
 // Minneslagring för förslag per grupp

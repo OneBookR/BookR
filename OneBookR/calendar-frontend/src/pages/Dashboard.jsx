@@ -99,17 +99,11 @@ export default function Dashboard({ user }) {
 
   // NYTT: Navigera automatiskt till jämförelse när alla är inne (även för hosten)
   useEffect(() => {
-    let refreshTimeout;
     if (groupId && groupStatus.allJoined && window.location.hash !== '#joined') {
-      // Vänta 2 sekunder innan refresh för att undvika race conditions
-      refreshTimeout = setTimeout(() => {
-        window.location.hash = '#joined';
-        window.location.reload();
-      }, 2000);
+      // Sätt hash utan reload
+      window.location.hash = '#joined';
+      setShowCompare(true);
     }
-    return () => {
-      if (refreshTimeout) clearTimeout(refreshTimeout);
-    };
   }, [groupId, groupStatus.allJoined]);
 
   // Om ingen grupp, använd bara din egen token
