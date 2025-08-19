@@ -111,12 +111,10 @@ export default function Dashboard({ user }) {
 
   // NYTT: Navigera automatiskt till jämförelse när alla är inne (även för hosten)
   useEffect(() => {
-    if (groupId && groupStatus.allJoined && window.location.hash !== '#joined') {
-      // Sätt hash utan reload
-      window.location.hash = '#joined';
+    if (groupId && groupStatus.allJoined && !showCompare) {
       setShowCompare(true);
     }
-  }, [groupId, groupStatus.allJoined]);
+  }, [groupId, groupStatus.allJoined, showCompare]);
 
   // Om ingen grupp, använd bara din egen token
   const tokens = groupId ? groupTokens : [user.accessToken];

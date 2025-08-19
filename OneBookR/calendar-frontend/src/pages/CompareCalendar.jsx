@@ -94,7 +94,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           console.error('Fel vid hämtning av tidsförslag:', error);
           setSuggestions([]);
         });
-      // Poll för realtidsuppdatering
+      // Poll för realtidsuppdatering (mindre frekvent)
       const interval = setInterval(() => {
         fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
           .then(res => res.json())
@@ -102,7 +102,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           .catch(error => {
             console.error('Fel vid hämtning av tidsförslag:', error);
           });
-      }, 3000);
+      }, 10000);
       return () => clearInterval(interval);
     } else {
       setSuggestions([]);
@@ -723,7 +723,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       fetchInvitations();
       fetchTimeProposals();
       
-      // Poll för uppdateringar var 10:e sekund
+      // Poll för uppdateringar var 30:e sekund
       const interval = setInterval(() => {
         if (isOnline) {
           const prevInvitations = invitations.length;
@@ -747,7 +747,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
             }
           });
         }
-      }, 10000);
+      }, 30000);
       
       return () => clearInterval(interval);
     }
@@ -977,7 +977,10 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                   color="primary"
                   variant="outlined"
                   startIcon={<LogoutIcon />}
-                  onClick={handleLogout}
+                  onClick={() => {
+                    localStorage.removeItem('auth_token');
+                    handleLogout();
+                  }}
                   sx={{ fontWeight: 600, borderRadius: 2 }}
                 >
                   Logga ut
