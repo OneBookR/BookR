@@ -12,6 +12,7 @@ import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
+import pool, { initDatabase, deleteUserData } from './database.js';
 
 const app = express();
 app.use(express.json());
@@ -967,6 +968,29 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
+// Initiera databas och starta server
+initDatabase().then(() => {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+  });
+}).catch(error => {
+  console.error('Failed to initialize database:', error);
+  process.exit(1);
+});
+
+// GDPR-endpoint för att radera användardata
+app.delete('/api/user/delete-data', async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'Giltig e-postadress krävs' });
+  }
+  
+  try {
+    await deleteUserData(email);
+    res.json({ success: true, message: 'All användardata har raderats' });
+  } catch (error) {
+    console.error('Error deleting user data:', error);
+    res.status(500).json({ error: 'Kunde inte radera användardata' });
+  }
 });
