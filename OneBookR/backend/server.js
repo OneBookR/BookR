@@ -12,7 +12,7 @@ import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
-import pool, { initDatabase, deleteUserData } from './database.js';
+import { createGroup, getGroup, createInvitation, getInvitationsByEmail, createSuggestion, getSuggestionsByGroup, updateSuggestion, deleteUserData } from './firestore.js';
 
 const app = express();
 app.use(express.json());
@@ -540,10 +540,7 @@ app.post('/api/availability', async (req, res) => {
   }
 });
 
-// Enkel minneslagring (byt till databas i produktion)
-const groups = {};
-const userInvitations = {}; // { email: [{ groupId, inviteeId, fromEmail, createdAt, responded }] }
-const groupNames = {}; // { groupId: groupName }
+// Firebase Firestore används för datalagring
 
 // Skapa grupp och skicka inbjudan
 app.post('/api/invite', async (req, res) => {
@@ -968,14 +965,8 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-// Initiera databas och starta server
-initDatabase().then(() => {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on http://0.0.0.0:${PORT}`);
-  });
-}).catch(error => {
-  console.error('Failed to initialize database:', error);
-  process.exit(1);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
 
 // GDPR-endpoint för att radera användardata
@@ -988,7 +979,7 @@ app.delete('/api/user/delete-data', async (req, res) => {
   
   try {
     await deleteUserData(email);
-    res.json({ success: true, message: 'All användardata har raderats' });
+    res.json({ success: true, message: 'All användardata har raderats från Firebase' });
   } catch (error) {
     console.error('Error deleting user data:', error);
     res.status(500).json({ error: 'Kunde inte radera användardata' });
