@@ -56,15 +56,25 @@ export async function createInvitation(invitationData) {
 }
 
 export async function getInvitationsByEmail(email) {
-  const q = query(collection(db, 'invitations'), where('email', '==', email));
+  const q = query(
+    collection(db, 'invitations'), 
+    where('email', '==', email)
+  );
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => {
+  const invitations = querySnapshot.docs.map(doc => {
     const data = doc.data();
     return {
       id: doc.id,
       ...data,
       createdAt: data.createdAt?.toDate?.() || data.createdAt
     };
+  });
+  
+  // Sortera så senaste kommer först
+  return invitations.sort((a, b) => {
+    const dateA = new Date(a.createdAt);
+    const dateB = new Date(b.createdAt);
+    return dateB - dateA;
   });
 }
 
@@ -123,4 +133,9 @@ export async function deleteUserData(email) {
   
   // Utför alla raderingar
   await Promise.all(batch);
+}
+
+export async function updateInvitation(invitationId, updateData) {
+  const docRef = doc(db, 'invitations', invitationId);
+  await updateDoc(docRef, updateData);
 }

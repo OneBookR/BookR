@@ -12,7 +12,7 @@ import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
-import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
+import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
 
 const app = express();
 app.use(express.json());
@@ -969,6 +969,28 @@ app.post('/api/contact', async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on http://0.0.0.0:${PORT}`);
+});
+
+// Svara på inbjudan (acceptera eller neka)
+app.post('/api/invitation/:invitationId/respond', async (req, res) => {
+  try {
+    const { invitationId } = req.params;
+    const { response } = req.body; // 'accept' eller 'decline'
+    
+    if (!response || !['accept', 'decline'].includes(response)) {
+      return res.status(400).json({ error: 'Response måste vara accept eller decline' });
+    }
+    
+    await updateInvitation(invitationId, {
+      responded: true,
+      accepted: response === 'accept'
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error responding to invitation:', error);
+    res.status(500).json({ error: 'Kunde inte svara på inbjudan' });
+  }
 });
 
 // GDPR-endpoint för att radera användardata
