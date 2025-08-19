@@ -111,17 +111,18 @@ export default function Dashboard({ user }) {
 
   // NYTT: Navigera automatiskt till jämförelse när alla är inne (även för hosten)
   useEffect(() => {
-    if (groupId && groupStatus.allJoined && !showCompare) {
-      // Refresha sidan var 3:e sekund när alla har anslutit
-      const refreshTimer = setTimeout(() => {
+    let refreshTimeout;
+    if (groupId && groupStatus.allJoined && window.location.hash !== '#joined') {
+      // Vänta 2 sekunder innan refresh för att undvika race conditions
+      refreshTimeout = setTimeout(() => {
+        window.location.hash = '#joined';
         window.location.reload();
-      }, 3000);
-      
-      setShowCompare(true);
-      
-      return () => clearTimeout(refreshTimer);
+      }, 2000);
     }
-  }, [groupId, groupStatus.allJoined, showCompare]);
+    return () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout);
+    };
+  }, [groupId, groupStatus.allJoined]);
 
   // Om ingen grupp, använd bara din egen token
   const tokens = groupId ? groupTokens : [user.accessToken];
