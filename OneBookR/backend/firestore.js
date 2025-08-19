@@ -58,7 +58,8 @@ export async function createInvitation(invitationData) {
 export async function getInvitationsByEmail(email) {
   const q = query(
     collection(db, 'invitations'), 
-    where('email', '==', email)
+    where('email', '==', email),
+    where('responded', '==', false)
   );
   const querySnapshot = await getDocs(q);
   const invitations = querySnapshot.docs.map(doc => {

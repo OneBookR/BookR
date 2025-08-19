@@ -2597,9 +2597,20 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                             size="small" 
                             variant="outlined" 
                             sx={{ fontSize: 12 }}
-                            onClick={() => {
-                              setInvitations(prev => prev.filter(inv => inv.groupId !== invitation.groupId));
-                              setToast({ open: true, message: 'Inbjudan nekad', severity: 'info' });
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`${API_BASE_URL}/api/invitation/${invitation.id}/respond`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ response: 'decline' })
+                                });
+                                if (res.ok) {
+                                  fetchInvitations(); // Uppdatera listan
+                                  setToast({ open: true, message: 'Inbjudan nekad', severity: 'info' });
+                                }
+                              } catch (error) {
+                                setToast({ open: true, message: 'Kunde inte neka inbjudan', severity: 'error' });
+                              }
                             }}
                           >
                             Neka
