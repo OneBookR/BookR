@@ -37,13 +37,18 @@ function App() {
     };
     
     const authToken = getCookie('auth_token');
+    console.log('Auth token from cookie:', authToken ? 'Found' : 'Not found');
+    
     if (authToken) {
       try {
         const userData = JSON.parse(atob(authToken));
+        console.log('Parsed user data:', userData);
         if (userData.user && userData.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
-          console.log('User found in cookie:', userData.user);
+          console.log('User found in cookie:', userData.user.email || userData.user.displayName);
           setUser(userData.user);
           return;
+        } else {
+          console.log('Token expired or invalid user data');
         }
       } catch (e) {
         console.error('Invalid auth token:', e);

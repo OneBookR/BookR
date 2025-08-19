@@ -106,9 +106,10 @@ app.get('/auth/google/callback',
     // Sätt cookie
     res.cookie('auth_token', authToken, {
       httpOnly: false,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // 24 timmar
+      maxAge: 24 * 60 * 60 * 1000, // 24 timmar
+      domain: process.env.NODE_ENV === 'production' ? '.railway.app' : undefined
     });
     
     // Hämta state från session
