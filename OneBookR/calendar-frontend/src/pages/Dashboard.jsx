@@ -112,7 +112,14 @@ export default function Dashboard({ user }) {
   // NYTT: Navigera automatiskt till jämförelse när alla är inne (även för hosten)
   useEffect(() => {
     if (groupId && groupStatus.allJoined && !showCompare) {
+      // Refresha sidan var 3:e sekund när alla har anslutit
+      const refreshTimer = setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+      
       setShowCompare(true);
+      
+      return () => clearTimeout(refreshTimer);
     }
   }, [groupId, groupStatus.allJoined, showCompare]);
 
