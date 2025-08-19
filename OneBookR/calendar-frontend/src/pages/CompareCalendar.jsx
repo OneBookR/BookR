@@ -73,7 +73,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [tutorialStep, setTutorialStep] = useState(-1);
   const [showTutorial, setShowTutorial] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState('invitations');
   const [sidebarMode, setSidebarMode] = useState('notifications'); // 'notifications' eller 'contacts'
   const [invitations, setInvitations] = useState([]);
@@ -379,10 +379,9 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
   };
 
   // Spara vy och datum i state för att kunna byta vy och navigera
-  const [calendarView, setCalendarView] = useState(
-    window.innerWidth < 768 ? 'agenda' : 'week'
-  );
+  const [calendarView, setCalendarView] = useState('week');
   const [calendarDate, setCalendarDate] = useState(new Date());
+  const [isMobile, setIsMobile] = useState(false);
 
 
 
@@ -689,15 +688,32 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
     }
   }, [showTutorial, tutorialStep]);
 
-  // Offline/Online hantering
+  // Mobildetektering och offline/online hantering
   useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setCalendarView('agenda');
+        setSidebarOpen(false);
+      } else {
+        setCalendarView('week');
+        setSidebarOpen(true);
+      }
+    };
+    
+    checkMobile();
+    
+    const handleResize = () => checkMobile();
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     
+    window.addEventListener('resize', handleResize);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     
     return () => {
+      window.removeEventListener('resize', handleResize);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -2286,7 +2302,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           top: 112,
           right: 0,
           height: 'calc(100vh - 112px)',
-          width: sidebarOpen ? (window.innerWidth < 768 ? '100vw' : 480) : 60,
+          width: sidebarOpen ? (isMobile ? '100vw' : 480) : 60,
           backgroundColor: theme.colors.bg,
           boxShadow: theme.isDark ? '-2px 0 8px rgba(0,0,0,0.3)' : '-2px 0 8px rgba(0,0,0,0.1)',
           border: `1px solid ${theme.colors.border}`,
