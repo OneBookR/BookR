@@ -32,6 +32,16 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
+// Privacy policy route
+app.get('/privacy-policy', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'policy.html'));
+});
+
+// Terms of service route
+app.get('/terms-of-service', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'policy.html'));
+});
+
 // Middleware
 app.use(cors({
   origin: 'https://bookr-production.up.railway.app',

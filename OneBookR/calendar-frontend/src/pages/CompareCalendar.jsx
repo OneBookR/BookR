@@ -2690,7 +2690,40 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         )}
       </Box>
 
-      {/* Lägg till extra marginal i botten så inget överlappar */}
+      {/* Footer */}
+      <Box sx={{
+        mt: 8,
+        py: 4,
+        borderTop: `1px solid ${theme.colors.border}`,
+        textAlign: 'center',
+        bgcolor: theme.colors.surface
+      }}>
+        <Typography variant="body2" sx={{ color: theme.colors.textSecondary, mb: 2 }}>
+          © 2025 BookR - Kalenderjämförelse
+        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
+          <Button
+            component="a"
+            href="/privacy-policy"
+            target="_blank"
+            size="small"
+            sx={{ color: theme.colors.textSecondary, textDecoration: 'underline' }}
+          >
+            Integritetspolicy
+          </Button>
+          <Button
+            component="a"
+            href="/terms-of-service"
+            target="_blank"
+            size="small"
+            sx={{ color: theme.colors.textSecondary, textDecoration: 'underline' }}
+          >
+            Användarvillkor
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Extra marginal i botten */}
       <Box sx={{ height: 40 }} />
       
       {/* Toast-meddelanden */}
