@@ -807,17 +807,17 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
     const allAccepted = allEmails.every(e => updatedVotes[e] === 'accepted');
     if (allAccepted && !suggestion.finalized) {
-    try {
-      let meetLink = null;
-      let meetEventId = suggestion.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
+      try {
+        let meetLink = null;
+        let meetEventId = suggestion.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
 
-      // Skapa Google Calendar-event ALLTID när alla accepterat
-      // Om withMeet: true, skapa Google Meet-länk, annars bara kalenderhändelse med plats
-      const tokens = (group.tokens || []).filter(Boolean);
-      if (!tokens.length) {
-        return res.status(500).json({ error: 'Inga tokens för gruppen.' });
-      }
-      const token = tokens[0];
+        // Skapa Google Calendar-event ALLTID när alla accepterat
+        // Om withMeet: true, skapa Google Meet-länk, annars bara kalenderhändelse med plats
+        const tokens = (group.tokens || []).filter(Boolean);
+        if (!tokens.length) {
+          return res.status(500).json({ error: 'Inga tokens för gruppen.' });
+        }
+        const token = tokens[0];
       const userOAuth2 = new google.auth.OAuth2();
       userOAuth2.setCredentials({ access_token: token });
       const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
@@ -848,15 +848,17 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         sendUpdates: 'all'
       });
 
-      if (suggestion.withMeet && response.data.conferenceData?.entryPoints) {
-        meetLink = response.data.conferenceData.entryPoints.find(ep => ep.entryPointType === 'video')?.uri;
-      }
-      
-      // Uppdatera suggestion i Firebase
-      await updateSuggestion(suggestionId, {
-        meetLink: meetLink || '',
-        finalized: true
-      });
+        if (suggestion.withMeet && response.data.conferenceData?.entryPoints) {
+          meetLink = response.data.conferenceData.entryPoints.find(ep => ep.entryPointType === 'video')?.uri;
+        }
+        
+        console.log('Meet link created:', meetLink);
+        
+        // Uppdatera suggestion i Firebase
+        await updateSuggestion(suggestionId, {
+          meetLink: meetLink || '',
+          finalized: true
+        });
 
       // Skicka ut mejl till ALLA parter
       const transporter = nodemailer.createTransport({
@@ -867,26 +869,26 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         },
       });
 
-      // Bygg mejltext med eller utan meet-länk/plats
-      let mailText = `Alla har accepterat mötestiden!\n\n`;
-      mailText += `Möte: ${suggestion.title ? suggestion.title : 'Föreslaget möte'}\n`;
-      mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n`;
-      if (suggestion.withMeet && suggestion.meetLink) {
-        mailText += `Google Meet-länk: ${suggestion.meetLink}\n\nDu hittar även mötet i din Google Kalender.`;
-      } else if (suggestion.location) {
-        mailText += `Plats: ${suggestion.location}\n\nDu hittar även mötet i din Google Kalender.`;
-      } else {
-        mailText += `Du hittar mötet i din Google Kalender.`;
-      }
+        // Bygg mejltext med eller utan meet-länk/plats
+        let mailText = `Alla har accepterat mötestiden!\n\n`;
+        mailText += `Möte: ${suggestion.title ? suggestion.title : 'Föreslaget möte'}\n`;
+        mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n`;
+        if (suggestion.withMeet && meetLink) {
+          mailText += `Google Meet-länk: ${meetLink}\n\nDu hittar även mötet i din Google Kalender.`;
+        } else if (suggestion.location) {
+          mailText += `Plats: ${suggestion.location}\n\nDu hittar även mötet i din Google Kalender.`;
+        } else {
+          mailText += `Du hittar mötet i din Google Kalender.`;
+        }
 
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: allEmails.join(','),
-        subject: 'Möte bokat!',
-        text: mailText,
-      });
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: allEmails.join(','),
+          subject: 'Möte bokat!',
+          text: mailText,
+        });
 
-      console.log('Mejl skickat till:', allEmails, 'med länk:', meetLink);
+        console.log('Mejl skickat till:', allEmails, 'med länk:', meetLink);
 
     } catch (err) {
       console.error('Fel vid Google Calendar-bokning eller mejl:', err, err?.response?.data);
