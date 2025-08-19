@@ -97,33 +97,24 @@ app.get('/auth/google/callback',
   (req, res) => {
     console.log('OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
     
-    // Skapa en enkel auth token
+    // Skapa en enkel auth token och skicka som URL-parameter
     const authToken = Buffer.from(JSON.stringify({
       user: req.user,
       timestamp: Date.now()
     })).toString('base64');
     
-    // Sätt cookie
-    res.cookie('auth_token', authToken, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000, // 24 timmar
-      domain: process.env.NODE_ENV === 'production' ? '.railway.app' : undefined
-    });
-    
     // Hämta state från session
     const state = req.session.oauthState;
     delete req.session.oauthState;
     
-    let redirectUrl = '/';
+    let redirectUrl = `/?auth=${authToken}`;
     
     if (state) {
       try {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
         
         if (decoded.groupId) {
-          redirectUrl = `/?group=${decoded.groupId}`;
+          redirectUrl = `/?auth=${authToken}&group=${decoded.groupId}`;
           if (decoded.inviteeId) {
             redirectUrl += `&invitee=${decoded.inviteeId}`;
           }

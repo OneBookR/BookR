@@ -29,50 +29,49 @@ function App() {
   }, [user]);
 
   useEffect(() => {
-    // Kolla först efter cookie
-    const getCookie = (name) => {
-      const value = `; ${document.cookie}`;
-      const parts = value.split(`; ${name}=`);
-      if (parts.length === 2) return parts.pop().split(';').shift();
-    };
-    
-    const authToken = getCookie('auth_token');
-    console.log('Auth token from cookie:', authToken ? 'Found' : 'Not found');
+    // Kolla först efter auth-parameter i URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const authToken = urlParams.get('auth');
     
     if (authToken) {
       try {
         const userData = JSON.parse(atob(authToken));
-        console.log('Parsed user data:', userData);
+        console.log('User authenticated via URL:', userData.user.email || userData.user.displayName);
+        
         if (userData.user && userData.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
-          console.log('User found in cookie:', userData.user.email || userData.user.displayName);
+          // Spara i localStorage
+          localStorage.setItem('auth_token', authToken);
           setUser(userData.user);
+          
+          // Ta bort auth-parameter från URL
+          urlParams.delete('auth');
+          const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+          window.history.replaceState({}, '', newUrl);
           return;
-        } else {
-          console.log('Token expired or invalid user data');
         }
       } catch (e) {
-        console.error('Invalid auth token:', e);
+        console.error('Invalid auth token from URL:', e);
       }
     }
     
-    // Fallback till API
-    const checkAuth = async () => {
-      console.log('No valid cookie, checking API...');
+    // Kolla localStorage
+    const storedToken = localStorage.getItem('auth_token');
+    if (storedToken) {
       try {
-        const res = await fetch('https://bookr-production.up.railway.app/api/user', {
-          credentials: 'include'
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data.user);
+        const userData = JSON.parse(atob(storedToken));
+        if (userData.user && userData.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
+          console.log('User found in localStorage:', userData.user.email || userData.user.displayName);
+          setUser(userData.user);
+          return;
+        } else {
+          localStorage.removeItem('auth_token');
         }
-      } catch (err) {
-        console.error('API auth failed:', err);
+      } catch (e) {
+        localStorage.removeItem('auth_token');
       }
-    };
+    }
     
-    checkAuth();
+    console.log('No valid authentication found');
   }, []);
 
   // Efter inloggning, återställ URL om det finns sparade parametrar
