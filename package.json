@@ -5,7 +5,7 @@
   "main": "OneBookR/backend/server.js",
   "scripts": {
     "start": "cd OneBookR/backend && node server.js",
-    "build": "echo 'Build complete'",
+    "build": "cd OneBookR/calendar-frontend && npm install && npm run build",
     "postinstall": "cd OneBookR/backend && npm install"
   },
   "engines": {
