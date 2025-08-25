@@ -976,99 +976,87 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-// Väntelista - persistent fillagring
-import fs from 'fs';
-const waitlistFile = path.join(process.cwd(), 'waitlist.json');
+// Väntelista - PERMANENT LAGRING I FIRESTORE (INGEN DATA FÖRSVINNER ALDRIG)
+import { addToWaitlist, getWaitlist, getWaitlistCount, checkEmailInWaitlist } from './firestore.js';
 
-// Ladda befintlig väntelista från fil
-let waitlist = [];
-try {
-  if (fs.existsSync(waitlistFile)) {
-    const data = fs.readFileSync(waitlistFile, 'utf8');
-    waitlist = JSON.parse(data);
-    console.log(`Laddade ${waitlist.length} personer från väntelistan`);
-  }
-} catch (err) {
-  console.error('Kunde inte ladda väntelista:', err);
-  waitlist = [];
-}
-
-// Funktion för att spara väntelistan till fil
-const saveWaitlist = () => {
-  try {
-    fs.writeFileSync(waitlistFile, JSON.stringify(waitlist, null, 2));
-  } catch (err) {
-    console.error('Kunde inte spara väntelista:', err);
-  }
-};
-
-// Lägg till på väntelista
+// Lägg till på väntelista - PERMANENT LAGRING
 app.post('/api/waitlist', async (req, res) => {
   const { email, name } = req.body;
   if (!email || !name) {
     return res.status(400).json({ error: 'Namn och e-post krävs.' });
   }
   
-  // Kolla om redan registrerad
-  const existing = waitlist.find(entry => entry.email === email);
-  if (existing) {
-    return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
-  }
-  
-  const entry = {
-    email,
-    name,
-    timestamp: new Date().toISOString()
-  };
-  
-  waitlist.push(entry);
-  saveWaitlist();
-  
-  // Skicka bekräftelse-mejl
   try {
-    const transporter = nodemailer.createTransporter({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+    // Kolla om redan registrerad i Firestore
+    const existing = await checkEmailInWaitlist(email);
+    if (existing) {
+      return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
+    }
     
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Välkommen till BookR väntelista! 🎉',
-      text: `Hej ${name}!\n\nTack för att du gått med på BookR:s väntelista. Du kommer att få tidig access när vi lanserar!\n\nBookR hjälper dig att:\n• Hitta gemensamma lediga tider automatiskt\n• Slippa mejlkarusellen när ni ska boka möten\n• Få Google Meet-länkar skapade automatiskt\n• Koordinera med vänner, familj och kollegor\n\nVi hör av oss så snart vi är redo för beta-lansering.\n\nHälsningar,\nBookR-teamet`,
-    });
+    // Lägg till i Firestore - PERMANENT LAGRING
+    await addToWaitlist(email, name);
+    const totalCount = await getWaitlistCount();
     
-    // Meddela admin
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: 'onebookr@gmail.com',
-      subject: 'Ny registrering på BookR väntelista',
-      text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${entry.timestamp}\n\nTotalt antal: ${waitlist.length}`,
-    });
-  } catch (err) {
-    console.error('Fel vid mejlutskick:', err);
+    // Skicka bekräftelse-mejl
+    try {
+      const transporter = nodemailer.createTransporter({
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS,
+        },
+      });
+      
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Välkommen till BookR väntelista! 🎉',
+        text: `Hej ${name}!\n\nTack för att du gått med på BookR:s väntelista. Du kommer att få tidig access när vi lanserar!\n\nBookR hjälper dig att:\n• Hitta gemensamma lediga tider automatiskt\n• Slippa mejlkarusellen när ni ska boka möten\n• Få Google Meet-länkar skapade automatiskt\n• Koordinera med vänner, familj och kollegor\n\nVi hör av oss så snart vi är redo för beta-lansering.\n\nHälsningar,\nBookR-teamet`,
+      });
+      
+      // Meddela admin
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: 'onebookr@gmail.com',
+        subject: 'Ny registrering på BookR väntelista',
+        text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
+      });
+    } catch (err) {
+      console.error('Fel vid mejlutskick:', err);
+    }
+    
+    res.json({ success: true, count: totalCount });
+  } catch (error) {
+    console.error('Fel vid registrering på väntelista:', error);
+    res.status(500).json({ error: 'Kunde inte registrera på väntelistan.' });
   }
-  
-  res.json({ success: true, count: waitlist.length });
 });
 
-// Hämta antal på väntelista
-app.get('/api/waitlist/count', (req, res) => {
-  res.json({ count: waitlist.length });
+// Hämta antal på väntelista - FRÅN FIRESTORE
+app.get('/api/waitlist/count', async (req, res) => {
+  try {
+    const count = await getWaitlistCount();
+    res.json({ count });
+  } catch (error) {
+    console.error('Fel vid hämtning av väntelista-antal:', error);
+    res.status(500).json({ error: 'Kunde inte hämta antal.' });
+  }
 });
 
-// Admin: Hämta hela väntelistan (skyddad)
-app.get('/api/waitlist/admin', (req, res) => {
+// Admin: Hämta hela väntelistan (skyddad) - FRÅN FIRESTORE
+app.get('/api/waitlist/admin', async (req, res) => {
   const adminKey = req.headers['x-admin-key'];
   if (adminKey !== 'bookr-admin-2024') {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   
-  const list = waitlist.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  res.json({ waitlist: list, count: list.length });
+  try {
+    const waitlist = await getWaitlist();
+    res.json({ waitlist, count: waitlist.length });
+  } catch (error) {
+    console.error('Fel vid hämtning av väntelista för admin:', error);
+    res.status(500).json({ error: 'Kunde inte hämta väntelista.' });
+  }
 });
 
 // Generera delningslänk för väntelistan

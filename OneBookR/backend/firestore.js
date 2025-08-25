@@ -140,3 +140,37 @@ export async function updateInvitation(invitationId, updateData) {
   const docRef = doc(db, 'invitations', invitationId);
   await updateDoc(docRef, updateData);
 }
+
+// Väntelista - PERMANENT LAGRING I FIRESTORE
+export async function addToWaitlist(email, name) {
+  const docRef = await addDoc(collection(db, 'waitlist'), {
+    email,
+    name,
+    timestamp: serverTimestamp(),
+    createdAt: new Date().toISOString()
+  });
+  return docRef.id;
+}
+
+export async function getWaitlist() {
+  const querySnapshot = await getDocs(collection(db, 'waitlist'));
+  return querySnapshot.docs.map(doc => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      ...data,
+      timestamp: data.timestamp?.toDate?.()?.toISOString() || data.createdAt || data.timestamp
+    };
+  }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+}
+
+export async function getWaitlistCount() {
+  const querySnapshot = await getDocs(collection(db, 'waitlist'));
+  return querySnapshot.size;
+}
+
+export async function checkEmailInWaitlist(email) {
+  const q = query(collection(db, 'waitlist'), where('email', '==', email));
+  const querySnapshot = await getDocs(q);
+  return !querySnapshot.empty;
+}
