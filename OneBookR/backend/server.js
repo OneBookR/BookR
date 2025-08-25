@@ -22,15 +22,6 @@ const PORT = process.env.PORT || 3000;
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
 
-// Catch-all route för React Router
-app.get('*', (req, res, next) => {
-  // Skip API routes
-  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) {
-    return next();
-  }
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
 // Dashboard route
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
@@ -1054,6 +1045,11 @@ app.get('/api/waitlist/admin', (req, res) => {
   
   const list = Array.from(waitlist).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   res.json({ waitlist: list, count: list.length });
+});
+
+// Catch-all för React SPA - måste vara sist
+app.get('/*', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
