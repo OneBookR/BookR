@@ -367,22 +367,23 @@ const WaitlistAdmin = () => {
         </Typography>
       </Box>
 
-      {/* Stilrena mätinstrument */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      {/* Kompakta mätinstrument */}
+      <Grid container spacing={2} sx={{ mb: 4 }}>
         {/* Huvudmätare - Total */}
-        <Grid item xs={12} md={3}>
+        <Grid item xs={6} md={3}>
           <Card sx={{ 
-            borderRadius: 4, 
+            borderRadius: 3, 
             background: 'linear-gradient(135deg, #635bff 0%, #7c4dff 100%)',
             color: 'white',
-            boxShadow: '0 8px 32px rgba(99,91,255,0.3)',
-            border: 'none'
+            boxShadow: '0 4px 16px rgba(99,91,255,0.3)',
+            border: 'none',
+            height: 120
           }}>
-            <CardContent sx={{ textAlign: 'center', py: 4 }}>
-              <Typography variant="h1" sx={{ fontWeight: 800, mb: 1, fontSize: '3rem' }}>
+            <CardContent sx={{ textAlign: 'center', py: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, mb: 0.5, fontSize: '2rem' }}>
                 {stats.total}
               </Typography>
-              <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+              <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 500, fontSize: '0.8rem' }}>
                 Totalt registrerade
               </Typography>
             </CardContent>
@@ -390,18 +391,19 @@ const WaitlistAdmin = () => {
         </Grid>
         
         {/* Dagens mätare */}
-        <Grid item xs={12} md={3}>
+        <Grid item xs={6} md={3}>
           <Card sx={{ 
-            borderRadius: 4, 
+            borderRadius: 3, 
             background: 'linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)',
             color: 'white',
-            boxShadow: '0 8px 32px rgba(76,175,80,0.3)'
+            boxShadow: '0 4px 16px rgba(76,175,80,0.3)',
+            height: 120
           }}>
-            <CardContent sx={{ textAlign: 'center', py: 4 }}>
-              <Typography variant="h2" sx={{ fontWeight: 700, mb: 1 }}>
+            <CardContent sx={{ textAlign: 'center', py: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, mb: 0.5, fontSize: '2rem' }}>
                 +{stats.today}
               </Typography>
-              <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+              <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 500, fontSize: '0.8rem' }}>
                 Idag
               </Typography>
             </CardContent>
@@ -409,21 +411,22 @@ const WaitlistAdmin = () => {
         </Grid>
         
         {/* Veckans mätare */}
-        <Grid item xs={12} md={3}>
+        <Grid item xs={6} md={3}>
           <Card sx={{ 
-            borderRadius: 4, 
+            borderRadius: 3, 
             background: 'linear-gradient(135deg, #ff9800 0%, #ffb74d 100%)',
             color: 'white',
-            boxShadow: '0 8px 32px rgba(255,152,0,0.3)'
+            boxShadow: '0 4px 16px rgba(255,152,0,0.3)',
+            height: 120
           }}>
-            <CardContent sx={{ textAlign: 'center', py: 4 }}>
-              <Typography variant="h2" sx={{ fontWeight: 700, mb: 1 }}>
+            <CardContent sx={{ textAlign: 'center', py: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, mb: 0.5, fontSize: '2rem' }}>
                 +{stats.week}
               </Typography>
-              <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+              <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 500, fontSize: '0.8rem' }}>
                 Senaste veckan
               </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.75rem' }}>
+              <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.7rem' }}>
                 +{stats.weekGrowth}% tillväxt
               </Typography>
             </CardContent>
@@ -431,21 +434,22 @@ const WaitlistAdmin = () => {
         </Grid>
         
         {/* Månadens mätare */}
-        <Grid item xs={12} md={3}>
+        <Grid item xs={6} md={3}>
           <Card sx={{ 
-            borderRadius: 4, 
+            borderRadius: 3, 
             background: 'linear-gradient(135deg, #e91e63 0%, #f06292 100%)',
             color: 'white',
-            boxShadow: '0 8px 32px rgba(233,30,99,0.3)'
+            boxShadow: '0 4px 16px rgba(233,30,99,0.3)',
+            height: 120
           }}>
-            <CardContent sx={{ textAlign: 'center', py: 4 }}>
-              <Typography variant="h2" sx={{ fontWeight: 700, mb: 1 }}>
+            <CardContent sx={{ textAlign: 'center', py: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, mb: 0.5, fontSize: '2rem' }}>
                 +{stats.month}
               </Typography>
-              <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+              <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 500, fontSize: '0.8rem' }}>
                 Senaste månaden
               </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.75rem' }}>
+              <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.7rem' }}>
                 +{stats.monthGrowth}% tillväxt
               </Typography>
             </CardContent>
@@ -453,10 +457,10 @@ const WaitlistAdmin = () => {
         </Grid>
       </Grid>
 
-      {/* Stilrena diagram */}
+      {/* Expanderade diagram */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        {/* Huvuddiagram - Tillväxt */}
-        <Grid item xs={12} lg={8}>
+        {/* Huvuddiagram - Tillväxt (bredare) */}
+        <Grid item xs={12} lg={9}>
           <Paper sx={{ 
             p: 4, 
             borderRadius: 4, 
@@ -482,24 +486,24 @@ const WaitlistAdmin = () => {
           </Paper>
         </Grid>
         
-        {/* Sidodiagram - Periodanalys */}
-        <Grid item xs={12} lg={4}>
+        {/* Sidodiagram - Periodanalys (smalare) */}
+        <Grid item xs={12} lg={3}>
           <Paper sx={{ 
-            p: 4, 
+            p: 3, 
             borderRadius: 4, 
             boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
             border: '1px solid rgba(99,91,255,0.1)',
             background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)'
           }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <Box sx={{ 
                 width: 4, 
-                height: 24, 
+                height: 20, 
                 background: 'linear-gradient(135deg, #ff9800 0%, #ffb74d 100%)', 
                 borderRadius: 2, 
-                mr: 2 
+                mr: 1.5 
               }} />
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540' }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', fontSize: '1rem' }}>
                 Periodanalys
               </Typography>
             </Box>
@@ -509,12 +513,14 @@ const WaitlistAdmin = () => {
               exclusive
               onChange={handlePeriodChange}
               size="small"
+              orientation="vertical"
               sx={{ 
-                mb: 3, 
+                mb: 2, 
                 width: '100%',
                 '& .MuiToggleButton-root': {
                   borderRadius: 2,
                   border: '1px solid rgba(99,91,255,0.2)',
+                  mb: 0.5,
                   '&.Mui-selected': {
                     background: 'linear-gradient(135deg, #635bff 0%, #7c4dff 100%)',
                     color: 'white',
@@ -525,13 +531,13 @@ const WaitlistAdmin = () => {
                 }
               }}
             >
-              <ToggleButton value="today" sx={{ flex: 1, fontSize: '0.75rem' }}>Idag</ToggleButton>
-              <ToggleButton value="week" sx={{ flex: 1, fontSize: '0.75rem' }}>Vecka</ToggleButton>
-              <ToggleButton value="month" sx={{ flex: 1, fontSize: '0.75rem' }}>Månad</ToggleButton>
-              <ToggleButton value="total" sx={{ flex: 1, fontSize: '0.75rem' }}>Totalt</ToggleButton>
+              <ToggleButton value="today" sx={{ width: '100%', fontSize: '0.75rem' }}>Idag</ToggleButton>
+              <ToggleButton value="week" sx={{ width: '100%', fontSize: '0.75rem' }}>Vecka</ToggleButton>
+              <ToggleButton value="month" sx={{ width: '100%', fontSize: '0.75rem' }}>Månad</ToggleButton>
+              <ToggleButton value="total" sx={{ width: '100%', fontSize: '0.75rem' }}>Totalt</ToggleButton>
             </ToggleButtonGroup>
             
-            <Box sx={{ height: 300, position: 'relative' }}>
+            <Box sx={{ height: 320, position: 'relative' }}>
               <canvas id="barChart"></canvas>
             </Box>
           </Paper>
