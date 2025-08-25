@@ -978,7 +978,6 @@ app.post('/api/contact', async (req, res) => {
 
 // Väntelista - persistent fillagring
 const fs = require('fs');
-const path = require('path');
 const waitlistFile = path.join(process.cwd(), 'waitlist.json');
 
 // Ladda befintlig väntelista från fil
