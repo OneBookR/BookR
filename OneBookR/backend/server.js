@@ -1054,7 +1054,19 @@ app.post('/api/waitlist/invite', async (req, res) => {
     return res.status(400).json({ error: 'E-post krävs.' });
   }
   
+  // Validera e-postformat
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: 'Ogiltig e-postadress.' });
+  }
+  
   try {
+    // Kontrollera att mejlkonfiguration finns
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error('Mejlkonfiguration saknas');
+      return res.status(500).json({ error: 'Mejltjänst inte konfigurerad.' });
+    }
+    
     const transporter = nodemailer.createTransporter({
       service: 'gmail',
       auth: {
@@ -1069,54 +1081,14 @@ app.post('/api/waitlist/invite', async (req, res) => {
       from: process.env.EMAIL_USER,
       to: email,
       subject: 'Du borde skriva upp dig på väntelistan för BookR! 🚀',
-      html: `
-        <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #0a2540; font-size: 28px; margin-bottom: 10px;">📅 Sluta slösa tid på att boka möten!</h1>
-            <p style="color: #425466; font-size: 18px; line-height: 1.6;">
-              En vän tyckte att du skulle kolla in BookR – appen som gör slut på mejlkaoset när ni ska boka möten.
-            </p>
-          </div>
-          
-          <div style="background: #f8f9ff; border: 1px solid #e3e8ff; border-radius: 12px; padding: 25px; margin: 25px 0;">
-            <h2 style="color: #635bff; margin-top: 0;">⚡ Istället för detta:</h2>
-            <p style="color: #666; font-style: italic; margin-bottom: 15px;">
-              "När passar det dig?" → "Hmm, inte måndag..." → "Tisdag då?" → "Nej, har möte..." → 15 mejl senare...
-            </p>
-            <h2 style="color: #2e7d32; margin-bottom: 0;">✅ Gör så här:</h2>
-            <p style="color: #666; margin-top: 5px;">
-              Alla loggar in → Ser lediga tider → Klickar på en → Möte bokat med Meet-länk på 30 sekunder!
-            </p>
-          </div>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${waitlistUrl}" style="
-              display: inline-block;
-              background: linear-gradient(90deg, #635bff 0%, #6c47ff 100%);
-              color: white;
-              text-decoration: none;
-              padding: 15px 30px;
-              border-radius: 8px;
-              font-weight: 600;
-              font-size: 18px;
-            ">
-              🚀 Gå med på väntelistan – helt gratis!
-            </a>
-          </div>
-          
-          <div style="text-align: center; color: #888; font-size: 14px; margin-top: 30px;">
-            <p>100% gratis • Inga kreditkort • Lanseras inom kort</p>
-            <p>Redan ${waitlist.size}+ personer väntar på tidig access!</p>
-          </div>
-        </div>
-      `,
-      text: `Hej!\n\nEn vän tyckte att du skulle kolla in BookR - appen som gör slut på mejlkaoset när ni ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!\n\nMvh,\nBookR-teamet`
+      text: `Hej!\n\nEn vän tyckte att du skulle kolla in BookR - appen som gör slut på mejlkaoset när ni ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!\n\nRedan ${waitlist.size}+ personer väntar på tidig access!\n\nMvh,\nBookR-teamet`
     });
     
+    console.log(`Inbjudan skickad till: ${email}`);
     res.json({ success: true });
   } catch (err) {
-    console.error('Fel vid inbjudningsmail:', err);
-    res.status(500).json({ error: 'Kunde inte skicka inbjudan.' });
+    console.error('Fel vid inbjudningsmail:', err.message);
+    res.status(500).json({ error: 'Kunde inte skicka inbjudan. Försök igen senare.' });
   }
 });
 
