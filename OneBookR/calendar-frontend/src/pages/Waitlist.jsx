@@ -13,6 +13,7 @@ const Waitlist = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [waitlistCount, setWaitlistCount] = useState(0);
+  const [successOverlay, setSuccessOverlay] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/waitlist/count`)
@@ -34,7 +35,8 @@ const Waitlist = () => {
       });
 
       if (res.ok) {
-        setToast({ open: true, message: 'Tack! Du är nu med på väntelistan 🎉', severity: 'success' });
+        // Show success overlay instead of toast
+        setSuccessOverlay(true);
         setEmail('');
         setName('');
         setWaitlistCount(prev => prev + 1);
@@ -288,10 +290,48 @@ const Waitlist = () => {
             <Typography variant="h4" sx={{ 
               color: '#2e7d32', 
               fontWeight: 700,
-              fontSize: '1.8rem'
+              fontSize: '1.8rem',
+              mb: 6
             }}>
               ...till 30 sekunder och klart! ✨
             </Typography>
+            
+            {/* Detailed explanation */}
+            <Container maxWidth="md">
+              <Typography variant="body1" sx={{
+                color: '#425466',
+                fontSize: '1.2rem',
+                lineHeight: 1.7,
+                textAlign: 'left',
+                mb: 4
+              }}>
+                BookR fungerar genom att säkert ansluta till din Google-kalender och läsa endast grundläggande information: 
+                är du ledig eller upptagen vid specifika tidpunkter. Vi ser aldrig vad du gör, var du är eller med vem.
+              </Typography>
+              
+              <Typography variant="body1" sx={{
+                color: '#425466',
+                fontSize: '1.2rem',
+                lineHeight: 1.7,
+                textAlign: 'left',
+                mb: 4
+              }}>
+                När du bjuder in andra personer får de en unik länk där de loggar in på samma sätt. BookR jämför sedan 
+                automatiskt alla era kalendrar och visar endast de tider när <strong>alla</strong> är lediga samtidigt. 
+                Inga personliga detaljer delas någonsin.
+              </Typography>
+              
+              <Typography variant="body1" sx={{
+                color: '#425466',
+                fontSize: '1.2rem',
+                lineHeight: 1.7,
+                textAlign: 'left'
+              }}>
+                När ni hittat en tid som passar alla klickar ni bara på den. BookR skapar då automatiskt en Google Meet-länk, 
+                lägger till mötet i allas kalendrar och skickar ut inbjudningar via mejl. Allt detta händer på några sekunder 
+                – utan att ni behöver skriva ett enda mejl eller koordinera manuellt.
+              </Typography>
+            </Container>
           </Box>
         </Container>
       </Box>
@@ -452,6 +492,74 @@ const Waitlist = () => {
           </Typography>
         </Container>
       </Box>
+
+      {/* Success Overlay */}
+      {successOverlay && (
+        <Box sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          bgcolor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <Paper sx={{
+            p: 6,
+            borderRadius: 4,
+            textAlign: 'center',
+            maxWidth: 500,
+            mx: 2,
+            background: 'linear-gradient(135deg, #f8fff8 0%, #e8f5e8 100%)',
+            border: '2px solid #4caf50'
+          }}>
+            <Typography sx={{ fontSize: '4rem', mb: 2 }}>🎉</Typography>
+            <Typography variant="h4" sx={{
+              color: '#2e7d32',
+              fontWeight: 700,
+              mb: 2
+            }}>
+              Välkommen till väntelistan!
+            </Typography>
+            <Typography variant="body1" sx={{
+              color: '#1b5e20',
+              fontSize: '1.2rem',
+              mb: 3,
+              lineHeight: 1.6
+            }}>
+              Tack för att du skrev upp dig! Du kommer att få ett mejl så snart BookR lanseras 
+              med tidig access till alla funktioner.
+            </Typography>
+            <Typography variant="body2" sx={{
+              color: '#2e7d32',
+              mb: 4,
+              fontWeight: 600
+            }}>
+              Du är nu person #{waitlistCount} på väntelistan
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={() => setSuccessOverlay(false)}
+              sx={{
+                bgcolor: '#4caf50',
+                color: '#fff',
+                fontWeight: 600,
+                py: 1.5,
+                px: 4,
+                borderRadius: 3,
+                '&:hover': {
+                  bgcolor: '#45a049'
+                }
+              }}
+            >
+              Stäng
+            </Button>
+          </Paper>
+        </Box>
+      )}
 
       <Snackbar
         open={toast.open}
