@@ -367,130 +367,168 @@ const WaitlistAdmin = () => {
         </Typography>
       </Box>
 
-      {/* Stats Section */}
-      <Grid container spacing={4} sx={{ mb: 4 }}>
-        {/* Total Count */}
-        <Grid item xs={12} md={4}>
-          <Card sx={{ borderRadius: 3, boxShadow: '0 4px 20px rgba(99,91,255,0.1)' }}>
+      {/* Stilrena mätinstrument */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        {/* Huvudmätare - Total */}
+        <Grid item xs={12} md={3}>
+          <Card sx={{ 
+            borderRadius: 4, 
+            background: 'linear-gradient(135deg, #635bff 0%, #7c4dff 100%)',
+            color: 'white',
+            boxShadow: '0 8px 32px rgba(99,91,255,0.3)',
+            border: 'none'
+          }}>
             <CardContent sx={{ textAlign: 'center', py: 4 }}>
-              <Typography variant="h2" sx={{ color: '#635bff', fontWeight: 700, mb: 1 }}>
+              <Typography variant="h1" sx={{ fontWeight: 800, mb: 1, fontSize: '3rem' }}>
                 {stats.total}
               </Typography>
-              <Typography variant="h6" sx={{ color: '#666', fontWeight: 500 }}>
+              <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 500 }}>
                 Totalt registrerade
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         
-        {/* Stats List */}
-        <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 3, borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
-            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#0a2540' }}>
-              Registreringar
-            </Typography>
-            
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                py: 2, 
-                px: 3, 
-                bgcolor: '#f8f9ff', 
-                borderRadius: 2,
-                border: '1px solid #e3e8ff'
-              }}>
-                <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
-                  Idag
-                </Typography>
-                <Typography variant="h5" sx={{ color: '#2e7d32', fontWeight: 700 }}>
-                  +{stats.today}
-                </Typography>
-              </Box>
-              
-              <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                py: 2, 
-                px: 3, 
-                bgcolor: '#f8f9ff', 
-                borderRadius: 2,
-                border: '1px solid #e3e8ff'
-              }}>
-                <Box>
-                  <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
-                    Senaste veckan
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 500 }}>
-                    +{stats.weekGrowth}% tillväxt
-                  </Typography>
-                </Box>
-                <Typography variant="h5" sx={{ color: '#f57c00', fontWeight: 700 }}>
-                  +{stats.week}
-                </Typography>
-              </Box>
-              
-              <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                py: 2, 
-                px: 3, 
-                bgcolor: '#f8f9ff', 
-                borderRadius: 2,
-                border: '1px solid #e3e8ff'
-              }}>
-                <Box>
-                  <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
-                    Senaste månaden
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 500 }}>
-                    +{stats.monthGrowth}% tillväxt
-                  </Typography>
-                </Box>
-                <Typography variant="h5" sx={{ color: '#d32f2f', fontWeight: 700 }}>
-                  +{stats.month}
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
+        {/* Dagens mätare */}
+        <Grid item xs={12} md={3}>
+          <Card sx={{ 
+            borderRadius: 4, 
+            background: 'linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)',
+            color: 'white',
+            boxShadow: '0 8px 32px rgba(76,175,80,0.3)'
+          }}>
+            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="h2" sx={{ fontWeight: 700, mb: 1 }}>
+                +{stats.today}
+              </Typography>
+              <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+                Idag
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        {/* Veckans mätare */}
+        <Grid item xs={12} md={3}>
+          <Card sx={{ 
+            borderRadius: 4, 
+            background: 'linear-gradient(135deg, #ff9800 0%, #ffb74d 100%)',
+            color: 'white',
+            boxShadow: '0 8px 32px rgba(255,152,0,0.3)'
+          }}>
+            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="h2" sx={{ fontWeight: 700, mb: 1 }}>
+                +{stats.week}
+              </Typography>
+              <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+                Senaste veckan
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.75rem' }}>
+                +{stats.weekGrowth}% tillväxt
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        {/* Månadens mätare */}
+        <Grid item xs={12} md={3}>
+          <Card sx={{ 
+            borderRadius: 4, 
+            background: 'linear-gradient(135deg, #e91e63 0%, #f06292 100%)',
+            color: 'white',
+            boxShadow: '0 8px 32px rgba(233,30,99,0.3)'
+          }}>
+            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="h2" sx={{ fontWeight: 700, mb: 1 }}>
+                +{stats.month}
+              </Typography>
+              <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+                Senaste månaden
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.8, fontSize: '0.75rem' }}>
+                +{stats.monthGrowth}% tillväxt
+              </Typography>
+            </CardContent>
+          </Card>
         </Grid>
       </Grid>
 
-      {/* Charts */}
-      <Grid container spacing={4} sx={{ mb: 4 }}>
-        {/* Line Chart */}
+      {/* Stilrena diagram */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        {/* Huvuddiagram - Tillväxt */}
         <Grid item xs={12} lg={8}>
-          <Paper sx={{ p: 3, borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
-            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#0a2540' }}>
-              Tillväxt över tid
-            </Typography>
+          <Paper sx={{ 
+            p: 4, 
+            borderRadius: 4, 
+            boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
+            border: '1px solid rgba(99,91,255,0.1)',
+            background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)'
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+              <Box sx={{ 
+                width: 4, 
+                height: 24, 
+                background: 'linear-gradient(135deg, #635bff 0%, #7c4dff 100%)', 
+                borderRadius: 2, 
+                mr: 2 
+              }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540' }}>
+                Tillväxt över tid
+              </Typography>
+            </Box>
             <Box sx={{ height: 400, position: 'relative' }}>
               <canvas id="lineChart"></canvas>
             </Box>
           </Paper>
         </Grid>
         
-        {/* Bar Chart */}
+        {/* Sidodiagram - Periodanalys */}
         <Grid item xs={12} lg={4}>
-          <Paper sx={{ p: 3, borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#0a2540' }}>
-              Registreringar per period
-            </Typography>
+          <Paper sx={{ 
+            p: 4, 
+            borderRadius: 4, 
+            boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
+            border: '1px solid rgba(99,91,255,0.1)',
+            background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)'
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+              <Box sx={{ 
+                width: 4, 
+                height: 24, 
+                background: 'linear-gradient(135deg, #ff9800 0%, #ffb74d 100%)', 
+                borderRadius: 2, 
+                mr: 2 
+              }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540' }}>
+                Periodanalys
+              </Typography>
+            </Box>
             
             <ToggleButtonGroup
               value={chartPeriod}
               exclusive
               onChange={handlePeriodChange}
               size="small"
-              sx={{ mb: 3, width: '100%' }}
+              sx={{ 
+                mb: 3, 
+                width: '100%',
+                '& .MuiToggleButton-root': {
+                  borderRadius: 2,
+                  border: '1px solid rgba(99,91,255,0.2)',
+                  '&.Mui-selected': {
+                    background: 'linear-gradient(135deg, #635bff 0%, #7c4dff 100%)',
+                    color: 'white',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #5e35b1 0%, #673ab7 100%)'
+                    }
+                  }
+                }
+              }}
             >
-              <ToggleButton value="today" sx={{ flex: 1 }}>Idag</ToggleButton>
-              <ToggleButton value="week" sx={{ flex: 1 }}>Vecka</ToggleButton>
-              <ToggleButton value="month" sx={{ flex: 1 }}>Månad</ToggleButton>
-              <ToggleButton value="total" sx={{ flex: 1 }}>Totalt</ToggleButton>
+              <ToggleButton value="today" sx={{ flex: 1, fontSize: '0.75rem' }}>Idag</ToggleButton>
+              <ToggleButton value="week" sx={{ flex: 1, fontSize: '0.75rem' }}>Vecka</ToggleButton>
+              <ToggleButton value="month" sx={{ flex: 1, fontSize: '0.75rem' }}>Månad</ToggleButton>
+              <ToggleButton value="total" sx={{ flex: 1, fontSize: '0.75rem' }}>Totalt</ToggleButton>
             </ToggleButtonGroup>
             
             <Box sx={{ height: 300, position: 'relative' }}>
@@ -500,39 +538,102 @@ const WaitlistAdmin = () => {
         </Grid>
       </Grid>
 
-      {/* Table */}
-      <Paper sx={{ borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
-        <Box sx={{ p: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540' }}>
-            Alla registrerade ({waitlist.length})
-          </Typography>
+      {/* Stilren datatabell */}
+      <Paper sx={{ 
+        borderRadius: 4, 
+        boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
+        border: '1px solid rgba(99,91,255,0.1)',
+        overflow: 'hidden'
+      }}>
+        <Box sx={{ 
+          p: 4, 
+          background: 'linear-gradient(135deg, #635bff 0%, #7c4dff 100%)',
+          color: 'white',
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center' 
+        }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>
+              Registrerade användare
+            </Typography>
+            <Typography variant="body2" sx={{ opacity: 0.9 }}>
+              {waitlist.length} personer på väntelistan
+            </Typography>
+          </Box>
           <Button 
             variant="contained" 
             onClick={exportCSV}
             sx={{ 
-              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-              fontWeight: 600
+              background: 'rgba(255,255,255,0.2)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255,255,255,0.3)',
+              color: 'white',
+              fontWeight: 600,
+              borderRadius: 3,
+              '&:hover': {
+                background: 'rgba(255,255,255,0.3)'
+              }
             }}
           >
-            Exportera CSV
+            📈 Exportera CSV
           </Button>
         </Box>
         
-        <TableContainer>
-          <Table>
+        <TableContainer sx={{ maxHeight: 600 }}>
+          <Table stickyHeader>
             <TableHead>
-              <TableRow sx={{ bgcolor: '#f8f9ff' }}>
-                <TableCell sx={{ fontWeight: 600 }}>Namn</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>E-post</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Registrerad</TableCell>
+              <TableRow>
+                <TableCell sx={{ 
+                  fontWeight: 700, 
+                  bgcolor: '#f8f9ff',
+                  borderBottom: '2px solid #635bff',
+                  color: '#0a2540'
+                }}>
+                  Namn
+                </TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 700, 
+                  bgcolor: '#f8f9ff',
+                  borderBottom: '2px solid #635bff',
+                  color: '#0a2540'
+                }}>
+                  E-post
+                </TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 700, 
+                  bgcolor: '#f8f9ff',
+                  borderBottom: '2px solid #635bff',
+                  color: '#0a2540'
+                }}>
+                  Registrerad
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {waitlist.map((entry, index) => (
-                <TableRow key={index} sx={{ '&:hover': { bgcolor: '#f8f9ff' } }}>
-                  <TableCell>{entry.name}</TableCell>
-                  <TableCell>{entry.email}</TableCell>
-                  <TableCell>{new Date(entry.timestamp).toLocaleString('sv-SE')}</TableCell>
+                <TableRow 
+                  key={index} 
+                  sx={{ 
+                    '&:hover': { 
+                      bgcolor: 'rgba(99,91,255,0.05)',
+                      transform: 'scale(1.001)',
+                      transition: 'all 0.2s ease'
+                    },
+                    '&:nth-of-type(even)': {
+                      bgcolor: 'rgba(99,91,255,0.02)'
+                    }
+                  }}
+                >
+                  <TableCell sx={{ fontWeight: 500, color: '#0a2540' }}>
+                    {entry.name}
+                  </TableCell>
+                  <TableCell sx={{ color: '#666' }}>
+                    {entry.email}
+                  </TableCell>
+                  <TableCell sx={{ color: '#666', fontSize: '0.875rem' }}>
+                    {new Date(entry.timestamp).toLocaleString('sv-SE')}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
