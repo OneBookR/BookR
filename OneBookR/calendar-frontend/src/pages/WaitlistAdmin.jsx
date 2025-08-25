@@ -203,59 +203,75 @@ const WaitlistAdmin = () => {
         return { labels: ['Idag'], values: [todayCount] };
         
       case 'week':
-        const weekData = {};
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date(now);
-          date.setDate(date.getDate() - i);
+        // Visa måndag till söndag för aktuell vecka
+        const startOfWeek = new Date(now);
+        const dayOfWeek = startOfWeek.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Måndag som första dag
+        startOfWeek.setDate(startOfWeek.getDate() + mondayOffset);
+        
+        const weekData = [];
+        const weekLabels = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'];
+        
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(startOfWeek);
+          date.setDate(startOfWeek.getDate() + i);
           const dateStr = date.toISOString().split('T')[0];
-          weekData[dateStr] = 0;
+          
+          const dayCount = data.filter(entry => {
+            const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+            return entryDate === dateStr;
+          }).length;
+          
+          weekData.push(dayCount);
         }
-        data.forEach(entry => {
-          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
-          if (weekData.hasOwnProperty(entryDate)) {
-            weekData[entryDate]++;
-          }
-        });
+        
         return {
-          labels: Object.keys(weekData).map(date => 
-            new Date(date).toLocaleDateString('sv-SE', { weekday: 'short' })
-          ),
-          values: Object.values(weekData)
+          labels: weekLabels,
+          values: weekData
         };
         
       case 'month':
-        const monthData = {};
-        for (let i = 29; i >= 0; i--) {
-          const date = new Date(now);
-          date.setDate(date.getDate() - i);
-          const dateStr = date.toISOString().split('T')[0];
-          monthData[dateStr] = 0;
+        // Visa veckor för aktuell månad (4-5 veckor)
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        
+        // Hitta första måndag i eller före månaden
+        const firstMonday = new Date(startOfMonth);
+        const firstDayOfWeek = firstMonday.getDay();
+        const mondayOffsetMonth = firstDayOfWeek === 0 ? -6 : 1 - firstDayOfWeek;
+        firstMonday.setDate(firstMonday.getDate() + mondayOffsetMonth);
+        
+        const weeklyData = [];
+        const weeklyLabels = [];
+        let currentWeekStart = new Date(firstMonday);
+        let weekNumber = 1;
+        
+        while (currentWeekStart <= endOfMonth) {
+          const weekEnd = new Date(currentWeekStart);
+          weekEnd.setDate(currentWeekStart.getDate() + 6);
+          
+          const weekCount = data.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            return entryDate >= currentWeekStart && entryDate <= weekEnd;
+          }).length;
+          
+          weeklyData.push(weekCount);
+          weeklyLabels.push(`V${weekNumber}`);
+          
+          currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+          weekNumber++;
         }
-        data.forEach(entry => {
-          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
-          if (monthData.hasOwnProperty(entryDate)) {
-            monthData[entryDate]++;
-          }
-        });
+        
         return {
-          labels: Object.keys(monthData).map((date, index) => 
-            index % 5 === 0 ? new Date(date).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' }) : ''
-          ),
-          values: Object.values(monthData)
+          labels: weeklyLabels,
+          values: weeklyData
         };
         
       default: // total
-        const totalData = {};
-        data.forEach(entry => {
-          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
-          totalData[entryDate] = (totalData[entryDate] || 0) + 1;
-        });
-        const sortedDates = Object.keys(totalData).sort();
+        const totalCount = data.length;
         return {
-          labels: sortedDates.map(date => 
-            new Date(date).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })
-          ),
-          values: sortedDates.map(date => totalData[date])
+          labels: ['Totalt'],
+          values: [totalCount]
         };
     }
   };
