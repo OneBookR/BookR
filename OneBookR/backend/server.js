@@ -1047,49 +1047,21 @@ app.get('/api/waitlist/admin', (req, res) => {
   res.json({ waitlist: list, count: list.length });
 });
 
-// Bjud in vän till väntelistan
-app.post('/api/waitlist/invite', async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'E-post krävs.' });
-  }
+// Generera delningslänk för väntelistan
+app.post('/api/waitlist/share', (req, res) => {
+  const waitlistUrl = 'https://bookr-production.up.railway.app/waitlist';
+  const message = encodeURIComponent('Kolla in BookR - slipp mejlkaoset när ni ska boka möten! 🚀');
   
-  // Validera e-postformat
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ error: 'Ogiltig e-postadress.' });
-  }
+  const shareLinks = {
+    email: `mailto:?subject=${encodeURIComponent('Du borde kolla in BookR!')}&body=${encodeURIComponent(`Hej!\n\nJag hittade BookR - en app som gör slut på mejlkaoset när man ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!`)}`,
+    whatsapp: `https://wa.me/?text=${message}%20${encodeURIComponent(waitlistUrl)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(waitlistUrl)}`,
+    twitter: `https://twitter.com/intent/tweet?text=${message}&url=${encodeURIComponent(waitlistUrl)}`,
+    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(waitlistUrl)}`,
+    copy: waitlistUrl
+  };
   
-  try {
-    // Kontrollera att mejlkonfiguration finns
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.error('Mejlkonfiguration saknas');
-      return res.status(500).json({ error: 'Mejltjänst inte konfigurerad.' });
-    }
-    
-    const transporter = nodemailer.createTransporter({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-    
-    const waitlistUrl = 'https://bookr-production.up.railway.app/waitlist';
-    
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Du borde skriva upp dig på väntelistan för BookR! 🚀',
-      text: `Hej!\n\nEn vän tyckte att du skulle kolla in BookR - appen som gör slut på mejlkaoset när ni ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!\n\nRedan ${waitlist.size}+ personer väntar på tidig access!\n\nMvh,\nBookR-teamet`
-    });
-    
-    console.log(`Inbjudan skickad till: ${email}`);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Fel vid inbjudningsmail:', err.message);
-    res.status(500).json({ error: 'Kunde inte skicka inbjudan. Försök igen senare.' });
-  }
+  res.json({ shareLinks, waitlistUrl });
 });
 
 // Specifika routes för React SPA
