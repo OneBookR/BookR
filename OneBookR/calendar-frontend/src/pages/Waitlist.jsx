@@ -14,6 +14,8 @@ const Waitlist = () => {
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [waitlistCount, setWaitlistCount] = useState(0);
   const [successOverlay, setSuccessOverlay] = useState(false);
+  const [friendEmail, setFriendEmail] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/waitlist/count`)
@@ -48,6 +50,31 @@ const Waitlist = () => {
       setToast({ open: true, message: 'Något gick fel. Försök igen.', severity: 'error' });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleInviteFriend = async () => {
+    if (!friendEmail) return;
+    
+    setIsInviting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/waitlist/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: friendEmail })
+      });
+      
+      if (res.ok) {
+        setToast({ open: true, message: 'Inbjudan skickad! 📧', severity: 'success' });
+        setFriendEmail('');
+      } else {
+        const data = await res.json();
+        setToast({ open: true, message: data.error || 'Något gick fel', severity: 'error' });
+      }
+    } catch (err) {
+      setToast({ open: true, message: 'Något gick fel. Försök igen.', severity: 'error' });
+    } finally {
+      setIsInviting(false);
     }
   };
 
@@ -173,9 +200,64 @@ const Waitlist = () => {
           }}>
             🎉 <strong>{waitlistCount}+ personer</strong> väntar redan
           </Typography>
-          <Typography variant="body2" sx={{ color: '#888' }}>
+          <Typography variant="body2" sx={{ color: '#888', mb: 6 }}>
             100% gratis • Inga kreditkort • Lanseras inom kort
           </Typography>
+          
+          {/* Referral Section */}
+          <Paper sx={{
+            p: 4,
+            borderRadius: 4,
+            border: '1px solid #e3e8ff',
+            maxWidth: 500,
+            mx: 'auto',
+            bgcolor: '#f8f9ff'
+          }}>
+            <Typography variant="h6" sx={{ 
+              color: '#0a2540', 
+              fontWeight: 600, 
+              mb: 2,
+              textAlign: 'center'
+            }}>
+              💌 Bjud in en vän
+            </Typography>
+            <Typography variant="body2" sx={{ 
+              color: '#666', 
+              mb: 3,
+              textAlign: 'center'
+            }}>
+              Känner du någon som också slösar tid på att boka möten? Skicka dem en inbjudan!
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                label="Vännens e-post"
+                type="email"
+                value={friendEmail}
+                onChange={(e) => setFriendEmail(e.target.value)}
+                fullWidth
+                size="small"
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+              <Button
+                variant="outlined"
+                onClick={handleInviteFriend}
+                disabled={isInviting || !friendEmail}
+                sx={{
+                  borderRadius: 2,
+                  fontWeight: 600,
+                  minWidth: 120,
+                  borderColor: '#635bff',
+                  color: '#635bff',
+                  '&:hover': {
+                    borderColor: '#635bff',
+                    bgcolor: 'rgba(99,91,255,0.1)'
+                  }
+                }}
+              >
+                {isInviting ? 'Skickar...' : 'Skicka'}
+              </Button>
+            </Box>
+          </Paper>
         </Box>
       </Container>
 
