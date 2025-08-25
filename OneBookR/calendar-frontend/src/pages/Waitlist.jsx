@@ -95,28 +95,28 @@ const Waitlist = () => {
 
   const faqData = [
     {
-      question: "Hur fungerar BookR?",
-      answer: "BookR kopplar ihop dina Google-kalendrar och visar automatiskt när alla är lediga samtidigt. Du bjuder in vänner eller kollegor, alla loggar in med Google, och systemet jämför era kalendrar för att hitta gemensamma lediga tider."
+      question: "Vad är BookR och varför behöver jag det?",
+      answer: "BookR löser det mest irriterande problemet i arbetslivet: att boka möten. Istället för 10+ mejl fram och tillbaka loggar alla bara in, ser direkt när ni alla är lediga, klickar på en tid och får Google Meet-länk automatiskt. Sparar timmar varje vecka."
     },
     {
-      question: "Är mina kalenderdata säkra?",
-      answer: "Ja! Vi använder Googles säkra OAuth-system och läser endast om du är ledig eller upptagen - aldrig vad du gör eller med vem. Dina kalenderdata lagras aldrig permanent hos oss."
+      question: "Hur mycket tid sparar jag egentligen?",
+      answer: "Genomsnittspersonen spenderar 2-3 timmar per vecka på att koordinera möten via mejl. Med BookR tar det 30 sekunder. Det är 2,5 timmar tillbaka i veckan – över 100 timmar per år som du kan använda till viktigare saker."
     },
     {
-      question: "Kostar BookR något?",
-      answer: "BookR kommer att vara gratis för grundfunktioner. Vi planerar premiumfunktioner för större team och företag, men privatpersoner och små grupper kan alltid använda tjänsten kostnadsfritt."
+      question: "Kan andra se vad jag gör i min kalender?",
+      answer: "NEJ! BookR läser bara om du är 'ledig' eller 'upptagen' – aldrig vad du gör, var du är eller med vem. Det är som att fråga 'Kan du på tisdag 14:00?' och få svaret 'Ja' eller 'Nej' – inget mer."
     },
     {
-      question: "Vilka kalendrar stöds?",
-      answer: "Just nu stöder vi Google Calendar, som är den mest använda kalendertjänsten. Vi planerar att lägga till stöd för Outlook/Microsoft 365 och Apple Calendar i framtiden."
+      question: "Vad händer när alla accepterat en tid?",
+      answer: "Magi! 🪄 BookR skapar automatiskt en Google Calendar-händelse, skickar ut inbjudningar till alla, och genererar en Google Meet-länk. Alla får mejl med mötesdetaljer. Du behöver inte göra något mer."
     },
     {
-      question: "Kan jag använda BookR för jobbet?",
-      answer: "Absolut! BookR är perfekt för att koordinera möten med kollegor, kunder och partners. Vi arbetar på företagsfunktioner som integration med Slack och Teams."
+      question: "Kostar det något?",
+      answer: "Grundfunktionerna är alltid 100% gratis för privatpersoner och små grupper. Vi planerar premiumfunktioner för stora företag senare, men du kommer alltid kunna använda BookR gratis för dina vardagsmöten."
     },
     {
-      question: "När lanseras BookR?",
-      answer: "Vi är i slutfasen av utvecklingen och planerar en beta-lansering inom kort. Genom att gå med på väntelistan får du förtur och tidig access till alla nya funktioner."
+      question: "När kan jag börja använda BookR?",
+      answer: "Vi lanserar inom nägra veckor! Genom att gå med på väntelistan får du tidig access innan alla andra. Du får ett mejl så fort vi är redo – inga spam, bara en notis när du kan börja spara tid."
     }
   ];
 
@@ -135,43 +135,147 @@ const Waitlist = () => {
                 lineHeight: 1.1,
                 fontFamily: "'Inter', 'Segoe UI', 'Roboto', sans-serif"
               }}>
-                Slipp kalenderkaoset
+                Sluta slösa tid på att boka möten
               </Typography>
               <Typography variant="h2" sx={{
                 fontSize: { xs: '1.25rem', md: '1.5rem' },
                 color: '#425466',
-                mb: 4,
+                mb: 3,
                 fontWeight: 400,
                 lineHeight: 1.4
               }}>
-                BookR hittar automatiskt när alla är lediga och bokar möten åt dig. 
-                Ingen mer mejlkarusell eller dubbelbokningar.
+                BookR jämför automatiskt alla era Google-kalendrar och visar exakt när ni alla är lediga. 
+                Klicka, välj tid, klart – Google Meet-länk skapas automatiskt.
               </Typography>
               
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 4 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <GroupIcon sx={{ color: '#635bff', fontSize: 20 }} />
-                  <Typography variant="body2" sx={{ color: '#666' }}>
-                    {waitlistCount}+ personer väntar redan
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CheckCircleIcon sx={{ color: '#4caf50', fontSize: 20 }} />
-                  <Typography variant="body2" sx={{ color: '#666' }}>
-                    100% gratis
-                  </Typography>
-                </Box>
+              {/* Problem/Solution */}
+              <Box sx={{ 
+                bgcolor: '#fff3e0', 
+                border: '1px solid #ffcc02', 
+                borderRadius: 2, 
+                p: 2.5, 
+                mb: 3 
+              }}>
+                <Typography variant="body1" sx={{ 
+                  color: '#e65100', 
+                  fontWeight: 600, 
+                  mb: 1,
+                  fontSize: '1.1rem'
+                }}>
+                  🤯 Känner du igen dig?
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#bf360c', mb: 2 }}>
+                  "När passar det dig?" → "Hmm, inte måndag..." → "Tisdag då?" → "Nej, har möte..." 
+                  → 15 mejl senare → "Okej, torsdag 14:00?" → "Glömde bort, har tandläkare..."
+                </Typography>
+                <Typography variant="body1" sx={{ 
+                  color: '#2e7d32', 
+                  fontWeight: 600,
+                  fontSize: '1.05rem'
+                }}>
+                  ✅ Med BookR: Alla loggar in → Ser lediga tider → Klickar på en → Möte bokat med Meet-länk!
+                </Typography>
               </Box>
+              
+              {/* Benefits */}
+              <Grid container spacing={2} sx={{ mb: 4 }}>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box sx={{ 
+                      bgcolor: '#e8f5e8', 
+                      borderRadius: '50%', 
+                      p: 1, 
+                      display: 'flex' 
+                    }}>
+                      <AccessTimeIcon sx={{ color: '#2e7d32', fontSize: 20 }} />
+                    </Box>
+                    <Box>
+                      <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
+                        Sparar 90% av tiden
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        Från timmar till sekunder
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box sx={{ 
+                      bgcolor: '#e3f2fd', 
+                      borderRadius: '50%', 
+                      p: 1, 
+                      display: 'flex' 
+                    }}>
+                      <SecurityIcon sx={{ color: '#1976d2', fontSize: 20 }} />
+                    </Box>
+                    <Box>
+                      <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
+                        100% säkert & gratis
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        Läser bara ledig/upptagen
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box sx={{ 
+                      bgcolor: '#f3e5f5', 
+                      borderRadius: '50%', 
+                      p: 1, 
+                      display: 'flex' 
+                    }}>
+                      <NotificationsIcon sx={{ color: '#7b1fa2', fontSize: 20 }} />
+                    </Box>
+                    <Box>
+                      <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
+                        Automatisk bokning
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        Meet-länk + kalenderinbjudan
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box sx={{ 
+                      bgcolor: '#fff3e0', 
+                      borderRadius: '50%', 
+                      p: 1, 
+                      display: 'flex' 
+                    }}>
+                      <GroupIcon sx={{ color: '#f57c00', fontSize: 20 }} />
+                    </Box>
+                    <Box>
+                      <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
+                        {waitlistCount}+ väntar redan
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        Gå med nu för tidig access
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+              </Grid>
 
               <Paper component="form" onSubmit={handleSubmit} sx={{
                 p: 3,
                 borderRadius: 3,
                 boxShadow: '0 8px 32px rgba(99,91,255,0.12)',
-                border: '1px solid #e3e8ff'
+                border: '2px solid #635bff',
+                bgcolor: 'linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)'
               }}>
-                <Typography variant="h6" sx={{ mb: 2, color: '#0a2540', fontWeight: 600 }}>
-                  🚀 Få tidig access
-                </Typography>
+                <Box sx={{ textAlign: 'center', mb: 2 }}>
+                  <Typography variant="h6" sx={{ color: '#0a2540', fontWeight: 700, mb: 0.5 }}>
+                    🚀 Få tidig access – helt gratis!
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#635bff', fontWeight: 600 }}>
+                    Lanseras inom kort • Inga kreditkort • Inga dolda avgifter
+                  </Typography>
+                </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <TextField
                     label="Ditt namn"
@@ -194,20 +298,33 @@ const Waitlist = () => {
                     type="submit"
                     variant="contained"
                     disabled={isSubmitting}
+                    className="animate-pulse"
                     sx={{
-                      py: 1.5,
-                      borderRadius: 2,
+                      py: 2,
+                      borderRadius: 3,
                       background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-                      fontWeight: 600,
-                      fontSize: '1.1rem',
+                      fontWeight: 700,
+                      fontSize: '1.2rem',
+                      boxShadow: '0 4px 20px rgba(99,91,255,0.4)',
                       '&:hover': {
                         background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 8px 32px rgba(99,91,255,0.5)',
                       }
                     }}
                   >
-                    {isSubmitting ? 'Registrerar...' : 'Gå med på väntelistan'}
+                    {isSubmitting ? '⏳ Registrerar...' : '🎯 Ja, jag vill slippa kalenderkaoset!'}
                   </Button>
                 </Box>
+                <Typography variant="caption" sx={{ 
+                  display: 'block', 
+                  textAlign: 'center', 
+                  color: '#666', 
+                  mt: 2,
+                  fontStyle: 'italic'
+                }}>
+                  💡 Du får ett mejl när vi lanserar + tidig access till alla funktioner
+                </Typography>
               </Paper>
             </Box>
           </Grid>
@@ -415,41 +532,89 @@ const Waitlist = () => {
       </Container>
 
       {/* CTA */}
-      <Box sx={{ bgcolor: 'linear-gradient(135deg, #635bff 0%, #6c47ff 100%)', py: 8 }}>
-        <Container maxWidth="md" sx={{ textAlign: 'center' }}>
+      <Box sx={{ 
+        background: 'linear-gradient(135deg, #635bff 0%, #6c47ff 100%)', 
+        py: 8,
+        position: 'relative',
+        overflow: 'hidden'
+      }}>
+        <Container maxWidth="md" sx={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
           <Typography variant="h3" sx={{
             color: '#fff',
-            mb: 3,
+            mb: 2,
             fontSize: { xs: '2rem', md: '2.5rem' },
             fontWeight: 700
           }}>
-            Redo att slippa kalenderkaoset?
+            Sluta slösa 2+ timmar i veckan på att boka möten
           </Typography>
-          <Typography variant="h6" sx={{ color: 'rgba(255,255,255,0.9)', mb: 4 }}>
-            Gå med på väntelistan och få tidig access till BookR
+          <Typography variant="h6" sx={{ 
+            color: 'rgba(255,255,255,0.95)', 
+            mb: 1,
+            fontSize: '1.3rem',
+            fontWeight: 500
+          }}>
+            Över 100 sparade timmar per år = mer tid för det som verkligen räknas
+          </Typography>
+          <Typography variant="body1" sx={{ 
+            color: 'rgba(255,255,255,0.8)', 
+            mb: 4,
+            fontSize: '1.1rem'
+          }}>
+            Gå med på väntelistan nu och få tidig access när vi lanserar • Helt gratis • Inga kreditkort
           </Typography>
           <Button
             variant="contained"
             size="large"
             onClick={() => document.querySelector('form').scrollIntoView({ behavior: 'smooth' })}
             sx={{
-              py: 2,
-              px: 4,
-              borderRadius: 3,
+              py: 2.5,
+              px: 5,
+              borderRadius: 4,
               bgcolor: '#fff',
               color: '#635bff',
-              fontWeight: 600,
-              fontSize: '1.1rem',
+              fontWeight: 700,
+              fontSize: '1.2rem',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
               '&:hover': {
                 bgcolor: '#f8f9ff',
-                transform: 'translateY(-2px)',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 48px rgba(0,0,0,0.4)'
               }
             }}
           >
-            Gå med på väntelistan
+            🚀 Ja, jag vill spara 100+ timmar per år!
           </Button>
+          <Typography variant="caption" sx={{ 
+            display: 'block',
+            color: 'rgba(255,255,255,0.7)', 
+            mt: 2,
+            fontSize: '0.9rem'
+          }}>
+            ✨ {waitlistCount}+ personer väntar redan • Lanseras inom nägra veckor
+          </Typography>
         </Container>
+        
+        {/* Background decoration */}
+        <Box sx={{
+          position: 'absolute',
+          top: -50,
+          right: -50,
+          width: 200,
+          height: 200,
+          borderRadius: '50%',
+          bgcolor: 'rgba(255,255,255,0.1)',
+          zIndex: 0
+        }} />
+        <Box sx={{
+          position: 'absolute',
+          bottom: -30,
+          left: -30,
+          width: 150,
+          height: 150,
+          borderRadius: '50%',
+          bgcolor: 'rgba(255,255,255,0.05)',
+          zIndex: 0
+        }} />
       </Box>
 
       <Snackbar
