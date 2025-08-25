@@ -196,9 +196,10 @@ const WaitlistAdmin = () => {
     switch (period) {
       case 'today':
         const today = now.toISOString().split('T')[0];
-        const todayCount = data.filter(entry => 
-          entry.timestamp.startsWith(today)
-        ).length;
+        const todayCount = data.filter(entry => {
+          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+          return entryDate === today;
+        }).length;
         return { labels: ['Idag'], values: [todayCount] };
         
       case 'week':
@@ -210,9 +211,9 @@ const WaitlistAdmin = () => {
           weekData[dateStr] = 0;
         }
         data.forEach(entry => {
-          const date = entry.timestamp.split('T')[0];
-          if (weekData.hasOwnProperty(date)) {
-            weekData[date]++;
+          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+          if (weekData.hasOwnProperty(entryDate)) {
+            weekData[entryDate]++;
           }
         });
         return {
@@ -231,9 +232,9 @@ const WaitlistAdmin = () => {
           monthData[dateStr] = 0;
         }
         data.forEach(entry => {
-          const date = entry.timestamp.split('T')[0];
-          if (monthData.hasOwnProperty(date)) {
-            monthData[date]++;
+          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+          if (monthData.hasOwnProperty(entryDate)) {
+            monthData[entryDate]++;
           }
         });
         return {
@@ -246,8 +247,8 @@ const WaitlistAdmin = () => {
       default: // total
         const totalData = {};
         data.forEach(entry => {
-          const date = entry.timestamp.split('T')[0];
-          totalData[date] = (totalData[date] || 0) + 1;
+          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+          totalData[entryDate] = (totalData[entryDate] || 0) + 1;
         });
         const sortedDates = Object.keys(totalData).sort();
         return {
@@ -262,8 +263,9 @@ const WaitlistAdmin = () => {
   const handlePeriodChange = (event, newPeriod) => {
     if (newPeriod !== null) {
       setChartPeriod(newPeriod);
-      if (waitlist.length > 0) {
-        setTimeout(() => createBarChart(waitlist), 100);
+      // Omedelbar uppdatering av diagrammet
+      if (waitlist.length > 0 && window.Chart) {
+        createBarChart(waitlist);
       }
     }
   };
@@ -459,8 +461,8 @@ const WaitlistAdmin = () => {
 
       {/* Expanderade diagram */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        {/* Huvuddiagram - Tillväxt (bredare) */}
-        <Grid item xs={12} lg={9}>
+        {/* Huvuddiagram - Tillväxt (ännu bredare) */}
+        <Grid item xs={12} lg={10}>
           <Paper sx={{ 
             p: 4, 
             borderRadius: 4, 
@@ -486,10 +488,10 @@ const WaitlistAdmin = () => {
           </Paper>
         </Grid>
         
-        {/* Sidodiagram - Periodanalys (smalare) */}
-        <Grid item xs={12} lg={3}>
+        {/* Sidodiagram - Periodanalys (ännu smalare) */}
+        <Grid item xs={12} lg={2}>
           <Paper sx={{ 
-            p: 3, 
+            p: 2, 
             borderRadius: 4, 
             boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
             border: '1px solid rgba(99,91,255,0.1)',
@@ -497,14 +499,14 @@ const WaitlistAdmin = () => {
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <Box sx={{ 
-                width: 4, 
-                height: 20, 
+                width: 3, 
+                height: 16, 
                 background: 'linear-gradient(135deg, #ff9800 0%, #ffb74d 100%)', 
                 borderRadius: 2, 
-                mr: 1.5 
+                mr: 1 
               }} />
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', fontSize: '1rem' }}>
-                Periodanalys
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#0a2540', fontSize: '0.9rem' }}>
+                Period
               </Typography>
             </Box>
             
@@ -521,6 +523,8 @@ const WaitlistAdmin = () => {
                   borderRadius: 2,
                   border: '1px solid rgba(99,91,255,0.2)',
                   mb: 0.5,
+                  fontSize: '0.7rem',
+                  py: 0.5,
                   '&.Mui-selected': {
                     background: 'linear-gradient(135deg, #635bff 0%, #7c4dff 100%)',
                     color: 'white',
@@ -531,10 +535,10 @@ const WaitlistAdmin = () => {
                 }
               }}
             >
-              <ToggleButton value="today" sx={{ width: '100%', fontSize: '0.75rem' }}>Idag</ToggleButton>
-              <ToggleButton value="week" sx={{ width: '100%', fontSize: '0.75rem' }}>Vecka</ToggleButton>
-              <ToggleButton value="month" sx={{ width: '100%', fontSize: '0.75rem' }}>Månad</ToggleButton>
-              <ToggleButton value="total" sx={{ width: '100%', fontSize: '0.75rem' }}>Totalt</ToggleButton>
+              <ToggleButton value="today" sx={{ width: '100%' }}>Idag</ToggleButton>
+              <ToggleButton value="week" sx={{ width: '100%' }}>Vecka</ToggleButton>
+              <ToggleButton value="month" sx={{ width: '100%' }}>Månad</ToggleButton>
+              <ToggleButton value="total" sx={{ width: '100%' }}>Totalt</ToggleButton>
             </ToggleButtonGroup>
             
             <Box sx={{ height: 320, position: 'relative' }}>
