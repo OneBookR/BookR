@@ -22,8 +22,12 @@ const PORT = process.env.PORT || 3000;
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
 
-// Root route
-app.get('/', (req, res) => {
+// Catch-all route för React Router
+app.get('*', (req, res, next) => {
+  // Skip API routes
+  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) {
+    return next();
+  }
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
