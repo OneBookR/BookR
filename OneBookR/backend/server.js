@@ -981,6 +981,77 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
+// Väntelista
+const waitlist = new Set(); // Enkel minneslagring
+
+// Lägg till på väntelista
+app.post('/api/waitlist', async (req, res) => {
+  const { email, name } = req.body;
+  if (!email || !name) {
+    return res.status(400).json({ error: 'Namn och e-post krävs.' });
+  }
+  
+  // Kolla om redan registrerad
+  const existing = Array.from(waitlist).find(entry => entry.email === email);
+  if (existing) {
+    return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
+  }
+  
+  const entry = {
+    email,
+    name,
+    timestamp: new Date().toISOString()
+  };
+  
+  waitlist.add(entry);
+  
+  // Skicka bekräftelse-mejl
+  try {
+    const transporter = nodemailer.createTransporter({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Välkommen till BookR väntelista! 🎉',
+      text: `Hej ${name}!\n\nTack för att du gått med på BookR:s väntelista. Du kommer att få tidig access när vi lanserar!\n\nBookR hjälper dig att:\n• Hitta gemensamma lediga tider automatiskt\n• Slippa mejlkarusellen när ni ska boka möten\n• Få Google Meet-länkar skapade automatiskt\n• Koordinera med vänner, familj och kollegor\n\nVi hör av oss så snart vi är redo för beta-lansering.\n\nHälsningar,\nBookR-teamet`,
+    });
+    
+    // Meddela admin
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: 'onebookr@gmail.com',
+      subject: 'Ny registrering på BookR väntelista',
+      text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${entry.timestamp}\n\nTotalt antal: ${waitlist.size}`,
+    });
+  } catch (err) {
+    console.error('Fel vid mejlutskick:', err);
+  }
+  
+  res.json({ success: true, count: waitlist.size });
+});
+
+// Hämta antal på väntelista
+app.get('/api/waitlist/count', (req, res) => {
+  res.json({ count: waitlist.size });
+});
+
+// Admin: Hämta hela väntelistan (skyddad)
+app.get('/api/waitlist/admin', (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+  if (adminKey !== 'bookr-admin-2024') {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const list = Array.from(waitlist).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  res.json({ waitlist: list, count: list.length });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
