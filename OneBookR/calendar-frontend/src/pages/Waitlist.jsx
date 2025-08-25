@@ -305,8 +305,9 @@ const Waitlist = () => {
                 textAlign: 'left',
                 mb: 4
               }}>
-                BookR fungerar genom att säkert ansluta till din Google-kalender och läsa endast grundläggande information: 
-                är du ledig eller upptagen vid specifika tidpunkter. Vi ser aldrig vad du gör, var du är eller med vem.
+                <strong>Sluta slösa tid på det mest irriterande i arbetslivet.</strong> Varje vecka spenderar du timmar på att 
+                koordinera möten via mejl. "När passar det?" "Inte måndag..." "Tisdag då?" "Nej, har tandläkare..." 
+                Och så fortsätter det. BookR gör slut på detta kaos för alltid.
               </Typography>
               
               <Typography variant="body1" sx={{
@@ -316,9 +317,9 @@ const Waitlist = () => {
                 textAlign: 'left',
                 mb: 4
               }}>
-                När du bjuder in andra personer får de en unik länk där de loggar in på samma sätt. BookR jämför sedan 
-                automatiskt alla era kalendrar och visar endast de tider när <strong>alla</strong> är lediga samtidigt. 
-                Inga personliga detaljer delas någonsin.
+                <strong>Istället för 15+ mejl och flera dagars väntan</strong> ser ni direkt när alla är lediga. BookR 
+                analyserar allas kalendrar samtidigt och visar endast de <strong>perfekta tiderna</strong> när ni alla kan. 
+                Inga gissningar, inga missförstånd, inga dubbelbokningar.
               </Typography>
               
               <Typography variant="body1" sx={{
@@ -327,9 +328,9 @@ const Waitlist = () => {
                 lineHeight: 1.7,
                 textAlign: 'left'
               }}>
-                När ni hittat en tid som passar alla klickar ni bara på den. BookR skapar då automatiskt en Google Meet-länk, 
-                lägger till mötet i allas kalendrar och skickar ut inbjudningar via mejl. Allt detta händer på några sekunder 
-                – utan att ni behöver skriva ett enda mejl eller koordinera manuellt.
+                <strong>Det bästa av allt?</strong> När ni väl hittat en tid tar BookR hand om resten. Google Meet-länk, 
+                kalenderinbjudningar, påminnelser – allt skapas automatiskt. Ni går från "Vi behöver träffas" 
+                till ett fullständigt bokat möte på <strong>30 sekunder</strong>. Det är så här mötesplanering ska fungera.
               </Typography>
             </Container>
           </Box>
