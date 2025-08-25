@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Container, Typography, Box, Paper, Table, TableBody, TableCell, 
   TableContainer, TableHead, TableRow, TextField, Button, Alert,
-  Grid, Card, CardContent, ToggleButton, ToggleButtonGroup
+  Grid, Card, CardContent, ToggleButton, ToggleButtonGroup, List, ListItem
 } from '@mui/material';
 import { API_BASE_URL } from '../config';
 
@@ -26,7 +26,7 @@ const WaitlistAdmin = () => {
         setWaitlist(data.waitlist);
         setIsAuthenticated(true);
         setError('');
-        initializeCharts(data.waitlist);
+        setTimeout(() => initializeCharts(data.waitlist), 100);
       } else {
         setError('Fel admin-nyckel');
       }
@@ -37,11 +37,23 @@ const WaitlistAdmin = () => {
 
   const initializeCharts = (data) => {
     // Ladda Chart.js dynamiskt
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
-    script.onload = () => {
+    if (window.Chart) {
       createLineChart(data);
       createBarChart(data);
+      return;
+    }
+    
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js';
+    script.onload = () => {
+      // Registrera datum-adapter
+      const dateScript = document.createElement('script');
+      dateScript.src = 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js';
+      dateScript.onload = () => {
+        createLineChart(data);
+        createBarChart(data);
+      };
+      document.head.appendChild(dateScript);
     };
     document.head.appendChild(script);
   };
@@ -76,26 +88,50 @@ const WaitlistAdmin = () => {
           borderColor: '#635bff',
           backgroundColor: 'rgba(99,91,255,0.1)',
           fill: true,
-          tension: 0.4
+          tension: 0.4,
+          pointBackgroundColor: '#635bff',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointRadius: 4
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: {
+          intersect: false,
+          mode: 'index'
+        },
         scales: {
           x: {
             type: 'time',
             time: {
-              unit: 'day'
+              unit: 'day',
+              displayFormats: {
+                day: 'MMM dd'
+              }
+            },
+            grid: {
+              display: false
             }
           },
           y: {
-            beginAtZero: true
+            beginAtZero: true,
+            grid: {
+              color: 'rgba(0,0,0,0.1)'
+            }
           }
         },
         plugins: {
           legend: {
             display: false
+          },
+          tooltip: {
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            titleColor: '#fff',
+            bodyColor: '#fff',
+            borderColor: '#635bff',
+            borderWidth: 1
           }
         }
       }
@@ -119,7 +155,8 @@ const WaitlistAdmin = () => {
           label: 'Registreringar',
           data: chartData.values,
           backgroundColor: '#635bff',
-          borderRadius: 4
+          borderRadius: 6,
+          borderSkipped: false
         }]
       },
       options: {
@@ -127,12 +164,25 @@ const WaitlistAdmin = () => {
         maintainAspectRatio: false,
         scales: {
           y: {
-            beginAtZero: true
+            beginAtZero: true,
+            grid: {
+              color: 'rgba(0,0,0,0.1)'
+            }
+          },
+          x: {
+            grid: {
+              display: false
+            }
           }
         },
         plugins: {
           legend: {
             display: false
+          },
+          tooltip: {
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            titleColor: '#fff',
+            bodyColor: '#fff'
           }
         }
       }
@@ -213,7 +263,7 @@ const WaitlistAdmin = () => {
     if (newPeriod !== null) {
       setChartPeriod(newPeriod);
       if (waitlist.length > 0) {
-        createBarChart(waitlist);
+        setTimeout(() => createBarChart(waitlist), 100);
       }
     }
   };
@@ -269,9 +319,12 @@ const WaitlistAdmin = () => {
   if (!isAuthenticated) {
     return (
       <Container maxWidth="sm" sx={{ mt: 10 }}>
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
-          <Typography variant="h5" sx={{ mb: 3 }}>
-            BookR Admin - Väntelista
+        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
+          <Typography variant="h4" sx={{ mb: 3, fontWeight: 700, color: '#635bff' }}>
+            BookR Admin
+          </Typography>
+          <Typography variant="body1" sx={{ mb: 3, color: '#666' }}>
+            Väntelista Dashboard
           </Typography>
           <TextField
             label="Admin-nyckel"
@@ -283,7 +336,16 @@ const WaitlistAdmin = () => {
             onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
           />
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          <Button variant="contained" onClick={handleLogin} fullWidth>
+          <Button 
+            variant="contained" 
+            onClick={handleLogin} 
+            fullWidth
+            sx={{ 
+              py: 1.5,
+              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+              fontWeight: 600
+            }}
+          >
             Logga in
           </Button>
         </Paper>
@@ -295,82 +357,117 @@ const WaitlistAdmin = () => {
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      {/* Header Stats */}
+      {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h3" sx={{ mb: 3, fontWeight: 700 }}>
-          BookR Väntelista Dashboard
+        <Typography variant="h3" sx={{ mb: 1, fontWeight: 700, color: '#0a2540' }}>
+          BookR Dashboard
         </Typography>
-        
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} md={3}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h3" sx={{ color: '#635bff', fontWeight: 700 }}>
-                  {stats.total}
-                </Typography>
-                <Typography variant="body1" color="text.secondary">
-                  Totalt registrerade
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          
-          <Grid item xs={12} md={3}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h4" sx={{ color: '#2e7d32', fontWeight: 600 }}>
-                  +{stats.today}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Idag
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          
-          <Grid item xs={12} md={3}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h4" sx={{ color: '#f57c00', fontWeight: 600 }}>
-                  +{stats.week}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Senaste veckan
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#2e7d32' }}>
-                  +{stats.weekGrowth}% tillväxt
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          
-          <Grid item xs={12} md={3}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h4" sx={{ color: '#d32f2f', fontWeight: 600 }}>
-                  +{stats.month}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Senaste månaden
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#2e7d32' }}>
-                  +{stats.monthGrowth}% tillväxt
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+        <Typography variant="body1" sx={{ color: '#666' }}>
+          Väntelista-analys och statistik
+        </Typography>
       </Box>
 
+      {/* Stats Section */}
+      <Grid container spacing={4} sx={{ mb: 4 }}>
+        {/* Total Count */}
+        <Grid item xs={12} md={4}>
+          <Card sx={{ borderRadius: 3, boxShadow: '0 4px 20px rgba(99,91,255,0.1)' }}>
+            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="h2" sx={{ color: '#635bff', fontWeight: 700, mb: 1 }}>
+                {stats.total}
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#666', fontWeight: 500 }}>
+                Totalt registrerade
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        {/* Stats List */}
+        <Grid item xs={12} md={8}>
+          <Paper sx={{ p: 3, borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#0a2540' }}>
+              Registreringar
+            </Typography>
+            
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                py: 2, 
+                px: 3, 
+                bgcolor: '#f8f9ff', 
+                borderRadius: 2,
+                border: '1px solid #e3e8ff'
+              }}>
+                <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
+                  Idag
+                </Typography>
+                <Typography variant="h5" sx={{ color: '#2e7d32', fontWeight: 700 }}>
+                  +{stats.today}
+                </Typography>
+              </Box>
+              
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                py: 2, 
+                px: 3, 
+                bgcolor: '#f8f9ff', 
+                borderRadius: 2,
+                border: '1px solid #e3e8ff'
+              }}>
+                <Box>
+                  <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
+                    Senaste veckan
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 500 }}>
+                    +{stats.weekGrowth}% tillväxt
+                  </Typography>
+                </Box>
+                <Typography variant="h5" sx={{ color: '#f57c00', fontWeight: 700 }}>
+                  +{stats.week}
+                </Typography>
+              </Box>
+              
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                py: 2, 
+                px: 3, 
+                bgcolor: '#f8f9ff', 
+                borderRadius: 2,
+                border: '1px solid #e3e8ff'
+              }}>
+                <Box>
+                  <Typography variant="body1" sx={{ fontWeight: 600, color: '#0a2540' }}>
+                    Senaste månaden
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 500 }}>
+                    +{stats.monthGrowth}% tillväxt
+                  </Typography>
+                </Box>
+                <Typography variant="h5" sx={{ color: '#d32f2f', fontWeight: 700 }}>
+                  +{stats.month}
+                </Typography>
+              </Box>
+            </Box>
+          </Paper>
+        </Grid>
+      </Grid>
+
       {/* Charts */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={4} sx={{ mb: 4 }}>
         {/* Line Chart */}
         <Grid item xs={12} lg={8}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Registreringar över tid
+          <Paper sx={{ p: 3, borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#0a2540' }}>
+              Tillväxt över tid
             </Typography>
-            <Box sx={{ height: 400 }}>
+            <Box sx={{ height: 400, position: 'relative' }}>
               <canvas id="lineChart"></canvas>
             </Box>
           </Paper>
@@ -378,63 +475,70 @@ const WaitlistAdmin = () => {
         
         {/* Bar Chart */}
         <Grid item xs={12} lg={4}>
-          <Paper sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6">
-                Registreringar
-              </Typography>
-            </Box>
+          <Paper sx={{ p: 3, borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#0a2540' }}>
+              Registreringar per period
+            </Typography>
             
             <ToggleButtonGroup
               value={chartPeriod}
               exclusive
               onChange={handlePeriodChange}
               size="small"
-              sx={{ mb: 2 }}
+              sx={{ mb: 3, width: '100%' }}
             >
-              <ToggleButton value="today">Idag</ToggleButton>
-              <ToggleButton value="week">Vecka</ToggleButton>
-              <ToggleButton value="month">Månad</ToggleButton>
-              <ToggleButton value="total">Totalt</ToggleButton>
+              <ToggleButton value="today" sx={{ flex: 1 }}>Idag</ToggleButton>
+              <ToggleButton value="week" sx={{ flex: 1 }}>Vecka</ToggleButton>
+              <ToggleButton value="month" sx={{ flex: 1 }}>Månad</ToggleButton>
+              <ToggleButton value="total" sx={{ flex: 1 }}>Totalt</ToggleButton>
             </ToggleButtonGroup>
             
-            <Box sx={{ height: 300 }}>
+            <Box sx={{ height: 300, position: 'relative' }}>
               <canvas id="barChart"></canvas>
             </Box>
           </Paper>
         </Grid>
       </Grid>
 
-      {/* Export and Table */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5">
-          Alla registrerade ({waitlist.length})
-        </Typography>
-        <Button variant="contained" onClick={exportCSV}>
-          Exportera CSV
-        </Button>
-      </Box>
-      
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell><strong>Namn</strong></TableCell>
-              <TableCell><strong>E-post</strong></TableCell>
-              <TableCell><strong>Registrerad</strong></TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {waitlist.map((entry, index) => (
-              <TableRow key={index}>
-                <TableCell>{entry.name}</TableCell>
-                <TableCell>{entry.email}</TableCell>
-                <TableCell>{new Date(entry.timestamp).toLocaleString('sv-SE')}</TableCell>
+      {/* Table */}
+      <Paper sx={{ borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+        <Box sx={{ p: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540' }}>
+            Alla registrerade ({waitlist.length})
+          </Typography>
+          <Button 
+            variant="contained" 
+            onClick={exportCSV}
+            sx={{ 
+              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+              fontWeight: 600
+            }}
+          >
+            Exportera CSV
+          </Button>
+        </Box>
+        
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ bgcolor: '#f8f9ff' }}>
+                <TableCell sx={{ fontWeight: 600 }}>Namn</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>E-post</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Registrerad</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {waitlist.map((entry, index) => (
+                <TableRow key={index} sx={{ '&:hover': { bgcolor: '#f8f9ff' } }}>
+                  <TableCell>{entry.name}</TableCell>
+                  <TableCell>{entry.email}</TableCell>
+                  <TableCell>{new Date(entry.timestamp).toLocaleString('sv-SE')}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
     </Container>
   );
 };
