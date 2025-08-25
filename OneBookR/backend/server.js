@@ -1047,8 +1047,24 @@ app.get('/api/waitlist/admin', (req, res) => {
   res.json({ waitlist: list, count: list.length });
 });
 
-// Catch-all för React SPA - måste vara sist
-app.get('/*', (req, res) => {
+// Specifika routes för React SPA
+app.get('/waitlist', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/admin/waitlist', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/about', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/contact', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
