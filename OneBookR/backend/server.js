@@ -976,8 +976,32 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-// Väntelista
-const waitlist = new Set(); // Enkel minneslagring
+// Väntelista - persistent fillagring
+const fs = require('fs');
+const path = require('path');
+const waitlistFile = path.join(process.cwd(), 'waitlist.json');
+
+// Ladda befintlig väntelista från fil
+let waitlist = [];
+try {
+  if (fs.existsSync(waitlistFile)) {
+    const data = fs.readFileSync(waitlistFile, 'utf8');
+    waitlist = JSON.parse(data);
+    console.log(`Laddade ${waitlist.length} personer från väntelistan`);
+  }
+} catch (err) {
+  console.error('Kunde inte ladda väntelista:', err);
+  waitlist = [];
+}
+
+// Funktion för att spara väntelistan till fil
+const saveWaitlist = () => {
+  try {
+    fs.writeFileSync(waitlistFile, JSON.stringify(waitlist, null, 2));
+  } catch (err) {
+    console.error('Kunde inte spara väntelista:', err);
+  }
+};
 
 // Lägg till på väntelista
 app.post('/api/waitlist', async (req, res) => {
@@ -987,7 +1011,7 @@ app.post('/api/waitlist', async (req, res) => {
   }
   
   // Kolla om redan registrerad
-  const existing = Array.from(waitlist).find(entry => entry.email === email);
+  const existing = waitlist.find(entry => entry.email === email);
   if (existing) {
     return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
   }
@@ -998,7 +1022,8 @@ app.post('/api/waitlist', async (req, res) => {
     timestamp: new Date().toISOString()
   };
   
-  waitlist.add(entry);
+  waitlist.push(entry);
+  saveWaitlist();
   
   // Skicka bekräftelse-mejl
   try {
@@ -1022,18 +1047,18 @@ app.post('/api/waitlist', async (req, res) => {
       from: process.env.EMAIL_USER,
       to: 'onebookr@gmail.com',
       subject: 'Ny registrering på BookR väntelista',
-      text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${entry.timestamp}\n\nTotalt antal: ${waitlist.size}`,
+      text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${entry.timestamp}\n\nTotalt antal: ${waitlist.length}`,
     });
   } catch (err) {
     console.error('Fel vid mejlutskick:', err);
   }
   
-  res.json({ success: true, count: waitlist.size });
+  res.json({ success: true, count: waitlist.length });
 });
 
 // Hämta antal på väntelista
 app.get('/api/waitlist/count', (req, res) => {
-  res.json({ count: waitlist.size });
+  res.json({ count: waitlist.length });
 });
 
 // Admin: Hämta hela väntelistan (skyddad)
@@ -1043,7 +1068,7 @@ app.get('/api/waitlist/admin', (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   
-  const list = Array.from(waitlist).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const list = waitlist.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   res.json({ waitlist: list, count: list.length });
 });
 
