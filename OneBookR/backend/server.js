@@ -836,7 +836,9 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
     const allEmails = [group.creatorEmail, ...invitations.map(inv => inv.email)].filter(Boolean);
 
     const allAccepted = allEmails.every(e => updatedVotes[e] === 'accepted');
+    console.log('Vote check:', { allEmails, updatedVotes, allAccepted, finalized: suggestion.finalized });
     if (allAccepted && !suggestion.finalized) {
+      console.log('All accepted! Creating calendar event and sending emails...');
       try {
         let meetLink = null;
         let meetEventId = suggestion.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
@@ -892,12 +894,10 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
       // Skicka ut mejl till ALLA parter
       const transporter = nodemailer.createTransport({
-        host: 'smtp.sendgrid.net',
-        port: 587,
-        secure: false,
+        service: 'gmail',
         auth: {
-          user: 'apikey',
-          pass: process.env.SENDGRID_API_KEY,
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS,
         },
       });
 
@@ -914,7 +914,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         }
 
         await transporter.sendMail({
-          from: 'noreply@bookr.app',
+          from: process.env.EMAIL_USER,
           to: allEmails.join(','),
           subject: 'Möte bokat!',
           text: mailText,
