@@ -606,11 +606,18 @@ app.post('/api/invite', async (req, res) => {
   );
   console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
+  // Testa email omedelbart för debug
+  console.log('Testing email with credentials:', {
+    user: process.env.EMAIL_USER ? 'present' : 'missing',
+    pass: process.env.EMAIL_PASS ? 'present' : 'missing'
+  });
+  
   // Returnera svar omedelbart och skicka mejl asynkront
   res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
   
   // Skicka mejl asynkront i bakgrunden
   setImmediate(async () => {
+    console.log('Starting email sending process...');
     try {
       const transporter = nodemailer.createTransport({
         service: 'gmail',
@@ -634,8 +641,17 @@ app.post('/api/invite', async (req, res) => {
         return transporter.sendMail(mailOptions);
       });
 
-      await Promise.all(emailPromises);
-      console.log('Emails sent successfully to:', invitees.map(inv => inv.email));
+      console.log('Attempting to send', emailPromises.length, 'emails');
+      const results = await Promise.allSettled(emailPromises);
+      
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          console.log('Email sent successfully to:', invitees[index].email);
+        } else {
+          console.error('Email failed for:', invitees[index].email, result.reason);
+        }
+      });
+      
       transporter.close();
     } catch (emailError) {
       console.error('Background email sending failed:', emailError);
