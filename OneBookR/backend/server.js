@@ -618,7 +618,19 @@ app.post('/api/invite', async (req, res) => {
     return transporter.sendMail(mailOptions);
   });
 
-  await Promise.all(emailPromises);
+  // Lägg till timeout för email-sändning
+  try {
+    await Promise.race([
+      Promise.all(emailPromises),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Email timeout')), 10000)
+      )
+    ]);
+    console.log('Emails sent successfully');
+  } catch (emailError) {
+    console.error('Email sending failed or timed out:', emailError);
+    // Fortsätt ändå - returnera svar även om email misslyckades
+  }
 
     // Returnera även länkarna i svaret!
     res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
