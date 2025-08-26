@@ -307,7 +307,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
         <IconButton
           aria-label="skicka inbjudningar"
           onClick={sendInvites}
-          disabled={!inputValue && emails.length === 0}
+          disabled={emails.length === 0}
           sx={{
             ml: 2,
             background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
