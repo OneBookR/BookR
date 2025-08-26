@@ -622,7 +622,7 @@ app.post('/api/invite', async (req, res) => {
 
         const emailPromises = invitees.map((inv, i) => {
           const mailOptions = {
-            from: '"BookR" <noreply@bookr.app>',
+            from: '"BookR" <onebookr@gmail.com>',
             to: inv.email,
             subject: 'Inbjudan till Kalenderjämförelse',
             text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
