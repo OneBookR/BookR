@@ -606,42 +606,19 @@ app.post('/api/invite', async (req, res) => {
   );
   console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
-    // Skicka mejl DIREKT innan svar returneras
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const transporter = nodemailer.createTransport({
-          host: 'smtp.gmail.com',
-          port: 587,
-          secure: false,
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-          connectionTimeout: 60000,
-          greetingTimeout: 30000,
-          socketTimeout: 60000
-        });
+    // Returnera länkar som användaren kan kopiera och skicka manuellt
+    const inviteMessages = invitees.map((inv, i) => ({
+      email: inv.email,
+      link: inviteLinks[i],
+      message: `Hej ${inv.email}!\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på länken för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar!`
+    }));
 
-        const emailPromises = invitees.map((inv, i) => {
-          const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: inv.email,
-            subject: 'Inbjudan till Kalenderjämförelse',
-            text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
-          };
-          return transporter.sendMail(mailOptions);
-        });
-
-        await Promise.all(emailPromises);
-        console.log('Mejl skickade till:', invitees.map(inv => inv.email));
-      } catch (emailError) {
-        console.error('Fel vid mejlutskick:', emailError);
-        return res.status(500).json({ error: 'Kunde inte skicka mejl: ' + emailError.message });
-      }
-    }
-
-    // Returnera svar EFTER mejl skickats
-    res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
+    res.json({ 
+      message: 'Inbjudningar skapade! Kopiera och skicka länkarna nedan till dina vänner.', 
+      groupId, 
+      inviteLinks,
+      inviteMessages
+    });
 
 
   } catch (error) {
