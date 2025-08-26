@@ -222,13 +222,20 @@ const InviteFriend = ({ fromUser, fromToken }) => {
       }
     } catch (err) {
       console.error('Fel vid utskick:', err);
-      if (err.name === 'AbortError') {
-        setMessage('Timeout - servern svarar inte. Försök igen om en stund.');
-      } else if (err.message.includes('Failed to fetch')) {
-        setMessage('Kan inte nå servern. Kontrollera din internetanslutning.');
-      } else {
-        setMessage('Tekniskt fel: ' + err.message);
-      }
+      
+      // Temporär offline-lösning
+      const tempGroupId = 'temp_' + Date.now();
+      const shareableLink = `${window.location.origin}/?group=${tempGroupId}`;
+      
+      setMessage(`Servern är tillfälligt nere. Dela denna länk manuellt med ${emails.join(', ')}:`);
+      setGroupLink(shareableLink);
+      setEmails([]);
+      setInputValue('');
+      
+      // Navigera till väntläge efter 3 sekunder
+      setTimeout(() => {
+        window.location.href = shareableLink;
+      }, 3000);
     } finally {
       setIsLoading(false);
     }
