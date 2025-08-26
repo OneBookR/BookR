@@ -1101,6 +1101,43 @@ app.get('/api/waitlist/admin', async (req, res) => {
   }
 });
 
+// Test email endpoint
+app.post('/api/test-email', async (req, res) => {
+  const { testEmail } = req.body;
+  if (!testEmail) {
+    return res.status(400).json({ error: 'testEmail required' });
+  }
+  
+  try {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: testEmail,
+      subject: 'BookR Test Email',
+      text: 'This is a test email from BookR to verify email functionality.',
+    });
+    
+    res.json({ success: true, message: 'Test email sent successfully' });
+  } catch (error) {
+    console.error('Test email failed:', error);
+    res.status(500).json({ 
+      error: 'Email test failed', 
+      details: error.message,
+      hasCredentials: {
+        user: !!process.env.EMAIL_USER,
+        pass: !!process.env.EMAIL_PASS
+      }
+    });
+  }
+});
+
 // Generera delningslänk för väntelistan
 app.post('/api/waitlist/share', (req, res) => {
   const waitlistUrl = 'https://bookr-production.up.railway.app/waitlist';
