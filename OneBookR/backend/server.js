@@ -612,6 +612,9 @@ app.post('/api/invite', async (req, res) => {
     // Skicka mejl asynkront med Gmail
     setImmediate(async () => {
       try {
+        // Extra loggning för felsökning
+        console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
+
         const transporter = nodemailer.createTransport({
           service: 'gmail',
           auth: {
@@ -623,16 +626,37 @@ app.post('/api/invite', async (req, res) => {
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
           const mailOptions = {
-            from: `"BookR" <${process.env.EMAIL_USER}>`,
+            from: `"BookR" <onebookr@gmail.com>`,
             to: inv.email,
             subject: 'Inbjudan till Kalenderjämförelse',
             text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
           };
-          await transporter.sendMail(mailOptions);
+          try {
+            await transporter.sendMail(mailOptions);
+            console.log('Mejl skickat till:', inv.email);
+          } catch (sendErr) {
+            console.error('Fel vid utskick till', inv.email);
+            if (sendErr && sendErr.response) {
+              console.error('SMTP response:', sendErr.response);
+            }
+            if (sendErr && sendErr.code) {
+              console.error('SMTP error code:', sendErr.code);
+            }
+            if (sendErr && sendErr.command) {
+              console.error('SMTP command:', sendErr.command);
+            }
+            console.error('Fullt felobjekt:', sendErr);
+            if (sendErr && sendErr.stack) {
+              console.error('Stacktrace:', sendErr.stack);
+            }
+          }
         }
         console.log('Mejl skickade till:', invitees.map(inv => inv.email));
       } catch (emailError) {
         console.error('Fel vid mejlutskick:', emailError);
+        if (emailError && emailError.stack) {
+          console.error('Stacktrace:', emailError.stack);
+        }
       }
     });
 
