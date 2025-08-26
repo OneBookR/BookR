@@ -606,57 +606,35 @@ app.post('/api/invite', async (req, res) => {
   );
   console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
-  // Testa email omedelbart för debug
-  console.log('Testing email with credentials:', {
-    user: process.env.EMAIL_USER ? 'present' : 'missing',
-    pass: process.env.EMAIL_PASS ? 'present' : 'missing'
-  });
-  
-  // Returnera svar omedelbart och skicka mejl asynkront
-  res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
-  
-  // Skicka mejl asynkront i bakgrunden
-  setImmediate(async () => {
-    console.log('Starting email sending process...');
-    try {
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
-        },
-        pool: true,
-        maxConnections: 5,
-        maxMessages: 100,
-        rateLimit: 10
-      });
+    // Skicka mejl endast om EMAIL_USER och EMAIL_PASS är konfigurerade
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      try {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+          },
+        });
 
-      const emailPromises = invitees.map((inv, i) => {
-        const mailOptions = {
-          from: process.env.EMAIL_USER,
-          to: inv.email,
-          subject: 'Inbjudan till Kalenderjämförelse',
-          text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
-        };
-        return transporter.sendMail(mailOptions);
-      });
+        const emailPromises = invitees.map((inv, i) => {
+          const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: inv.email,
+            subject: 'Inbjudan till Kalenderjämförelse',
+            text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
+          };
+          return transporter.sendMail(mailOptions);
+        });
 
-      console.log('Attempting to send', emailPromises.length, 'emails');
-      const results = await Promise.allSettled(emailPromises);
-      
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-          console.log('Email sent successfully to:', invitees[index].email);
-        } else {
-          console.error('Email failed for:', invitees[index].email, result.reason);
-        }
-      });
-      
-      transporter.close();
-    } catch (emailError) {
-      console.error('Background email sending failed:', emailError);
+        await Promise.all(emailPromises);
+        console.log('Mejl skickade till:', invitees.map(inv => inv.email));
+      } catch (emailError) {
+        console.error('Fel vid mejlutskick:', emailError);
+      }
     }
-  });
+
+    res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
 
 
   } catch (error) {
@@ -1039,32 +1017,27 @@ app.post('/api/waitlist', async (req, res) => {
     await addToWaitlist(email, name);
     const totalCount = await getWaitlistCount();
     
-    // Skicka bekräftelse-mejl
-    try {
-      const transporter = nodemailer.createTransporter({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
-        },
-      });
-      
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'Välkommen till BookR väntelista! 🎉',
-        text: `Hej ${name}!\n\nTack för att du gått med på BookR:s väntelista. Du kommer att få tidig access när vi lanserar!\n\nBookR hjälper dig att:\n• Hitta gemensamma lediga tider automatiskt\n• Slippa mejlkarusellen när ni ska boka möten\n• Få Google Meet-länkar skapade automatiskt\n• Koordinera med vänner, familj och kollegor\n\nVi hör av oss så snart vi är redo för beta-lansering.\n\nHälsningar,\nBookR-teamet`,
-      });
-      
-      // Meddela admin
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: 'onebookr@gmail.com',
-        subject: 'Ny registrering på BookR väntelista',
-        text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
-      });
-    } catch (err) {
-      console.error('Fel vid mejlutskick:', err);
+    // Skicka endast admin-notifiering för att spara kostnader
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      try {
+        const transporter = nodemailer.createTransporter({
+          service: 'gmail',
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+          },
+        });
+        
+        // Endast admin-notifiering
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: 'onebookr@gmail.com',
+          subject: 'Ny registrering på BookR väntelista',
+          text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
+        });
+      } catch (err) {
+        console.error('Fel vid mejlutskick:', err);
+      }
     }
     
     res.json({ success: true, count: totalCount });
@@ -1101,42 +1074,7 @@ app.get('/api/waitlist/admin', async (req, res) => {
   }
 });
 
-// Test email endpoint
-app.post('/api/test-email', async (req, res) => {
-  const { testEmail } = req.body;
-  if (!testEmail) {
-    return res.status(400).json({ error: 'testEmail required' });
-  }
-  
-  try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-    
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: testEmail,
-      subject: 'BookR Test Email',
-      text: 'This is a test email from BookR to verify email functionality.',
-    });
-    
-    res.json({ success: true, message: 'Test email sent successfully' });
-  } catch (error) {
-    console.error('Test email failed:', error);
-    res.status(500).json({ 
-      error: 'Email test failed', 
-      details: error.message,
-      hasCredentials: {
-        user: !!process.env.EMAIL_USER,
-        pass: !!process.env.EMAIL_PASS
-      }
-    });
-  }
-});
+
 
 // Generera delningslänk för väntelistan
 app.post('/api/waitlist/share', (req, res) => {
