@@ -155,49 +155,18 @@ const InviteFriend = ({ fromUser, fromToken }) => {
     }
 
     try {
-      console.log('Making API request with:', {
-        emails,
-        fromUser: emailToSend,
-        fromToken: fromToken ? 'present' : 'missing',
-        groupName: groupName.trim() || 'Namnlös grupp',
+      const res = await fetch('https://bookr-production.up.railway.app/api/invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          emails,
+          fromUser: emailToSend,
+          fromToken,
+          groupName: groupName.trim() || 'Namnlös grupp',
+        }),
       });
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-      
-      let res;
-      try {
-        res = await fetch('https://bookr-production.up.railway.app/api/invite', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            emails,
-            fromUser: emailToSend,
-            fromToken,
-            groupName: groupName.trim() || 'Namnlös grupp',
-          }),
-          signal: controller.signal
-        });
-      } catch (railwayError) {
-        console.log('Railway failed, trying localhost:', railwayError);
-        res = await fetch('http://localhost:3000/api/invite', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            emails,
-            fromUser: emailToSend,
-            fromToken,
-            groupName: groupName.trim() || 'Namnlös grupp',
-          }),
-          signal: controller.signal
-        });
-      }
-      
-      clearTimeout(timeoutId);
 
       console.log('API response status:', res.status);
       const data = await res.json();
@@ -222,20 +191,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
       }
     } catch (err) {
       console.error('Fel vid utskick:', err);
-      
-      // Temporär offline-lösning
-      const tempGroupId = 'temp_' + Date.now();
-      const shareableLink = `${window.location.origin}/?group=${tempGroupId}`;
-      
-      setMessage(`Servern är tillfälligt nere. Dela denna länk manuellt med ${emails.join(', ')}:`);
-      setGroupLink(shareableLink);
-      setEmails([]);
-      setInputValue('');
-      
-      // Navigera till väntläge efter 3 sekunder
-      setTimeout(() => {
-        window.location.href = shareableLink;
-      }, 3000);
+      setMessage('Kunde inte skicka inbjudningar. Försök igen.');
     } finally {
       setIsLoading(false);
     }

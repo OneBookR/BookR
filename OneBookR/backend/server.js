@@ -599,41 +599,43 @@ app.post('/api/invite', async (req, res) => {
   );
   console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
-  // Skicka mejl till varje e-postadress
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
+  // Returnera svar omedelbart och skicka mejl asynkront
+  res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
+  
+  // Skicka mejl asynkront i bakgrunden
+  setImmediate(async () => {
+    try {
+      const transporter = nodemailer.createTransporter({
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS,
+        },
+        pool: true,
+        maxConnections: 5,
+        maxMessages: 100,
+        rateLimit: 10
+      });
+
+      const emailPromises = invitees.map((inv, i) => {
+        const mailOptions = {
+          from: process.env.EMAIL_USER,
+          to: inv.email,
+          subject: 'Inbjudan till Kalenderjämförelse',
+          text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
+        };
+        return transporter.sendMail(mailOptions);
+      });
+
+      await Promise.all(emailPromises);
+      console.log('Emails sent successfully to:', invitees.map(inv => inv.email));
+      transporter.close();
+    } catch (emailError) {
+      console.error('Background email sending failed:', emailError);
+    }
   });
 
-  const emailPromises = invitees.map((inv, i) => {
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: inv.email,
-      subject: 'Inbjudan till Kalenderjämförelse',
-      text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
-    };
-    return transporter.sendMail(mailOptions);
-  });
 
-  // Lägg till timeout för email-sändning
-  try {
-    await Promise.race([
-      Promise.all(emailPromises),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Email timeout')), 10000)
-      )
-    ]);
-    console.log('Emails sent successfully');
-  } catch (emailError) {
-    console.error('Email sending failed or timed out:', emailError);
-    // Fortsätt ändå - returnera svar även om email misslyckades
-  }
-
-    // Returnera även länkarna i svaret!
-    res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
   } catch (error) {
     console.error('Error creating group:', error);
     res.status(500).json({ error: 'Kunde inte skapa grupp' });
