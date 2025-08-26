@@ -1023,7 +1023,7 @@ app.post('/api/waitlist', async (req, res) => {
     // Skicka endast admin-notifiering för att spara kostnader
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
-        const transporter = nodemailer.createTransporter({
+        const transporter = nodemailer.createTransport({
           service: 'gmail',
           auth: {
             user: process.env.EMAIL_USER,
