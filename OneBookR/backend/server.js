@@ -844,6 +844,15 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
     
     if (allAccepted && !suggestion.finalized) {
       console.log('All accepted! Creating calendar event and sending emails...');
+      
+      // Markera som finalized först så att UI:t uppdateras omedelbart
+      await updateSuggestion(suggestionId, {
+        finalized: true,
+        meetLink: '',
+        status: 'processing'
+      });
+      console.log('Marked as finalized, now attempting calendar creation...');
+      
       try {
         let meetLink = null;
         let meetEventId = suggestion.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
@@ -859,10 +868,29 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         }
         const token = tokens[0];
         console.log('Using token for calendar creation');
-      const userOAuth2 = new google.auth.OAuth2();
-      userOAuth2.setCredentials({ access_token: token });
-      const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
-      console.log('Google Calendar client created');
+        
+        // Skapa OAuth2-klient med refresh-funktionalitet
+        const userOAuth2 = new google.auth.OAuth2(
+          process.env.CLIENT_ID,
+          process.env.CLIENT_SECRET
+        );
+        userOAuth2.setCredentials({ access_token: token });
+        
+        // Testa token-validitet först
+        try {
+          const testResponse = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (testResponse.status === 401) {
+            throw new Error('Token expired or invalid');
+          }
+        } catch (tokenError) {
+          console.error('Token validation failed:', tokenError.message);
+          throw new Error('OAuth token is invalid or expired. User needs to re-authenticate.');
+        }
+        
+        const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
+        console.log('Google Calendar client created');
 
       const eventResource = {
         summary: suggestion.title || 'Föreslaget möte',
@@ -902,13 +930,14 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         
         console.log('Meet link created:', meetLink);
         
-        // Uppdatera suggestion i Firebase
-        console.log('Updating suggestion in Firebase with finalized=true');
+        // Uppdatera suggestion i Firebase med meet-länk
+        console.log('Updating suggestion in Firebase with meet link');
         await updateSuggestion(suggestionId, {
           meetLink: meetLink || '',
-          finalized: true
+          finalized: true,
+          status: 'completed'
         });
-        console.log('Suggestion updated in Firebase');
+        console.log('Suggestion updated in Firebase with meet link');
 
       // Skicka ut mejl till ALLA parter
       const transporter = nodemailer.createTransport({
@@ -942,16 +971,17 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
     } catch (err) {
       console.error('Fel vid Google Calendar-bokning eller mejl:', err, err?.response?.data);
-      // Fallback: Markera som finalized ändå så att UI:t uppdateras
+      // Behåll finalized=true men uppdatera med felmeddelande
       try {
         await updateSuggestion(suggestionId, {
           finalized: true,
           meetLink: '',
+          status: 'error',
           error: 'Calendar booking failed: ' + err.message
         });
-        console.log('Marked suggestion as finalized despite calendar error');
+        console.log('Updated suggestion with error status but kept finalized=true');
       } catch (fallbackErr) {
-        console.error('Failed to mark as finalized:', fallbackErr);
+        console.error('Failed to update error status:', fallbackErr);
       }
     }
     }
