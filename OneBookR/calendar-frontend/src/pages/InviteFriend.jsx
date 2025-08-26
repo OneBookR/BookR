@@ -189,6 +189,9 @@ const InviteFriend = ({ fromUser, fromToken }) => {
     } catch (err) {
       console.error('Fel vid utskick:', err);
       setMessage('Kunde inte skicka inbjudningar. Försök igen.');
+    } catch (err) {
+      console.error('Fel vid utskick:', err);
+      setMessage('Kunde inte skicka inbjudningar. Försök igen.');
     } finally {
       setIsLoading(false);
     }

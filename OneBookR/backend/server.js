@@ -613,13 +613,11 @@ app.post('/api/invite', async (req, res) => {
     setImmediate(async () => {
       try {
         const transporter = nodemailer.createTransport({
-          host: 'smtp.sendgrid.net',
-          port: 587,
-          secure: false,
+          service: 'gmail',
           auth: {
-            user: 'apikey',
-            pass: process.env.SENDGRID_API_KEY || 'SG.dummy'
-          }
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+          },
         });
 
         const emailPromises = invitees.map((inv, i) => {
