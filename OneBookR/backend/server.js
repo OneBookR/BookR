@@ -176,8 +176,8 @@ app.get('/auth/logout', (req, res) => {
 
 const fetchCalendarEvents = async (token, min, max) => {
   try {
-    // Hämta användarens tidszon först
-    const settingsResponse = await fetch(
+    // Test token validity first
+    const testResponse = await fetch(
       'https://www.googleapis.com/calendar/v3/users/me/settings/timezone',
       {
         headers: {
@@ -185,6 +185,14 @@ const fetchCalendarEvents = async (token, min, max) => {
         },
       }
     );
+    
+    if (testResponse.status === 401) {
+      console.error('OAuth token expired or invalid');
+      return { events: [], timezone: 'Europe/Stockholm' };
+    }
+    
+    // Hämta användarens tidszon
+    const settingsResponse = testResponse;
     
     let userTimezone = 'Europe/Stockholm'; // Default
     if (settingsResponse.ok) {
@@ -220,11 +228,10 @@ const fetchCalendarEvents = async (token, min, max) => {
         )
     );
 
-    console.log('Användarens kalendrar som används:', calendars.map(c => ({
-      id: c.id,
-      summary: c.summary,
-      primary: c.primary
-    })));
+    // Reduced logging to prevent rate limits
+    if (calendars.length > 0) {
+      console.log('Found', calendars.length, 'calendars for user');
+    }
 
     // Hämta händelser från varje kalender
     const eventsPromises = calendars.map(async (calendar) => {
@@ -256,8 +263,8 @@ const fetchCalendarEvents = async (token, min, max) => {
     // Vänta på alla händelser
     const allEvents = await Promise.all(eventsPromises);
 
-    console.log('Hämtade händelser (efter filtrering):', allEvents);
-    console.log('Användarens tidszon:', userTimezone);
+    // Reduced logging
+    console.log('Fetched events for', allEvents.length, 'calendars, timezone:', userTimezone);
 
     // Slå ihop alla händelser till en enda array och returnera med tidszon
     return { events: allEvents.flat(), timezone: userTimezone };
@@ -605,7 +612,7 @@ app.post('/api/invite', async (req, res) => {
   // Skicka mejl asynkront i bakgrunden
   setImmediate(async () => {
     try {
-      const transporter = nodemailer.createTransporter({
+      const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
           user: process.env.EMAIL_USER,
