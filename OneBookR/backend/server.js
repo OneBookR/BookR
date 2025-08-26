@@ -62,7 +62,9 @@ app.use(passport.session());
 passport.use(new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
-  callbackURL: 'https://bookr-production.up.railway.app/auth/google/callback'
+  callbackURL: 'https://bookr-production.up.railway.app/auth/google/callback',
+  accessType: 'offline',
+  includeGrantedScopes: true  // Enable incremental authorization
 }, (accessToken, refreshToken, profile, done) => {
   // Sätt alltid profile.email till första e-post om den finns
   if (!profile.email && profile.emails && profile.emails.length > 0) {
@@ -73,6 +75,7 @@ passport.use(new GoogleStrategy({
     profile.primaryEmail = profile.emails[0].value || profile.emails[0];
   }
   profile.accessToken = accessToken;
+  profile.refreshToken = refreshToken;  // Store refresh token for incremental auth
   return done(null, profile);
 }));
 
@@ -95,7 +98,9 @@ app.get('/auth/google', (req, res, next) => {
       'https://www.googleapis.com/auth/calendar.events'
     ],
     state: state,
-    prompt: 'select_account'
+    prompt: 'select_account',
+    accessType: 'offline',
+    includeGrantedScopes: true  // Enable incremental authorization
   })(req, res, next);
 });
 
