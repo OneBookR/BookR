@@ -609,7 +609,7 @@ app.post('/api/invite', async (req, res) => {
     // Returnera svar omedelbart
     res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
     
-    // Skicka mejl asynkront med SendGrid
+// Skicka mejl asynkront med Gmail
     setImmediate(async () => {
       try {
         const transporter = nodemailer.createTransport({
@@ -622,7 +622,7 @@ app.post('/api/invite', async (req, res) => {
 
         const emailPromises = invitees.map((inv, i) => {
           const mailOptions = {
-            from: '"BookR" <onebookr@gmail.com>',
+            from: process.env.EMAIL_USER,
             to: inv.email,
             subject: 'Inbjudan till Kalenderjämförelse',
             text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
