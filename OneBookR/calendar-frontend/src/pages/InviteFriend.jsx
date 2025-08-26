@@ -161,18 +161,43 @@ const InviteFriend = ({ fromUser, fromToken }) => {
         fromToken: fromToken ? 'present' : 'missing',
         groupName: groupName.trim() || 'Namnlös grupp',
       });
-      const res = await fetch('https://bookr-production.up.railway.app/api/invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          emails,
-          fromUser: emailToSend,
-          fromToken,
-          groupName: groupName.trim() || 'Namnlös grupp',
-        }),
-      });
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      let res;
+      try {
+        res = await fetch('https://bookr-production.up.railway.app/api/invite', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            emails,
+            fromUser: emailToSend,
+            fromToken,
+            groupName: groupName.trim() || 'Namnlös grupp',
+          }),
+          signal: controller.signal
+        });
+      } catch (railwayError) {
+        console.log('Railway failed, trying localhost:', railwayError);
+        res = await fetch('http://localhost:3000/api/invite', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            emails,
+            fromUser: emailToSend,
+            fromToken,
+            groupName: groupName.trim() || 'Namnlös grupp',
+          }),
+          signal: controller.signal
+        });
+      }
+      
+      clearTimeout(timeoutId);
 
       console.log('API response status:', res.status);
       const data = await res.json();
@@ -197,7 +222,13 @@ const InviteFriend = ({ fromUser, fromToken }) => {
       }
     } catch (err) {
       console.error('Fel vid utskick:', err);
-      setMessage('Tekniskt fel.');
+      if (err.name === 'AbortError') {
+        setMessage('Timeout - servern svarar inte. Försök igen om en stund.');
+      } else if (err.message.includes('Failed to fetch')) {
+        setMessage('Kan inte nå servern. Kontrollera din internetanslutning.');
+      } else {
+        setMessage('Tekniskt fel: ' + err.message);
+      }
     } finally {
       setIsLoading(false);
     }
