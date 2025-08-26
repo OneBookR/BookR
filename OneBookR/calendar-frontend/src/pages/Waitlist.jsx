@@ -675,6 +675,23 @@ const Waitlist = () => {
         </Box>
       )}
 
+      {/* Footer */}
+      <Box
+        component="footer"
+        sx={{
+          width: '100%',
+          bgcolor: 'transparent',
+          textAlign: 'center',
+          py: 3,
+          color: 'text.secondary',
+          fontSize: 15,
+          letterSpacing: 0.2,
+          borderTop: '1px solid #e0e3e7',
+        }}
+      >
+        © {new Date().getFullYear()} BookR – Hitta lediga tider tillsammans | <a href="mailto:onebookr@gmail.com" style={{ color: '#1976d2', textDecoration: 'none' }}>onebookr@gmail.com</a>
+      </Box>
+
       <Snackbar
         open={toast.open}
         autoHideDuration={6000}
