@@ -837,6 +837,11 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
     const allAccepted = allEmails.every(e => updatedVotes[e] === 'accepted');
     console.log('Vote check:', { allEmails, updatedVotes, allAccepted, finalized: suggestion.finalized });
+    
+    // Returnera omedelbart med uppdaterat förslag, även om calendar-bokning misslyckas
+    const updatedSuggestion = await getSuggestion(suggestionId);
+    res.json({ success: true, suggestion: updatedSuggestion });
+    
     if (allAccepted && !suggestion.finalized) {
       console.log('All accepted! Creating calendar event and sending emails...');
       try {
@@ -937,13 +942,19 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
     } catch (err) {
       console.error('Fel vid Google Calendar-bokning eller mejl:', err, err?.response?.data);
-      return res.status(500).json({ error: 'Kunde inte boka kalenderhändelse eller skicka mejl.', details: err?.message });
+      // Fallback: Markera som finalized ändå så att UI:t uppdateras
+      try {
+        await updateSuggestion(suggestionId, {
+          finalized: true,
+          meetLink: '',
+          error: 'Calendar booking failed: ' + err.message
+        });
+        console.log('Marked suggestion as finalized despite calendar error');
+      } catch (fallbackErr) {
+        console.error('Failed to mark as finalized:', fallbackErr);
+      }
     }
     }
-
-    // Hämta uppdaterat förslag
-    const updatedSuggestion = await getSuggestion(suggestionId);
-    res.json({ success: true, suggestion: updatedSuggestion });
   } catch (error) {
     console.error('Error voting on suggestion:', error);
     res.status(500).json({ error: 'Kunde inte rösta på förslag' });
