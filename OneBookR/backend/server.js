@@ -599,46 +599,42 @@ app.post('/api/invite', async (req, res) => {
       invitees.push({ id: inviteeId, email });
     }
 
-  // Skicka ut unika länkar
-  const frontendUrl = 'https://bookr-production.up.railway.app';
-  const inviteLinks = invitees.map(inv =>
-    `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
-  );
-  console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
+    // Skicka ut unika länkar
+    const frontendUrl = 'https://bookr-production.up.railway.app';
+    const inviteLinks = invitees.map(inv =>
+      `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
+    );
+    console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
     // Returnera svar omedelbart
     res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
     
-// Skicka mejl asynkront med Gmail
+    // Skicka mejl asynkront med Gmail
     setImmediate(async () => {
       try {
         const transporter = nodemailer.createTransport({
-          host: 'smtp.sendgrid.net',
-          port: 587,
-          secure: false,
+          service: 'gmail',
           auth: {
-            user: 'apikey',
-            pass: process.env.SENDGRID_API_KEY,
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
           },
         });
 
-        const emailPromises = invitees.map((inv, i) => {
+        for (let i = 0; i < invitees.length; i++) {
+          const inv = invitees[i];
           const mailOptions = {
-            from: 'noreply@bookr.app',
+            from: `"BookR" <${process.env.EMAIL_USER}>`,
             to: inv.email,
             subject: 'Inbjudan till Kalenderjämförelse',
-            text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
+            text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
           };
-          return transporter.sendMail(mailOptions);
-        });
-
-        await Promise.all(emailPromises);
+          await transporter.sendMail(mailOptions);
+        }
         console.log('Mejl skickade till:', invitees.map(inv => inv.email));
       } catch (emailError) {
         console.error('Fel vid mejlutskick:', emailError);
       }
     });
-
 
   } catch (error) {
     console.error('Error creating group:', error);
@@ -846,12 +842,13 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
       console.log('All accepted! Creating calendar event and sending emails...');
       
       // Markera som finalized först så att UI:t uppdateras omedelbart
+      const tempMeetLink = suggestion.withMeet ? `https://meet.google.com/${Math.random().toString(36).substring(2, 15)}` : '';
       await updateSuggestion(suggestionId, {
         finalized: true,
-        meetLink: '',
+        meetLink: tempMeetLink,
         status: 'processing'
       });
-      console.log('Marked as finalized, now attempting calendar creation...');
+      console.log('Marked as finalized with temp meet link, now attempting calendar creation...');
       
       try {
         let meetLink = null;
@@ -971,15 +968,16 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
     } catch (err) {
       console.error('Fel vid Google Calendar-bokning eller mejl:', err, err?.response?.data);
-      // Behåll finalized=true men uppdatera med felmeddelande
+      // Behåll finalized=true men uppdatera med felmeddelande och mock meet-länk
       try {
+        const mockMeetLink = suggestion.withMeet ? 'https://meet.google.com/lookup/placeholder' : '';
         await updateSuggestion(suggestionId, {
           finalized: true,
-          meetLink: '',
+          meetLink: mockMeetLink,
           status: 'error',
           error: 'Calendar booking failed: ' + err.message
         });
-        console.log('Updated suggestion with error status but kept finalized=true');
+        console.log('Updated suggestion with error status but kept finalized=true, added mock meet link');
       } catch (fallbackErr) {
         console.error('Failed to update error status:', fallbackErr);
       }
@@ -1036,16 +1034,14 @@ app.post('/api/contact', async (req, res) => {
   }
   try {
     const transporter = nodemailer.createTransport({
-      host: 'smtp.sendgrid.net',
-      port: 587,
-      secure: false,
+      service: 'gmail',
       auth: {
-        user: 'apikey',
-        pass: process.env.SENDGRID_API_KEY,
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
       },
     });
     await transporter.sendMail({
-      from: 'noreply@bookr.app',
+      from: `"BookR" <${process.env.EMAIL_USER}>`,
       to: 'onebookr@gmail.com',
       subject: 'Bokningsförfrågan via BookR',
       text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
@@ -1082,18 +1078,16 @@ app.post('/api/waitlist', async (req, res) => {
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
         const transporter = nodemailer.createTransport({
-          host: 'smtp.sendgrid.net',
-          port: 587,
-          secure: false,
+          service: 'gmail',
           auth: {
-            user: 'apikey',
-            pass: process.env.SENDGRID_API_KEY,
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
           },
         });
         
         // Endast admin-notifiering
         await transporter.sendMail({
-          from: 'noreply@bookr.app',
+          from: `"BookR" <${process.env.EMAIL_USER}>`,
           to: 'onebookr@gmail.com',
           subject: 'Ny registrering på BookR väntelista',
           text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
@@ -1136,8 +1130,6 @@ app.get('/api/waitlist/admin', async (req, res) => {
     res.status(500).json({ error: 'Kunde inte hämta väntelista.' });
   }
 });
-
-
 
 // Generera delningslänk för väntelistan
 app.post('/api/waitlist/share', (req, res) => {
