@@ -842,17 +842,22 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
       try {
         let meetLink = null;
         let meetEventId = suggestion.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
+        console.log('Generated meetEventId:', meetEventId);
 
         // Skapa Google Calendar-event ALLTID när alla accepterat
         // Om withMeet: true, skapa Google Meet-länk, annars bara kalenderhändelse med plats
         const tokens = (group.tokens || []).filter(Boolean);
+        console.log('Available tokens:', tokens.length);
         if (!tokens.length) {
+          console.error('No tokens available for group');
           return res.status(500).json({ error: 'Inga tokens för gruppen.' });
         }
         const token = tokens[0];
+        console.log('Using token for calendar creation');
       const userOAuth2 = new google.auth.OAuth2();
       userOAuth2.setCredentials({ access_token: token });
       const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
+      console.log('Google Calendar client created');
 
       const eventResource = {
         summary: suggestion.title || 'Föreslaget möte',
@@ -873,24 +878,32 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         eventResource.location = suggestion.location;
       }
 
+      console.log('Creating calendar event with resource:', JSON.stringify(eventResource, null, 2));
       const response = await userCalendar.events.insert({
         calendarId: 'primary',
         resource: eventResource,
         conferenceDataVersion: suggestion.withMeet ? 1 : 0,
         sendUpdates: 'all'
       });
+      console.log('Calendar event created successfully:', response.data.id);
 
+        console.log('Conference data:', JSON.stringify(response.data.conferenceData, null, 2));
         if (suggestion.withMeet && response.data.conferenceData?.entryPoints) {
           meetLink = response.data.conferenceData.entryPoints.find(ep => ep.entryPointType === 'video')?.uri;
+          console.log('Meet link extracted:', meetLink);
+        } else {
+          console.log('No meet link - withMeet:', suggestion.withMeet, 'conferenceData:', !!response.data.conferenceData);
         }
         
         console.log('Meet link created:', meetLink);
         
         // Uppdatera suggestion i Firebase
+        console.log('Updating suggestion in Firebase with finalized=true');
         await updateSuggestion(suggestionId, {
           meetLink: meetLink || '',
           finalized: true
         });
+        console.log('Suggestion updated in Firebase');
 
       // Skicka ut mejl till ALLA parter
       const transporter = nodemailer.createTransport({
