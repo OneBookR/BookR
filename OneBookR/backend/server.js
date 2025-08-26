@@ -606,18 +606,37 @@ app.post('/api/invite', async (req, res) => {
   );
   console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
-    // Returnera länkar som användaren kan kopiera och skicka manuellt
-    const inviteMessages = invitees.map((inv, i) => ({
-      email: inv.email,
-      link: inviteLinks[i],
-      message: `Hej ${inv.email}!\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på länken för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar!`
-    }));
+    // Returnera svar omedelbart
+    res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
+    
+    // Skicka mejl asynkront med SendGrid
+    setImmediate(async () => {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: 'smtp.sendgrid.net',
+          port: 587,
+          secure: false,
+          auth: {
+            user: 'apikey',
+            pass: process.env.SENDGRID_API_KEY || 'SG.dummy'
+          }
+        });
 
-    res.json({ 
-      message: 'Inbjudningar skapade! Kopiera och skicka länkarna nedan till dina vänner.', 
-      groupId, 
-      inviteLinks,
-      inviteMessages
+        const emailPromises = invitees.map((inv, i) => {
+          const mailOptions = {
+            from: '"BookR" <noreply@bookr.app>',
+            to: inv.email,
+            subject: 'Inbjudan till Kalenderjämförelse',
+            text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
+          };
+          return transporter.sendMail(mailOptions);
+        });
+
+        await Promise.all(emailPromises);
+        console.log('Mejl skickade till:', invitees.map(inv => inv.email));
+      } catch (emailError) {
+        console.error('Fel vid mejlutskick:', emailError);
+      }
     });
 
 

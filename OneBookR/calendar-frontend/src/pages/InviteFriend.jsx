@@ -176,20 +176,12 @@ const InviteFriend = ({ fromUser, fromToken }) => {
         setEmails([]);
         setInputValue('');
         
-        if (data.inviteMessages && Array.isArray(data.inviteMessages)) {
-          // Visa kopieringsbara meddelanden
-          const messages = data.inviteMessages.map(inv => 
-            `Till: ${inv.email}\n\n${inv.message}`
-          ).join('\n\n---\n\n');
-          
-          setGroupLink(messages);
-          setMessage('Inbjudningar skapade! Kopiera meddelandena nedan och skicka till dina vänner via mejl, SMS eller annat meddelande:');
+        setMessage('Inbjudningar skickade!');
+        if (data.inviteLinks && Array.isArray(data.inviteLinks)) {
+          setGroupLink(data.inviteLinks.join('\n'));
         }
-        
         if (data.groupId) {
-          setTimeout(() => {
-            window.location.href = `${window.location.origin}${window.location.pathname}?group=${data.groupId}`;
-          }, 3000);
+          window.location.href = `${window.location.origin}${window.location.pathname}?group=${data.groupId}`;
         }
       } else {
         setMessage(data.error || 'Något gick fel.');
@@ -347,31 +339,14 @@ const InviteFriend = ({ fromUser, fromToken }) => {
       </Box>
       {message && <Typography sx={{ mt: 2 }} color="success.main">{message}</Typography>}
       {groupLink && (
-        <Box sx={{ mt: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 2 }}>
-          <Typography variant="body2" sx={{ mb: 2, fontWeight: 600 }}>
-            Kopiera och skicka:
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            {groupLink.split('\n').map((link, i) => (
+              <div key={i}>
+                <a href={link} target="_blank" rel="noopener noreferrer">{link}</a>
+              </div>
+            ))}
           </Typography>
-          <Box sx={{ 
-            bgcolor: 'white', 
-            p: 2, 
-            borderRadius: 1, 
-            border: '1px solid #ddd',
-            maxHeight: 300,
-            overflow: 'auto',
-            fontFamily: 'monospace',
-            fontSize: 12,
-            whiteSpace: 'pre-wrap'
-          }}>
-            {groupLink}
-          </Box>
-          <Button 
-            onClick={handleCopy} 
-            variant="contained" 
-            size="small" 
-            sx={{ mt: 2 }}
-          >
-            Kopiera allt
-          </Button>
         </Box>
       )}
     </Box>
