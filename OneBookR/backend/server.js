@@ -606,35 +606,38 @@ app.post('/api/invite', async (req, res) => {
   );
   console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
-    // Skicka mejl endast om EMAIL_USER och EMAIL_PASS är konfigurerade
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
-
-        const emailPromises = invitees.map((inv, i) => {
-          const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: inv.email,
-            subject: 'Inbjudan till Kalenderjämförelse',
-            text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
-          };
-          return transporter.sendMail(mailOptions);
-        });
-
-        await Promise.all(emailPromises);
-        console.log('Mejl skickade till:', invitees.map(inv => inv.email));
-      } catch (emailError) {
-        console.error('Fel vid mejlutskick:', emailError);
-      }
-    }
-
+    // Returnera svar omedelbart
     res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
+    
+    // Skicka mejl asynkront i bakgrunden
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      setImmediate(async () => {
+        try {
+          const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+              user: process.env.EMAIL_USER,
+              pass: process.env.EMAIL_PASS,
+            },
+          });
+
+          const emailPromises = invitees.map((inv, i) => {
+            const mailOptions = {
+              from: process.env.EMAIL_USER,
+              to: inv.email,
+              subject: 'Inbjudan till Kalenderjämförelse',
+              text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
+            };
+            return transporter.sendMail(mailOptions);
+          });
+
+          await Promise.all(emailPromises);
+          console.log('Mejl skickade till:', invitees.map(inv => inv.email));
+        } catch (emailError) {
+          console.error('Fel vid mejlutskick:', emailError);
+        }
+      });
+    }
 
 
   } catch (error) {
