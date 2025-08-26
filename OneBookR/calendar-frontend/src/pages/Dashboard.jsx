@@ -19,6 +19,12 @@ export default function Dashboard({ user }) {
  
   useEffect(() => {
     if (groupId) {
+      // Skippa server-anrop för temporära grupper
+      if (groupId.startsWith('temp_')) {
+        setGroupTokens([user.accessToken]);
+        return;
+      }
+      
       // Hämta e-post på säkert sätt
       let email = user.email;
       if (!email && user.emails && user.emails.length > 0) {
@@ -82,6 +88,18 @@ export default function Dashboard({ user }) {
 
   useEffect(() => {
     if (groupId) {
+      // Hantera temporära grupper lokalt
+      if (groupId.startsWith('temp_')) {
+        setGroupStatus({
+          allJoined: false,
+          current: 1,
+          expected: 2,
+          invited: ['Väntar på att andra ansluter via länken'],
+          groupName: 'Temporär grupp (servern är nere)'
+        });
+        return;
+      }
+      
       // Hämta status för gruppen
       const pollStatus = () => {
         fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/status`)
