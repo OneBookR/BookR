@@ -614,11 +614,16 @@ app.post('/api/invite', async (req, res) => {
       setImmediate(async () => {
         try {
           const transporter = nodemailer.createTransport({
-            service: 'gmail',
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
             auth: {
               user: process.env.EMAIL_USER,
               pass: process.env.EMAIL_PASS,
             },
+            connectionTimeout: 60000,
+            greetingTimeout: 30000,
+            socketTimeout: 60000
           });
 
           const emailPromises = invitees.map((inv, i) => {
@@ -892,11 +897,16 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
       // Skicka ut mejl till ALLA parter
       const transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
         auth: {
           user: process.env.EMAIL_USER,
           pass: process.env.EMAIL_PASS,
         },
+        connectionTimeout: 60000,
+        greetingTimeout: 30000,
+        socketTimeout: 60000
       });
 
         // Bygg mejltext med eller utan meet-länk/plats
@@ -980,11 +990,16 @@ app.post('/api/contact', async (req, res) => {
   }
   try {
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
+      connectionTimeout: 60000,
+      greetingTimeout: 30000,
+      socketTimeout: 60000
     });
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
@@ -1024,11 +1039,16 @@ app.post('/api/waitlist', async (req, res) => {
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
         const transporter = nodemailer.createTransport({
-          service: 'gmail',
+          host: 'smtp.gmail.com',
+          port: 587,
+          secure: false,
           auth: {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASS,
           },
+          connectionTimeout: 60000,
+          greetingTimeout: 30000,
+          socketTimeout: 60000
         });
         
         // Endast admin-notifiering
