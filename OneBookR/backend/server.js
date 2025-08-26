@@ -613,16 +613,18 @@ app.post('/api/invite', async (req, res) => {
     setImmediate(async () => {
       try {
         const transporter = nodemailer.createTransport({
-          service: 'gmail',
+          host: 'smtp.sendgrid.net',
+          port: 587,
+          secure: false,
           auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
+            user: 'apikey',
+            pass: process.env.SENDGRID_API_KEY,
           },
         });
 
         const emailPromises = invitees.map((inv, i) => {
           const mailOptions = {
-            from: process.env.EMAIL_USER,
+            from: 'noreply@bookr.app',
             to: inv.email,
             subject: 'Inbjudan till Kalenderjämförelse',
             text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`,
@@ -890,16 +892,13 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
       // Skicka ut mejl till ALLA parter
       const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
+        host: 'smtp.sendgrid.net',
         port: 587,
         secure: false,
         auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
+          user: 'apikey',
+          pass: process.env.SENDGRID_API_KEY,
         },
-        connectionTimeout: 60000,
-        greetingTimeout: 30000,
-        socketTimeout: 60000
       });
 
         // Bygg mejltext med eller utan meet-länk/plats
@@ -915,7 +914,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         }
 
         await transporter.sendMail({
-          from: process.env.EMAIL_USER,
+          from: 'noreply@bookr.app',
           to: allEmails.join(','),
           subject: 'Möte bokat!',
           text: mailText,
@@ -983,19 +982,16 @@ app.post('/api/contact', async (req, res) => {
   }
   try {
     const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
+      host: 'smtp.sendgrid.net',
       port: 587,
       secure: false,
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: 'apikey',
+        pass: process.env.SENDGRID_API_KEY,
       },
-      connectionTimeout: 60000,
-      greetingTimeout: 30000,
-      socketTimeout: 60000
     });
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: 'noreply@bookr.app',
       to: 'onebookr@gmail.com',
       subject: 'Bokningsförfrågan via BookR',
       text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
@@ -1032,21 +1028,18 @@ app.post('/api/waitlist', async (req, res) => {
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
         const transporter = nodemailer.createTransport({
-          host: 'smtp.gmail.com',
+          host: 'smtp.sendgrid.net',
           port: 587,
           secure: false,
           auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
+            user: 'apikey',
+            pass: process.env.SENDGRID_API_KEY,
           },
-          connectionTimeout: 60000,
-          greetingTimeout: 30000,
-          socketTimeout: 60000
         });
         
         // Endast admin-notifiering
         await transporter.sendMail({
-          from: process.env.EMAIL_USER,
+          from: 'noreply@bookr.app',
           to: 'onebookr@gmail.com',
           subject: 'Ny registrering på BookR väntelista',
           text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
