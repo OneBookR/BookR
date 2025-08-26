@@ -12,6 +12,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
   const [groupName, setGroupName] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredContacts, setFilteredContacts] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef();
 
   // Lyssna på förifyllda kontakter från kontaktboken
@@ -110,10 +111,16 @@ const InviteFriend = ({ fromUser, fromToken }) => {
 
   const sendInvites = async () => {
     console.log('sendInvites called with emails:', emails);
+    if (isLoading) {
+      console.log('Already loading, ignoring click');
+      return;
+    }
     if (emails.length === 0) {
       setMessage('Ange minst en e-postadress.');
       return;
     }
+    setIsLoading(true);
+    setMessage('Skickar inbjudningar...');
 
     // SÄKER: Hämta e-post från alla möjliga ställen
     let emailToSend = fromUser;
@@ -167,7 +174,9 @@ const InviteFriend = ({ fromUser, fromToken }) => {
         }),
       });
 
+      console.log('API response status:', res.status);
       const data = await res.json();
+      console.log('API response data:', data);
 
       if (res.ok) {
         setMessage('Inbjudningar skickade!');
@@ -189,6 +198,8 @@ const InviteFriend = ({ fromUser, fromToken }) => {
     } catch (err) {
       console.error('Fel vid utskick:', err);
       setMessage('Tekniskt fel.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -316,7 +327,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
         <IconButton
           aria-label="skicka inbjudningar"
           onClick={sendInvites}
-          disabled={emails.length === 0}
+          disabled={emails.length === 0 || isLoading}
           sx={{
             ml: 2,
             background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
