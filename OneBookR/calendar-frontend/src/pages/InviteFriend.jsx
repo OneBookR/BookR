@@ -109,6 +109,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
   };
 
   const sendInvites = async () => {
+    console.log('sendInvites called with emails:', emails);
     if (emails.length === 0) {
       setMessage('Ange minst en e-postadress.');
       return;
@@ -116,6 +117,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
 
     // SÄKER: Hämta e-post från alla möjliga ställen
     let emailToSend = fromUser;
+    console.log('fromUser:', fromUser);
     if (
       typeof fromUser === 'object' &&
       fromUser &&
@@ -126,6 +128,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
         (fromUser.emails && fromUser.emails[0].value) ||
         (fromUser.emails && fromUser.emails[0]);
     }
+    console.log('emailToSend after fromUser check:', emailToSend);
     if (
       (!emailToSend || !emailToSend.includes('@')) &&
       window.user &&
@@ -145,6 +148,12 @@ const InviteFriend = ({ fromUser, fromToken }) => {
     }
 
     try {
+      console.log('Making API request with:', {
+        emails,
+        fromUser: emailToSend,
+        fromToken: fromToken ? 'present' : 'missing',
+        groupName: groupName.trim() || 'Namnlös grupp',
+      });
       const res = await fetch('https://bookr-production.up.railway.app/api/invite', {
         method: 'POST',
         headers: {
