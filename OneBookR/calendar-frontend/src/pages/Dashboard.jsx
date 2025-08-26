@@ -86,7 +86,8 @@ export default function Dashboard({ user }) {
       const pollStatus = () => {
         fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/status`)
           .then(res => res.json())
-          .then(status => setGroupStatus(status));
+          .then(status => setGroupStatus(status))
+          .catch(err => console.log('Status poll failed:', err));
         // Hämta anslutna e-postadresser (om backend stödjer det)
         fetch(`https://bookr-production.up.railway.app/api/group/${groupId}/joined`)
           .then(res => res.json())
@@ -94,7 +95,7 @@ export default function Dashboard({ user }) {
           .catch(() => setJoinedEmails([]));
       };
       pollStatus();
-      const interval = setInterval(pollStatus, 5000);
+      const interval = setInterval(pollStatus, 15000);
       return () => clearInterval(interval);
     }
   }, [groupId, user.accessToken]);
