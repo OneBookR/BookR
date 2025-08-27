@@ -61,9 +61,12 @@ passport.deserializeUser(function(id, done) {
   });
 });
 
-// Middleware: logga ut användaren vid varje sidladdning (utom login)
+// Middleware: logga ut användaren vid varje sidladdning (utom login och logout)
 app.use((req, res, next) => {
-    if (req.path !== '/login' && req.isAuthenticated && req.isAuthenticated()) {
+    if (
+        req.isAuthenticated && req.isAuthenticated() &&
+        req.path !== '/login' && req.path !== '/logout'
+    ) {
         req.logout(err => {
             if (err) { return next(err); }
             return res.redirect('/login');
