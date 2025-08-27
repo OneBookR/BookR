@@ -35,7 +35,13 @@ function App() {
     // Kolla först efter auth-parameter i URL
     const urlParams = new URLSearchParams(window.location.search);
     const authToken = urlParams.get('auth');
-    
+
+    // Om vi redan har en användare, gör inget mer
+    if (user) {
+      setLoading(false);
+      return;
+    }
+
     if (authToken) {
       try {
         // Dekoda och sätt user direkt
@@ -54,29 +60,21 @@ function App() {
         setUser(null);
         setLoading(false);
       }
-      return;
+    } else {
+      // Om ingen auth-token, försök hämta användaren från backend-session (om det finns)
+      fetch('https://bookr-production.up.railway.app/api/user', {
+        credentials: 'include'
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.user) {
+            setUser(data.user);
+          }
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
     }
-
-    // NYTT: Om ingen auth-token i URL, försök hämta användaren via session-cookie
-    fetch('https://bookr-production.up.railway.app/api/user', {
-      credentials: 'include'
-    })
-      .then(res => {
-        if (res.ok) return res.json();
-        throw new Error('Not authenticated');
-      })
-      .then(data => {
-        setUser(data.user);
-        setLoading(false);
-      })
-      .catch(() => {
-        setUser(null);
-        setLoading(false);
-      });
-
-    // ...ingen localStorage-kontroll...
-    // console.log('No valid authentication found');
-  }, []);
+  }, [user]);
 
   // Efter inloggning, återställ URL om det finns sparade parametrar
   useEffect(() => {
