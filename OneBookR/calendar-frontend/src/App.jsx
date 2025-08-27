@@ -41,8 +41,6 @@ function App() {
         console.log('User authenticated via URL:', userData.user.email || userData.user.displayName);
         
         if (userData.user && userData.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
-          // Spara i localStorage
-          localStorage.setItem('auth_token', authToken);
           setUser(userData.user);
           
           // Ta bort auth-parameter från URL
@@ -53,23 +51,6 @@ function App() {
         }
       } catch (e) {
         console.error('Invalid auth token from URL:', e);
-      }
-    }
-    
-    // Kolla localStorage
-    const storedToken = localStorage.getItem('auth_token');
-    if (storedToken) {
-      try {
-        const userData = JSON.parse(atob(storedToken));
-        if (userData.user && userData.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
-          console.log('User found in localStorage:', userData.user.email || userData.user.displayName);
-          setUser(userData.user);
-          return;
-        } else {
-          localStorage.removeItem('auth_token');
-        }
-      } catch (e) {
-        localStorage.removeItem('auth_token');
       }
     }
     
