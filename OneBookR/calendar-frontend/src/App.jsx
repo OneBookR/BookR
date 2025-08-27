@@ -39,10 +39,10 @@ function App() {
       try {
         const userData = JSON.parse(atob(authToken));
         console.log('User authenticated via URL:', userData.user.email || userData.user.displayName);
-        
+
         if (userData.user && userData.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
           setUser(userData.user);
-          
+
           // Ta bort auth-parameter från URL
           urlParams.delete('auth');
           const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
@@ -52,9 +52,27 @@ function App() {
       } catch (e) {
         console.error('Invalid auth token from URL:', e);
       }
+      return;
     }
-    
-    console.log('No valid authentication found');
+
+    // NYTT: Om ingen auth-token i URL, försök hämta användaren via session-cookie
+    fetch('https://bookr-production.up.railway.app/api/user', {
+      credentials: 'include'
+    })
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Not authenticated');
+      })
+      .then(data => {
+        setUser(data.user);
+      })
+      .catch(() => {
+        // Ingen giltig session, visa login
+        setUser(null);
+      });
+
+    // ...ingen localStorage-kontroll...
+    // console.log('No valid authentication found');
   }, []);
 
   // Efter inloggning, återställ URL om det finns sparade parametrar
