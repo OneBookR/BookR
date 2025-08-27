@@ -2,7 +2,6 @@ const express = require('express');
 const path = require('path');
 const cookieParser = require('cookie-parser');
 const logger = require('morgan');
-const session = require('express-session');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const mongoose = require('mongoose');
@@ -28,10 +27,29 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(session({ secret: 'your secret', resave: false, saveUninitialized: true }));
 
 app.use(passport.initialize());
-app.use(passport.session());
+
+// Middleware: radera sessionscookie och logga ut användaren vid varje request
+app.use((req, res, next) => {
+    // Radera session-cookien om den finns
+    if (req.session) {
+        req.session.destroy(() => {});
+    }
+    // Passport: logga ut om inloggad
+    if (req.logout && req.isAuthenticated && req.isAuthenticated()) {
+        req.logout(err => {
+            if (err) { return next(err); }
+            // Radera eventuella cookies
+            res.clearCookie('connect.sid');
+            return res.redirect('/login');
+        });
+    } else {
+        // Radera eventuella cookies
+        res.clearCookie('connect.sid');
+        next();
+    }
+});
 
 passport.use(new LocalStrategy(
   function(username, password, done) {
@@ -59,21 +77,6 @@ passport.deserializeUser(function(id, done) {
   User.findById(id, function (err, user) {
     done(err, user);
   });
-});
-
-// Middleware: logga ut användaren vid varje sidladdning (utom login och logout)
-app.use((req, res, next) => {
-    if (
-        req.isAuthenticated && req.isAuthenticated() &&
-        req.path !== '/login' && req.path !== '/logout'
-    ) {
-        req.logout(err => {
-            if (err) { return next(err); }
-            return res.redirect('/login');
-        });
-    } else {
-        next();
-    }
 });
 
 app.use('/', indexRouter);
