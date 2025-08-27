@@ -49,8 +49,8 @@ app.use(session({
   resave: false,
   saveUninitialized: true,
   cookie: {
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'none',
+    secure: true,
     httpOnly: true
     // Ta bort maxAge för att göra cookien till en session-cookie (försvinner när webbläsaren stängs)
   }
