@@ -13,6 +13,7 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 
 function App() {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); // NYTT
 
   // Spara URL-parametrar i localStorage om det finns group-parameter
   useEffect(() => {
@@ -37,20 +38,21 @@ function App() {
     
     if (authToken) {
       try {
-        const userData = JSON.parse(atob(authToken));
-        console.log('User authenticated via URL:', userData.user.email || userData.user.displayName);
+        // Dekoda och sätt user direkt
+        const decoded = JSON.parse(atob(authToken));
+        setUser(decoded.user);
+        setLoading(false);
 
-        if (userData.user && userData.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
-          setUser(userData.user);
-
-          // Ta bort auth-parameter från URL
-          urlParams.delete('auth');
-          const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
-          window.history.replaceState({}, '', newUrl);
-          return;
-        }
+        // Rensa auth-parametern från URL för att undvika loop
+        urlParams.delete('auth');
+        const newUrl =
+          window.location.pathname +
+          (urlParams.toString() ? '?' + urlParams.toString() : '') +
+          window.location.hash;
+        window.history.replaceState({}, '', newUrl);
       } catch (e) {
-        console.error('Invalid auth token from URL:', e);
+        setUser(null);
+        setLoading(false);
       }
       return;
     }
@@ -65,10 +67,11 @@ function App() {
       })
       .then(data => {
         setUser(data.user);
+        setLoading(false);
       })
       .catch(() => {
-        // Ingen giltig session, visa login
         setUser(null);
+        setLoading(false);
       });
 
     // ...ingen localStorage-kontroll...
@@ -113,8 +116,6 @@ function App() {
     </Box>
   );
 
-
-
   // Animation keyframes injected once
   useEffect(() => {
     if (!document.getElementById('landing-animations')) {
@@ -154,6 +155,17 @@ function App() {
     return <WaitlistAdmin />;
   }
 
+  // NYTT: Visa laddar tills vi vet om användaren är inloggad
+  if (loading) {
+    return (
+      <>
+        {loginIndicator}
+        <Box sx={{ mt: 12, textAlign: 'center' }}>
+          <span>Laddar...</span>
+        </Box>
+      </>
+    );
+  }
 
   if (!user) {
     // Använd state-parameter för OAuth istället för redirect
