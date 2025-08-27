@@ -627,17 +627,22 @@ app.post('/api/invite', async (req, res) => {
         // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
-          const mailOptions = {
-            from: `"BookR" <onebookr@gmail.com>`,
-            to: inv.email,
-            subject: 'Inbjudan till Kalenderjämförelse',
-            text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
-          };
-          try {
-            await transporter.sendMail(mailOptions);
-            console.log('Inbjudningsmejl skickat till:', inv.email);
-          } catch (sendErr) {
-            console.error('Fel vid utskick till', inv.email, sendErr);
+          // Skicka inte till samma adress som avsändaren
+          if (inv.email && inv.email !== creatorEmail) {
+            const mailOptions = {
+              from: `"BookR" <onebookr@gmail.com>`,
+              to: inv.email,
+              subject: 'Inbjudan till Kalenderjämförelse',
+              text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
+            };
+            try {
+              await transporter.sendMail(mailOptions);
+              console.log('Inbjudningsmejl skickat till:', inv.email);
+            } catch (sendErr) {
+              console.error('Fel vid utskick till', inv.email, sendErr);
+            }
+          } else {
+            console.log('Hoppar över att skicka inbjudan till skaparen:', inv.email);
           }
         }
 
