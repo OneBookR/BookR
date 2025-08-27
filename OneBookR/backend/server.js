@@ -624,33 +624,20 @@ app.post('/api/invite', async (req, res) => {
           },
         });
 
-        // Skicka mejl till alla inbjudna
+        // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
           const mailOptions = {
             from: `"BookR" <onebookr@gmail.com>`,
             to: inv.email,
             subject: 'Inbjudan till Kalenderjämförelse',
-            text: `Hej ${inv.email},\n\n${creatorEmail} vill jämföra sin kalender med dig i grupp "${groupName || 'Namnlös grupp'}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
+            text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
           };
           try {
             await transporter.sendMail(mailOptions);
-            console.log('Mejl skickat till:', inv.email);
+            console.log('Inbjudningsmejl skickat till:', inv.email);
           } catch (sendErr) {
-            console.error('Fel vid utskick till', inv.email);
-            if (sendErr && sendErr.response) {
-              console.error('SMTP response:', sendErr.response);
-            }
-            if (sendErr && sendErr.code) {
-              console.error('SMTP error code:', sendErr.code);
-            }
-            if (sendErr && sendErr.command) {
-              console.error('SMTP command:', sendErr.command);
-            }
-            console.error('Fullt felobjekt:', sendErr);
-            if (sendErr && sendErr.stack) {
-              console.error('Stacktrace:', sendErr.stack);
-            }
+            console.error('Fel vid utskick till', inv.email, sendErr);
           }
         }
 
@@ -986,27 +973,30 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         },
       });
 
-        // Bygg mejltext med eller utan meet-länk/plats
+        // Bygg mejltext med alla detaljer
         let mailText = `Alla har accepterat mötestiden!\n\n`;
         mailText += `Möte: ${suggestion.title ? suggestion.title : 'Föreslaget möte'}\n`;
         mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n`;
         if (suggestion.withMeet && meetLink) {
-          mailText += `Google Meet-länk: ${meetLink}\n\nDu hittar även mötet i din Google Kalender.`;
-        } else if (suggestion.location) {
-          mailText += `Plats: ${suggestion.location}\n\nDu hittar även mötet i din Google Kalender.`;
-        } else {
-          mailText += `Du hittar mötet i din Google Kalender.`;
+          mailText += `Google Meet-länk: ${meetLink}\n`;
+        }
+        if (suggestion.location) {
+          mailText += `Plats: ${suggestion.location}\n`;
+        }
+        mailText += `\nDeltagare:\n${allEmails.join('\n')}\n`;
+        mailText += `\nDu hittar även mötet i din Google Kalender.\n\nHälsningar,\nBookR-teamet`;
+
+        // Skicka mejl till ALLA (en och en, så att alla får ett eget mejl)
+        for (const email of allEmails) {
+          await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: 'Möte bokat!',
+            text: mailText,
+          });
         }
 
-        // Skicka mejl till ALLA (inklusive skaparen)
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: allEmails.join(','),
-          subject: 'Möte bokat!',
-          text: mailText,
-        });
-
-        console.log('Mejl skickat till:', allEmails, 'med länk:', meetLink);
+        console.log('Verifieringsmejl skickat till:', allEmails);
 
     } catch (err) {
       console.error('Fel vid Google Calendar-bokning eller mejl:', err, err?.response?.data);
