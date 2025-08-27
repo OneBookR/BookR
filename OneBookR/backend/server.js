@@ -624,6 +624,7 @@ app.post('/api/invite', async (req, res) => {
           },
         });
 
+        // Skicka mejl till alla inbjudna
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
           const mailOptions = {
@@ -652,6 +653,21 @@ app.post('/api/invite', async (req, res) => {
             }
           }
         }
+
+        // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
+        try {
+          const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
+          await transporter.sendMail({
+            from: `"BookR" <onebookr@gmail.com>`,
+            to: creatorEmail,
+            subject: 'Du har bjudit in personer till din kalendergrupp',
+            text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
+          });
+          console.log('Mejl skickat till skaparen:', creatorEmail);
+        } catch (creatorMailErr) {
+          console.error('Fel vid mejlutskick till skaparen:', creatorMailErr);
+        }
+
         console.log('Mejl skickade till:', invitees.map(inv => inv.email));
       } catch (emailError) {
         console.error('Fel vid mejlutskick:', emailError);
@@ -982,6 +998,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           mailText += `Du hittar mötet i din Google Kalender.`;
         }
 
+        // Skicka mejl till ALLA (inklusive skaparen)
         await transporter.sendMail({
           from: process.env.EMAIL_USER,
           to: allEmails.join(','),
