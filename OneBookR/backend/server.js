@@ -15,6 +15,7 @@ import path from 'path';
 import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
 
 const app = express();
+app.set('trust proxy', 1); // NYTT: Behövs för secure cookies bakom proxy (Railway/Heroku/Render)
 app.use(express.json());
 app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
