@@ -8,11 +8,33 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import fetch from 'node-fetch';
-import nodemailer from 'nodemailer';
+import { Resend } from "resend";
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
 import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
+
+const resend = new Resend('re_mjX281G3_PhNZdKmtERXyH3wh1F1kGb4a');
+
+// ...
+
+app.post('/invite', async (req, res) => {
+  // ...existing code för att skapa inbjudan...
+  const { invitedUserEmail, invitedUserName, groupId, inviterName } = req.body;
+  const groupLink = `https://bookr-production.up.railway.app/${groupId}`;
+
+  // Skicka mejl med Resend
+  await resend.send({
+    from: 'BookR <onebookr@gmail.com>',
+    to: invitedUserEmail,
+    subject: 'Inbjudan till BookR',
+    text: `Hej ${invitedUserName} vill jämföra sina kalender med dig - ${groupLink}`
+  });
+
+  // ...existing code...
+  res.redirect('/somewhere');
+});
+
 
 const app = express();
 app.set('trust proxy', 1); // NYTT: Behövs för secure cookies bakom proxy (Railway/Heroku/Render)
@@ -619,7 +641,7 @@ app.post('/api/invite', async (req, res) => {
         const transporter = nodemailer.createTransport({
           service: 'gmail',
           auth: {
-            user: process.env.EMAIL_USER,
+            user: process.env.EMAIL_USER, // Måste vara onebookr@gmail.com
             pass: process.env.EMAIL_PASS,
           },
         });
@@ -630,7 +652,7 @@ app.post('/api/invite', async (req, res) => {
           // Skicka inte till samma adress som avsändaren
           if (inv.email && inv.email !== creatorEmail) {
             const mailOptions = {
-              from: `"BookR" <onebookr@gmail.com>`,
+              from: `"BookR" <${process.env.EMAIL_USER}>`, // Måste vara samma som EMAIL_USER
               to: inv.email,
               subject: 'Inbjudan till Kalenderjämförelse',
               text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
@@ -650,7 +672,7 @@ app.post('/api/invite', async (req, res) => {
         try {
           const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
           await transporter.sendMail({
-            from: `"BookR" <onebookr@gmail.com>`,
+            from: `"BookR" <${process.env.EMAIL_USER}>`,
             to: creatorEmail,
             subject: 'Du har bjudit in personer till din kalendergrupp',
             text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
@@ -969,7 +991,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         });
         console.log('Suggestion updated in Firebase with meet link');
 
-      // Skicka ut mejl till ALLA parter
+      // Skapa transporter med rätt avsändare
       const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
@@ -994,7 +1016,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         // Skicka mejl till ALLA (en och en, så att alla får ett eget mejl)
         for (const email of allEmails) {
           await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+            from: `"BookR" <${process.env.EMAIL_USER}>`, // Viktigt! Måste vara samma som EMAIL_USER
             to: email,
             subject: 'Möte bokat!',
             text: mailText,
