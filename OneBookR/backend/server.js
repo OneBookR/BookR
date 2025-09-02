@@ -42,8 +42,7 @@ app.post('/invite', async (req, res) => {
       subject: "Inbjudan till BookR",
       text: `Hej ${invitedUserName}, ${inviterName} vill jämföra sina kalendrar med dig - ${groupLink}`
   });
-
-
+  
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('Resend error:', err);
