@@ -37,7 +37,7 @@ app.post('/invite', async (req, res) => {
     const groupLink = `https://bookr-production.up.railway.app/${groupId}`;
 
     await resend.emails.send({
-      from: "BookR <onebookr@gmail.com>",
+      from: "BookR <onboarding@resend.dev>",
       to: invitedUserEmail,   // ✅ personen som bjuds in
       subject: "Inbjudan till BookR",
       text: `Hej ${invitedUserName}, ${inviterName} vill jämföra sina kalendrar med dig - ${groupLink}`
@@ -657,7 +657,7 @@ setImmediate(async () => {
       if (inv.email && inv.email !== creatorEmail) {
         try {
           await resend.emails.send({
-            from: "BookR <onebookr@gmail.com>",
+            from: "BookR <onboarding@resend.dev>",
             to: inv.email,
             subject: 'Inbjudan till Kalenderjämförelse',
             text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
@@ -675,7 +675,7 @@ setImmediate(async () => {
     try {
       const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
       await resend.emails.send({
-        from: "BookR <onebookr@gmail.com>",
+        from: "BookR <onboarding@resend.dev>",
         to: creatorEmail,
         subject: 'Du har bjudit in personer till din kalendergrupp',
         text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
@@ -1088,7 +1088,7 @@ app.post('/api/contact', async (req, res) => {
   }
   try {
     await resend.emails.send({
-      from: "BookR <onebookr@gmail.com>",
+      from: "BookR <onboarding@resend.dev>",
       to: "onebookr@gmail.com",   // ✅ admin får detta
       subject: "Bokningsförfrågan via BookR",
       text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
