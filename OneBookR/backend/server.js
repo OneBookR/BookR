@@ -26,7 +26,6 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 // ✅ Initiera Resend
-import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
 console.log("Resend API key exists?", !!process.env.RESEND_API_KEY);
 
