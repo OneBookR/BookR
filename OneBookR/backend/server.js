@@ -26,7 +26,10 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 // ✅ Initiera Resend
+import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
+console.log("Resend API key exists?", !!process.env.RESEND_API_KEY);
+
 
 // --- ROUTES --- //
 
@@ -49,6 +52,18 @@ app.post('/invite', async (req, res) => {
     res.status(500).json({ error: 'Kunde inte skicka mejl' });
   }
 });
+
+try {
+  const response = await resend.emails.send({
+    from: "BookR <onboarding@resend.dev>",
+    to: inv.email,
+    subject: "Inbjudan till Kalenderjämförelse",
+    text: `Hej!\n\n${creatorEmail} har bjudit in dig...`
+  });
+  console.log("Resend response for", inv.email, response);
+} catch (sendErr) {
+  console.error("Fel vid utskick till", inv.email, sendErr);
+}
 
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
