@@ -10,6 +10,7 @@
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "resend": "^6.0.1",
     "express": "^5.1.0",
     "express-session": "^1.18.1",
     "firebase": "^10.7.1",
