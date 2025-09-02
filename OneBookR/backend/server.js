@@ -651,14 +651,6 @@ app.post('/api/invite', async (req, res) => {
         // Extra loggning för felsökning
         console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
 
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.EMAIL_USER, // Måste vara onebookr@gmail.com
-            pass: process.env.EMAIL_PASS,
-          },
-        });
-
         // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
@@ -1004,14 +996,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         });
         console.log('Suggestion updated in Firebase with meet link');
 
-      // Skapa transporter med rätt avsändare
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
-        },
-      });
 
         // Bygg mejltext med alla detaljer
         let mailText = `Alla har accepterat mötestiden!\n\n`;
@@ -1105,19 +1089,12 @@ app.post('/api/contact', async (req, res) => {
     return res.status(400).json({ error: 'Alla fält krävs.' });
   }
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
     await resend.emails.send({
-  from: "BookR <onebookr@gmail.com>",
-  to: "onebookr@gmail.com",   // ✅ admin får detta
-  subject: "Bokningsförfrågan via BookR",
-  text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
-});
+      from: "BookR <onebookr@gmail.com>",
+      to: "onebookr@gmail.com",   // ✅ admin får detta
+      subject: "Bokningsförfrågan via BookR",
+      text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
+    });
 
     res.json({ success: true });
   } catch (err) {
@@ -1150,13 +1127,7 @@ app.post('/api/waitlist', async (req, res) => {
     // Skicka endast admin-notifiering för att spara kostnader
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
+ 
         
         // Endast admin-notifiering
         await resend.emails.send({
