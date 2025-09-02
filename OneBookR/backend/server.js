@@ -12,35 +12,43 @@ import { Resend } from "resend";
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
-import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
+import {
+  createGroup, getGroup, updateGroup,
+  createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation,
+  createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion,
+  deleteUserData
+} from './firestore.js';
 
-const resend = new Resend('re_mjX281G3_PhNZdKmtERXyH3wh1F1kGb4a');
-
-// ...
-
-app.post('/invite', async (req, res) => {
-  // ...existing code för att skapa inbjudan...
-  const { invitedUserEmail, invitedUserName, groupId, inviterName } = req.body;
-  const groupLink = `https://bookr-production.up.railway.app/${groupId}`;
-
-  // Skicka mejl med Resend
-  await resend.send({
-    from: 'BookR <onebookr@gmail.com>',
-    to: invitedUserEmail,
-    subject: 'Inbjudan till BookR',
-    text: `Hej ${invitedUserName} vill jämföra sina kalender med dig - ${groupLink}`
-  });
-
-  // ...existing code...
-  res.redirect('/somewhere');
-});
-
-
+// ✅ Skapa express app direkt
 const app = express();
-app.set('trust proxy', 1); // NYTT: Behövs för secure cookies bakom proxy (Railway/Heroku/Render)
+app.set('trust proxy', 1); // Behövs för secure cookies bakom Railway/Heroku
 app.use(express.json());
 app.use(bodyParser.json());
-const PORT = process.env.PORT || 3000;
+
+// ✅ Initiera Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// --- ROUTES --- //
+
+// Inbjudan via e-post
+app.post('/invite', async (req, res) => {
+  try {
+    const { invitedUserEmail, invitedUserName, groupId, inviterName } = req.body;
+    const groupLink = `https://bookr-production.up.railway.app/${groupId}`;
+
+    await resend.emails.send({
+      from: 'BookR <onebookr@gmail.com>',
+      to: invitedUserEmail,
+      subject: 'Inbjudan till BookR',
+      text: `Hej ${invitedUserName}, ${inviterName} vill jämföra sina kalendrar med dig - ${groupLink}`
+    });
+
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Resend error:', err);
+    res.status(500).json({ error: 'Kunde inte skicka mejl' });
+  }
+});
 
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
@@ -62,24 +70,28 @@ app.get('/terms-of-service', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'policy.html'));
 });
 
-// Middleware
+// Middleware för auth
 app.use(cors({
   origin: 'https://bookr-production.up.railway.app',
   credentials: true
 }));
 app.use(session({
-  secret: process.env.SESSION_SECRET,
+  secret: process.env.SESSION_SECRET || "supersecret",
   resave: false,
   saveUninitialized: true,
   cookie: {
     sameSite: 'none',
     secure: true,
     httpOnly: true
-    // Ta bort maxAge för att göra cookien till en session-cookie (försvinner när webbläsaren stängs)
   }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+// ✅ Starta servern sist
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 // Google OAuth-strategi
 passport.use(new GoogleStrategy({
