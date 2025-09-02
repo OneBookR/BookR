@@ -37,11 +37,12 @@ app.post('/invite', async (req, res) => {
     const groupLink = `https://bookr-production.up.railway.app/${groupId}`;
 
     await resend.emails.send({
-      from: 'BookR <onebookr@gmail.com>',
-      to: invitedUserEmail,
-      subject: 'Inbjudan till BookR',
+      from: "BookR <onebookr@gmail.com>",
+      to: invitedUserEmail,   // ✅ personen som bjuds in
+      subject: "Inbjudan till BookR",
       text: `Hej ${invitedUserName}, ${inviterName} vill jämföra sina kalendrar med dig - ${groupLink}`
-    });
+  });
+
 
     res.status(200).json({ success: true });
   } catch (err) {
@@ -670,7 +671,7 @@ app.post('/api/invite', async (req, res) => {
               text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
             };
             try {
-              await transporter.sendMail(mailOptions);
+              await resend.emails.send(mailOptions);
               console.log('Inbjudningsmejl skickat till:', inv.email);
             } catch (sendErr) {
               console.error('Fel vid utskick till', inv.email, sendErr);
@@ -683,7 +684,7 @@ app.post('/api/invite', async (req, res) => {
         // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
         try {
           const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
-          await transporter.sendMail({
+          await resend.emails.send({
             from: `"BookR" <${process.env.EMAIL_USER}>`,
             to: creatorEmail,
             subject: 'Du har bjudit in personer till din kalendergrupp',
@@ -1027,7 +1028,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
         // Skicka mejl till ALLA (en och en, så att alla får ett eget mejl)
         for (const email of allEmails) {
-          await transporter.sendMail({
+          await resend.emails.send({
             from: `"BookR" <${process.env.EMAIL_USER}>`, // Viktigt! Måste vara samma som EMAIL_USER
             to: email,
             subject: 'Möte bokat!',
@@ -1111,12 +1112,13 @@ app.post('/api/contact', async (req, res) => {
         pass: process.env.EMAIL_PASS,
       },
     });
-    await transporter.sendMail({
-      from: `"BookR" <${process.env.EMAIL_USER}>`,
-      to: 'onebookr@gmail.com',
-      subject: 'Bokningsförfrågan via BookR',
-      text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
-    });
+    await resend.emails.send({
+  from: "BookR <onebookr@gmail.com>",
+  to: "onebookr@gmail.com",   // ✅ admin får detta
+  subject: "Bokningsförfrågan via BookR",
+  text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
+});
+
     res.json({ success: true });
   } catch (err) {
     console.error('Fel vid kontaktmail:', err);
@@ -1157,7 +1159,7 @@ app.post('/api/waitlist', async (req, res) => {
         });
         
         // Endast admin-notifiering
-        await transporter.sendMail({
+        await resend.emails.send({
           from: `"BookR" <${process.env.EMAIL_USER}>`,
           to: 'onebookr@gmail.com',
           subject: 'Ny registrering på BookR väntelista',
