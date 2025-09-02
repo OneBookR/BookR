@@ -644,60 +644,59 @@ app.post('/api/invite', async (req, res) => {
     // Returnera svar omedelbart
     res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
     
-    // Skicka mejl asynkront med Gmail
-    setImmediate(async () => {
-      try {
-        // Extra loggning för felsökning
-        console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
+// Skicka mejl asynkront med Resend
+setImmediate(async () => {
+  try {
+    // Extra loggning för felsökning
+    console.log('Försöker skicka mejl med Resend');
 
-        // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
-        for (let i = 0; i < invitees.length; i++) {
-          const inv = invitees[i];
-          // Skicka inte till samma adress som avsändaren
-          if (inv.email && inv.email !== creatorEmail) {
-            const mailOptions = {
-              from: `"BookR" <${process.env.EMAIL_USER}>`, // Måste vara samma som EMAIL_USER
-              to: inv.email,
-              subject: 'Inbjudan till Kalenderjämförelse',
-              text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
-            };
-            try {
-              await resend.emails.send(mailOptions);
-              console.log('Inbjudningsmejl skickat till:', inv.email);
-            } catch (sendErr) {
-              console.error('Fel vid utskick till', inv.email, sendErr);
-            }
-          } else {
-            console.log('Hoppar över att skicka inbjudan till skaparen:', inv.email);
-          }
-        }
-
-        // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
+    // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
+    for (let i = 0; i < invitees.length; i++) {
+      const inv = invitees[i];
+      // Skicka inte till samma adress som avsändaren
+      if (inv.email && inv.email !== creatorEmail) {
         try {
-          const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
           await resend.emails.send({
-            from: `"BookR" <${process.env.EMAIL_USER}>`,
-            to: creatorEmail,
-            subject: 'Du har bjudit in personer till din kalendergrupp',
-            text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
+            from: "BookR <onebookr@gmail.com>",
+            to: inv.email,
+            subject: 'Inbjudan till Kalenderjämförelse',
+            text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
           });
-          console.log('Mejl skickat till skaparen:', creatorEmail);
-        } catch (creatorMailErr) {
-          console.error('Fel vid mejlutskick till skaparen:', creatorMailErr);
+          console.log('Inbjudningsmejl skickat till:', inv.email);
+        } catch (sendErr) {
+          console.error('Fel vid utskick till', inv.email, sendErr);
         }
-
-        console.log('Mejl skickade till:', invitees.map(inv => inv.email));
-      } catch (emailError) {
-        console.error('Fel vid mejlutskick:', emailError);
-        if (emailError && emailError.stack) {
-          console.error('Stacktrace:', emailError.stack);
-        }
+      } else {
+        console.log('Hoppar över att skicka inbjudan till skaparen:', inv.email);
       }
-    });
+    }
+
+    // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
+    try {
+      const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
+      await resend.emails.send({
+        from: "BookR <onebookr@gmail.com>",
+        to: creatorEmail,
+        subject: 'Du har bjudit in personer till din kalendergrupp',
+        text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
+      });
+      console.log('Mejl skickat till skaparen:', creatorEmail);
+    } catch (creatorMailErr) {
+      console.error('Fel vid mejlutskick till skaparen:', creatorMailErr);
+    }
+
+    console.log('Mejl skickade till:', invitees.map(inv => inv.email));
+  } catch (emailError) {
+    console.error('Fel vid mejlutskick:', emailError);
+    if (emailError && emailError.stack) {
+      console.error('Stacktrace:', emailError.stack);
+    }
+  }
+});
 
   } catch (error) {
-    console.error('Error creating group:', error);
-    res.status(500).json({ error: 'Kunde inte skapa grupp' });
+    console.error('Fel vid skapande av grupp:', error);
+    res.status(500).json({ error: 'Fel vid skapande av grupp' });
   }
 });
 
