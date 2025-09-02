@@ -1026,7 +1026,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         // Skicka mejl till ALLA (en och en, så att alla får ett eget mejl)
         for (const email of allEmails) {
           await resend.emails.send({
-            from: `"BookR" <${process.env.EMAIL_USER}>`, // Viktigt! Måste vara samma som EMAIL_USER
+            from: "BookR <onboarding@resend.dev>",
             to: email,
             subject: 'Möte bokat!',
             text: mailText,
@@ -1095,7 +1095,7 @@ app.get('/api/invitations/:email', async (req, res) => {
   }
 });
 
-// Kontaktformulär: Skicka mail till onebookr@gmail.com
+// Kontaktformulär: Skicka mail till onboarding@resend.dev
 app.post('/api/contact', async (req, res) => {
   const { name, email, message } = req.body;
   if (!name || !email || !message) {
@@ -1144,7 +1144,7 @@ app.post('/api/waitlist', async (req, res) => {
         
         // Endast admin-notifiering
         await resend.emails.send({
-          from: `"BookR" <${process.env.EMAIL_USER}>`,
+          from: "BookR <onboarding@resend.dev>",
           to: 'onebookr@gmail.com',
           subject: 'Ny registrering på BookR väntelista',
           text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
