@@ -1,26 +1,63 @@
-import { db } from './firebase.js'; // korrekt export
+// firestore.js
+import { db } from './firebase.js';
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  query,
+  orderBy,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+  where
+} from 'firebase/firestore';
 
-import { collection, doc, getDoc, setDoc, getDocs, query, orderBy } from 'firebase/firestore';
+// -----------------------------
+// Väntelista
+// -----------------------------
 
+export async function addToWaitlist(email, name, referredBy = null) {
+  try {
+    await setDoc(doc(db, 'waitlist', email), {
+      email,
+      name,
+      referredBy,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('Fel vid addToWaitlist:', err);
+    throw err;
+  }
+}
 
-// firebase.js
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+export async function getWaitlist() {
+  try {
+    const q = query(collection(db, 'waitlist'), orderBy('timestamp', 'asc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data());
+  } catch (err) {
+    console.error('Fel vid getWaitlist:', err);
+    throw err;
+  }
+}
 
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID
-};
+export async function checkEmailInWaitlist(email) {
+  const docSnap = await getDoc(doc(db, 'waitlist', email));
+  return docSnap.exists();
+}
 
-const app = initializeApp(firebaseConfig);
+export async function getWaitlistCount() {
+  const snapshot = await getDocs(collection(db, 'waitlist'));
+  return snapshot.size;
+}
 
-// 🔑 Exportera Firestore-instansen korrekt
-
+// -----------------------------
 // Grupper
+// -----------------------------
+
 export async function createGroup(groupData) {
   const docRef = await addDoc(collection(db, 'groups'), {
     ...groupData,
@@ -30,22 +67,17 @@ export async function createGroup(groupData) {
 }
 
 export async function getGroup(groupId) {
-  try {
-    const docRef = doc(db, 'groups', groupId);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      return {
-        id: docSnap.id,
-        ...data,
-        createdAt: data.createdAt?.toDate?.() || data.createdAt
-      };
-    }
-    return null;
-  } catch (error) {
-    console.error('Error getting group:', error);
-    throw error;
+  const docRef = doc(db, 'groups', groupId);
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      ...data,
+      createdAt: data.createdAt?.toDate?.() || data.createdAt
+    };
   }
+  return null;
 }
 
 export async function updateGroup(groupId, updateData) {
@@ -53,7 +85,10 @@ export async function updateGroup(groupId, updateData) {
   await updateDoc(docRef, updateData);
 }
 
+// -----------------------------
 // Inbjudningar
+// -----------------------------
+
 export async function createInvitation(invitationData) {
   const docRef = await addDoc(collection(db, 'invitations'), {
     ...invitationData,
@@ -65,35 +100,31 @@ export async function createInvitation(invitationData) {
 
 export async function getInvitationsByEmail(email) {
   const q = query(
-    collection(db, 'invitations'), 
+    collection(db, 'invitations'),
     where('email', '==', email),
     where('responded', '==', false)
   );
-  const querySnapshot = await getDocs(q);
-  const invitations = querySnapshot.docs.map(doc => {
-    const data = doc.data();
-    return {
-      id: doc.id,
-      ...data,
-      createdAt: data.createdAt?.toDate?.() || data.createdAt
-    };
-  });
-  
-  // Sortera så senaste kommer först
-  return invitations.sort((a, b) => {
-    const dateA = new Date(a.createdAt);
-    const dateB = new Date(b.createdAt);
-    return dateB - dateA;
-  });
+  const snapshot = await getDocs(q);
+  return snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data(), createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 export async function getInvitationsByGroup(groupId) {
   const q = query(collection(db, 'invitations'), where('groupId', '==', groupId));
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+export async function updateInvitation(invitationId, updateData) {
+  const docRef = doc(db, 'invitations', invitationId);
+  await updateDoc(docRef, updateData);
+}
+
+// -----------------------------
 // Förslag
+// -----------------------------
+
 export async function createSuggestion(suggestionData) {
   const docRef = await addDoc(collection(db, 'suggestions'), {
     ...suggestionData,
@@ -106,8 +137,8 @@ export async function createSuggestion(suggestionData) {
 
 export async function getSuggestionsByGroup(groupId) {
   const q = query(collection(db, 'suggestions'), where('groupId', '==', groupId));
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
 export async function updateSuggestion(suggestionId, updateData) {
@@ -121,71 +152,27 @@ export async function getSuggestion(suggestionId) {
   return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
 }
 
-// GDPR - Radera användardata
+// -----------------------------
+// GDPR – radera användardata
+// -----------------------------
+
 export async function deleteUserData(email) {
   const batch = [];
-  
-  // Radera grupper där användaren är skapare
+
+  // Grupper där användaren är skapare
   const groupsQuery = query(collection(db, 'groups'), where('creatorEmail', '==', email));
   const groupsSnapshot = await getDocs(groupsQuery);
   groupsSnapshot.docs.forEach(doc => batch.push(deleteDoc(doc.ref)));
-  
-  // Radera inbjudningar
+
+  // Inbjudningar
   const invitationsQuery = query(collection(db, 'invitations'), where('email', '==', email));
   const invitationsSnapshot = await getDocs(invitationsQuery);
   invitationsSnapshot.docs.forEach(doc => batch.push(deleteDoc(doc.ref)));
-  
-  // Radera förslag
+
+  // Förslag
   const suggestionsQuery = query(collection(db, 'suggestions'), where('fromEmail', '==', email));
   const suggestionsSnapshot = await getDocs(suggestionsQuery);
   suggestionsSnapshot.docs.forEach(doc => batch.push(deleteDoc(doc.ref)));
-  
-  // Utför alla raderingar
+
   await Promise.all(batch);
-}
-
-export async function updateInvitation(invitationId, updateData) {
-  const docRef = doc(db, 'invitations', invitationId);
-  await updateDoc(docRef, updateData);
-}
-
-// Väntelista - PERMANENT LAGRING I FIRESTORE
-import { firestore } from './firebase.js'; // din Firestore-instans
-
-// Lägg till på väntelistan med möjlighet att spara vem som värvade
-export async function addToWaitlist(email, name, referredBy = null) {
-  try {
-    await firestore.collection('waitlist').doc(email).set({
-      email,
-      name,
-      referredBy,      // 🔑 spara värvaren
-      timestamp: new Date().toISOString()
-    });
-  } catch (err) {
-    console.error('Fel vid addToWaitlist:', err);
-    throw err;
-  }
-}
-
-// Hämta hela väntelistan, inklusive referredBy
-export async function getWaitlist() {
-  try {
-    const snapshot = await firestore.collection('waitlist').orderBy('timestamp', 'asc').get();
-    return snapshot.docs.map(doc => doc.data());
-  } catch (err) {
-    console.error('Fel vid getWaitlist:', err);
-    throw err;
-  }
-}
-
-// Valfritt: hämta antal
-export async function getWaitlistCount() {
-  const snapshot = await firestore.collection('waitlist').get();
-  return snapshot.size;
-}
-
-// Kontrollera om e-post redan finns
-export async function checkEmailInWaitlist(email) {
-  const doc = await firestore.collection('waitlist').doc(email).get();
-  return doc.exists;
 }
