@@ -14,6 +14,40 @@ const WaitlistAdmin = () => {
   const [chartPeriod, setChartPeriod] = useState('total');
   const [lineChart, setLineChart] = useState(null);
   const [barChart, setBarChart] = useState(null);
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newReferrer, setNewReferrer] = useState(''); // valfri värvare
+
+const handleAddToWaitlist = async () => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newEmail, name: newName, referrer: newReferrer || null })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Något gick fel.');
+
+    // Lägg till i state direkt så tabellen uppdateras
+    setWaitlist(prev => [
+      ...prev,
+      { email: newEmail, name: newName, referredBy: newReferrer || null, timestamp: new Date().toISOString() }
+    ]);
+
+    // Rensa formulär
+    setNewEmail('');
+    setNewName('');
+    setNewReferrer('');
+    setError('');
+    console.log('Lyckades lägga till:', data);
+
+  } catch (err) {
+    console.error('Fel vid addToWaitlist:', err);
+    setError(err.message);
+  }
+};
+
 
 
   console.log("Skickar adminKey:", adminKey); // DEBUG

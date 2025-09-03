@@ -21,12 +21,14 @@ import {
 
 export async function addToWaitlist(email, name, referredBy = null) {
   try {
+    console.log("Försöker lägga till:", { email, name, referredBy });
     await setDoc(doc(db, 'waitlist', email), {
       email,
       name,
       referredBy,
       timestamp: new Date().toISOString()
     });
+    console.log("Lyckades lägga till väntelista:", email);
   } catch (err) {
     console.error('Fel vid addToWaitlist:', err);
     throw err;
