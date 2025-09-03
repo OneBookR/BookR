@@ -36,21 +36,31 @@ console.log("Resend API key exists?", !!process.env.RESEND_API_KEY);
 app.post('/invite', async (req, res) => {
   try {
     const { invitedUserEmail, invitedUserName, groupId, inviterName } = req.body;
+
+    if (!invitedUserEmail || !invitedUserName || !groupId || !inviterName) {
+      return res.status(400).json({ error: 'Alla fält krävs: invitedUserEmail, invitedUserName, groupId, inviterName' });
+    }
+
     const groupLink = `https://bookr-production.up.railway.app/${groupId}`;
 
-    await resend.emails.send({
+    console.log("Försöker skicka mejl till:", invitedUserEmail);
+
+    const response = await resend.emails.send({
       from: "BookR <onboarding@resend.dev>",
-      to: inv.email,   // ✅ personen som bjuds in
+      to: invitedUserEmail,
       subject: "Inbjudan till BookR",
-      text: `Hej ${invitedUserName}, ${inviterName} vill jämföra sina kalendrar med dig - ${groupLink}`
-  });
-  
-    res.status(200).json({ success: true });
+      text: `Hej ${invitedUserName},\n\n${inviterName} vill jämföra sina kalendrar med dig.\nKlicka på länken för att gå med: ${groupLink}`
+    });
+
+    console.log("Resend response:", response);
+
+    res.status(200).json({ success: true, response });
   } catch (err) {
-    console.error('Resend error:', err);
+    console.error('Fel vid utskick av mejl:', err);
     res.status(500).json({ error: 'Kunde inte skicka mejl' });
   }
 });
+
 
 try {
   const response = await resend.emails.send({
