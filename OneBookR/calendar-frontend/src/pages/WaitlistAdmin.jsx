@@ -15,27 +15,26 @@ const WaitlistAdmin = () => {
   const [lineChart, setLineChart] = useState(null);
   const [barChart, setBarChart] = useState(null);
 
-  
+
   console.log("Skickar adminKey:", adminKey); // DEBUG
-  const handleLogin = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/waitlist/admin`, {
-        headers: { 'x-admin-key': adminKey }
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setWaitlist(data.waitlist);
-        setIsAuthenticated(true);
-        setError('');
-        setTimeout(() => initializeCharts(data.waitlist), 100);
-      } else {
-        setError('Fel admin-nyckel');
-      }
-    } catch (err) {
-      setError('Kunde inte ansluta till servern');
+const handleLogin = async () => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/waitlist/admin`, {
+      headers: { 'x-admin-key': adminKey } // adminKey måste vara korrekt
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      setWaitlist(data.waitlist); // detta fyller tabellen
+      setIsAuthenticated(true);
+      setError('');
+    } else {
+      setError('Fel admin-nyckel');
     }
-  };
+  } catch (err) {
+    setError('Kunde inte ansluta till servern');
+  }
+};
 
   
   const initializeCharts = (data) => {
