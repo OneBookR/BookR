@@ -40,7 +40,7 @@ app.post('/invite', async (req, res) => {
 
     await resend.emails.send({
       from: "BookR <onboarding@resend.dev>",
-      to: invitedUserEmail,   // ✅ personen som bjuds in
+      to: inv.email,   // ✅ personen som bjuds in
       subject: "Inbjudan till BookR",
       text: `Hej ${invitedUserName}, ${inviterName} vill jämföra sina kalendrar med dig - ${groupLink}`
   });
@@ -55,11 +55,11 @@ app.post('/invite', async (req, res) => {
 try {
   const response = await resend.emails.send({
     from: "BookR <onboarding@resend.dev>",
-    to: invitedUserEmail,
+    to: inv.email,
     subject: "Inbjudan till Kalenderjämförelse",
     text: `Hej!\n\n${creatorEmail} har bjudit in dig...`
   });
-  console.log("Resend response for", invitedUserEmail, response);
+  console.log("Resend response for", inv.email, response);
 } catch (sendErr) {
   console.error("Fel vid utskick av mejl:", sendErr);
 }
