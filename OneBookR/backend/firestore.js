@@ -33,6 +33,29 @@ export async function addToWaitlist(email, name, referredBy = null) {
   }
 }
 
+// Hämta hela väntelistan, inklusive vem som värvat
+export async function getWaitlist() {
+  try {
+    const q = query(collection(db, 'waitlist'), orderBy('timestamp', 'asc'));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        email: data.email,
+        name: data.name,
+        referredBy: data.referredBy || null,
+        // Konvertera timestamp till ISO-sträng
+        timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : data.timestamp
+      };
+    });
+  } catch (err) {
+    console.error('Fel vid getWaitlist:', err);
+    throw err;
+  }
+}
+
+
 export async function getWaitlist() {
   try {
     const q = query(collection(db, 'waitlist'), orderBy('timestamp', 'asc'));
