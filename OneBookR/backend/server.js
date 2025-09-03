@@ -61,7 +61,7 @@ try {
   });
   console.log("Resend response for", inv.email, response);
 } catch (sendErr) {
-  console.error("Fel vid utskick till", inv.email, sendErr);
+  console.error("Fel vid utskick av mejl:", sendErr);
 }
 
 // Servera frontend static files
