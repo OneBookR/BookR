@@ -1152,59 +1152,46 @@ app.post('/api/waitlist', async (req, res) => {
   }
 });
 
-// Lägg till på väntelista - PERMANENT LAGRING
+// Lägg till på väntelista - PERMANENT LAGRING I FIRESTORE
 app.post('/api/waitlist', async (req, res) => {
   const { email, name, referrer } = req.body;
-  
+
   if (!email || !name) {
     return res.status(400).json({ error: 'Namn och e-post krävs.' });
   }
-  
+
   try {
     // Kolla om redan registrerad i Firestore
     const existing = await checkEmailInWaitlist(email);
     if (existing) {
       return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
     }
-    
-    // Lägg till i Firestore - PERMANENT LAGRING
-    await addToWaitlist(email, name);
+
+    // Lägg till i Firestore (inkl referrer om den finns)
+    await addToWaitlist(email, name, referrer || null);
     const totalCount = await getWaitlistCount();
-    
-    // Skicka endast admin-notifiering för att spara kostnader
+
+    // Skicka admin-notifiering (ej till användaren)
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
- 
-        
-        // Endast admin-notifiering
         await resend.emails.send({
           from: "BookR <info@onebookr.se>",
-          to: 'info@onebookr.se',
-          subject: 'Ny registrering på BookR väntelista',
-          text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
+          to: "info@onebookr.se",
+          subject: "Ny registrering på BookR väntelista",
+          text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nReferrer: ${referrer || "Ingen"}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
         });
       } catch (err) {
-        console.error('Fel vid mejlutskick:', err);
+        console.error("Fel vid mejlutskick:", err);
       }
     }
-    
+
     res.json({ success: true, count: totalCount });
   } catch (error) {
-    console.error('Fel vid registrering på väntelista:', error);
-    res.status(500).json({ error: 'Kunde inte registrera på väntelistan.' });
+    console.error("Fel vid registrering på väntelista:", error);
+    res.status(500).json({ error: "Kunde inte registrera på väntelistan." });
   }
 });
 
-// Hämta antal på väntelista - FRÅN FIRESTORE
-app.get('/api/waitlist/count', async (req, res) => {
-  try {
-    const count = await getWaitlistCount();
-    res.json({ count });
-  } catch (error) {
-    console.error('Fel vid hämtning av väntelista-antal:', error);
-    res.status(500).json({ error: 'Kunde inte hämta antal.' });
-  }
-});
 
 
 // Admin-route
