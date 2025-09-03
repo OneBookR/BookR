@@ -15,6 +15,8 @@ const WaitlistAdmin = () => {
   const [lineChart, setLineChart] = useState(null);
   const [barChart, setBarChart] = useState(null);
 
+  
+  console.log("Skickar adminKey:", adminKey); // DEBUG
   const handleLogin = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/waitlist/admin`, {
@@ -35,6 +37,7 @@ const WaitlistAdmin = () => {
     }
   };
 
+  
   const initializeCharts = (data) => {
     // Ladda Chart.js dynamiskt
     if (window.Chart) {
