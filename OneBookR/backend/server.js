@@ -1,11 +1,10 @@
- import dotenv from 'dotenv';
+import dotenv from 'dotenv';
 dotenv.config();
 
 // DEBUG: Kolla att servern verkligen ser nyckeln
 console.log("ADMIN_KEY från .env:", process.env.ADMIN_KEY);
 
 import express from 'express';
-import dotenv from 'dotenv';
 import session from 'express-session';
 import passport from 'passport';
 import cors from 'cors';
