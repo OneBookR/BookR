@@ -1133,52 +1133,35 @@ app.post('/api/contact', async (req, res) => {
 // Väntelista - PERMANENT LAGRING I FIRESTORE (INGEN DATA FÖRSVINNER ALDRIG)
 import { addToWaitlist, getWaitlist, getWaitlistCount, checkEmailInWaitlist } from './firestore.js';
 
-app.post('/api/waitlist', async (req, res) => {
-  const { email, name, referrer } = req.body;
-
-  if (!email || !name) return res.status(400).json({ error: 'Namn och e-post krävs.' });
-
-  try {
-    const existing = await checkEmailInWaitlist(email);
-    if (existing) return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
-
-    await addToWaitlist(email, name, referrer || null);
-    const totalCount = await getWaitlistCount();
-
-    res.json({ success: true, count: totalCount });
-  } catch (err) {
-    console.error('Fel vid registrering på väntelista:', err);
-    res.status(500).json({ error: 'Kunde inte registrera på väntelistan.' });
-  }
-});
-
-// Lägg till på väntelista - PERMANENT LAGRING I FIRESTORE
-app.post('/api/waitlist', async (req, res) => {
+// Lägg till på väntelista
+app.post("/api/waitlist", async (req, res) => {
   const { email, name, referrer } = req.body;
 
   if (!email || !name) {
-    return res.status(400).json({ error: 'Namn och e-post krävs.' });
+    return res.status(400).json({ error: "Namn och e-post krävs." });
   }
 
   try {
-    // Kolla om redan registrerad i Firestore
+    // Kolla om redan registrerad
     const existing = await checkEmailInWaitlist(email);
     if (existing) {
-      return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
+      return res.status(400).json({ error: "Du är redan registrerad på väntelistan!" });
     }
 
-    // Lägg till i Firestore (inkl referrer om den finns)
+    // Lägg till i Firestore
     await addToWaitlist(email, name, referrer || null);
     const totalCount = await getWaitlistCount();
 
-    // Skicka admin-notifiering (ej till användaren)
+    // Skicka admin-notifiering (valfritt)
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
         await resend.emails.send({
           from: "BookR <info@onebookr.se>",
           to: "info@onebookr.se",
           subject: "Ny registrering på BookR väntelista",
-          text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nReferrer: ${referrer || "Ingen"}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
+          text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nReferrer: ${
+            referrer || "Ingen"
+          }\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
         });
       } catch (err) {
         console.error("Fel vid mejlutskick:", err);
@@ -1192,7 +1175,16 @@ app.post('/api/waitlist', async (req, res) => {
   }
 });
 
-
+// Hämta antal på väntelista
+app.get("/api/waitlist/count", async (req, res) => {
+  try {
+    const count = await getWaitlistCount();
+    res.json({ count });
+  } catch (error) {
+    console.error("Fel vid hämtning av väntelista-antal:", error);
+    res.status(500).json({ error: "Kunde inte hämta antal." });
+  }
+});
 
 // Admin-route
 app.get("/api/waitlist/admin", async (req, res) => {
@@ -1202,7 +1194,7 @@ app.get("/api/waitlist/admin", async (req, res) => {
   }
 
   try {
-    const waitlist = await getWaitlist(); // hämtar alla fält, inklusive referredBy
+    const waitlist = await getWaitlist(); // hämtar alla fält
     res.json({ waitlist });
   } catch (err) {
     console.error("Fel vid hämtning av väntelista:", err);
@@ -1210,84 +1202,93 @@ app.get("/api/waitlist/admin", async (req, res) => {
   }
 });
 
+// Generera delningslänkar
+app.post("/api/waitlist/share", (req, res) => {
+  const waitlistUrl = "https://bookr-production.up.railway.app/waitlist";
+  const message = encodeURIComponent("Kolla in BookR - slipp mejlkaoset när ni ska boka möten! 🚀");
 
-// Generera delningslänk för väntelistan
-app.post('/api/waitlist/share', (req, res) => {
-  const waitlistUrl = 'https://bookr-production.up.railway.app/waitlist';
-  const message = encodeURIComponent('Kolla in BookR - slipp mejlkaoset när ni ska boka möten! 🚀');
-  
   const shareLinks = {
-    email: `mailto:?subject=${encodeURIComponent('Du borde kolla in BookR!')}&body=${encodeURIComponent(`Hej!\n\nJag hittade BookR - en app som gör slut på mejlkaoset när man ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!`)}`,
+    email: `mailto:?subject=${encodeURIComponent(
+      "Du borde kolla in BookR!"
+    )}&body=${encodeURIComponent(
+      `Hej!\n\nJag hittade BookR - en app som gör slut på mejlkaoset när man ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!`
+    )}`,
     whatsapp: `https://wa.me/?text=${message}%20${encodeURIComponent(waitlistUrl)}`,
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(waitlistUrl)}`,
     twitter: `https://twitter.com/intent/tweet?text=${message}&url=${encodeURIComponent(waitlistUrl)}`,
     linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(waitlistUrl)}`,
-    copy: waitlistUrl
+    copy: waitlistUrl,
   };
-  
+
   res.json({ shareLinks, waitlistUrl });
 });
 
-// Specifika routes för React SPA
-app.get('/waitlist', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/admin/waitlist', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/about', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/contact', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
-});
-
-// Svara på inbjudan (acceptera eller neka)
-app.post('/api/invitation/:invitationId/respond', async (req, res) => {
+// Svara på inbjudan
+app.post("/api/invitation/:invitationId/respond", async (req, res) => {
   try {
     const { invitationId } = req.params;
-    const { response } = req.body; // 'accept' eller 'decline'
-    
-    if (!response || !['accept', 'decline'].includes(response)) {
-      return res.status(400).json({ error: 'Response måste vara accept eller decline' });
+    const { response } = req.body;
+
+    if (!response || !["accept", "decline"].includes(response)) {
+      return res.status(400).json({ error: "Response måste vara accept eller decline" });
     }
-    
+
     await updateInvitation(invitationId, {
       responded: true,
-      accepted: response === 'accept'
+      accepted: response === "accept",
     });
-    
+
     res.json({ success: true });
   } catch (error) {
-    console.error('Error responding to invitation:', error);
-    res.status(500).json({ error: 'Kunde inte svara på inbjudan' });
+    console.error("Error responding to invitation:", error);
+    res.status(500).json({ error: "Kunde inte svara på inbjudan" });
   }
 });
 
-// GDPR-endpoint för att radera användardata
-app.delete('/api/user/delete-data', async (req, res) => {
+// GDPR - radera användardata
+app.delete("/api/user/delete-data", async (req, res) => {
   const { email } = req.body;
-  
-  if (!email || !email.includes('@')) {
-    return res.status(400).json({ error: 'Giltig e-postadress krävs' });
+
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Giltig e-postadress krävs" });
   }
-  
+
   try {
     await deleteUserData(email);
-    res.json({ success: true, message: 'All användardata har raderats från Firebase' });
+    res.json({ success: true, message: "All användardata har raderats från Firebase" });
   } catch (error) {
-    console.error('Error deleting user data:', error);
-    res.status(500).json({ error: 'Kunde inte radera användardata' });
+    console.error("Error deleting user data:", error);
+    res.status(500).json({ error: "Kunde inte radera användardata" });
   }
+});
+
+// Dummy user-route (för att slippa 401 på /api/user)
+app.get("/api/user", (req, res) => {
+  res.json({ user: null });
+});
+
+// ------------------ REACT SPA ROUTES ------------------
+app.get("/waitlist", (req, res) => {
+  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+});
+
+app.get("/admin/waitlist", (req, res) => {
+  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+});
+
+app.get("/about", (req, res) => {
+  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+});
+
+app.get("/contact", (req, res) => {
+  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+});
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+});
+
+// ------------------ START SERVER ------------------
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
