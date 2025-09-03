@@ -142,35 +142,42 @@ export async function updateInvitation(invitationId, updateData) {
 }
 
 // Väntelista - PERMANENT LAGRING I FIRESTORE
-export async function addToWaitlist(email, name) {
-  const docRef = await addDoc(collection(db, 'waitlist'), {
-    email,
-    name,
-    timestamp: serverTimestamp(),
-    createdAt: new Date().toISOString()
-  });
-  return docRef.id;
+import { firestore } from './firebase.js'; // din Firestore-instans
+
+// Lägg till på väntelistan med möjlighet att spara vem som värvade
+export async function addToWaitlist(email, name, referredBy = null) {
+  try {
+    await firestore.collection('waitlist').doc(email).set({
+      email,
+      name,
+      referredBy,      // 🔑 spara värvaren
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('Fel vid addToWaitlist:', err);
+    throw err;
+  }
 }
 
+// Hämta hela väntelistan, inklusive referredBy
 export async function getWaitlist() {
-  const querySnapshot = await getDocs(collection(db, 'waitlist'));
-  return querySnapshot.docs.map(doc => {
-    const data = doc.data();
-    return {
-      id: doc.id,
-      ...data,
-      timestamp: data.timestamp?.toDate?.()?.toISOString() || data.createdAt || data.timestamp
-    };
-  }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  try {
+    const snapshot = await firestore.collection('waitlist').orderBy('timestamp', 'asc').get();
+    return snapshot.docs.map(doc => doc.data());
+  } catch (err) {
+    console.error('Fel vid getWaitlist:', err);
+    throw err;
+  }
 }
 
+// Valfritt: hämta antal
 export async function getWaitlistCount() {
-  const querySnapshot = await getDocs(collection(db, 'waitlist'));
-  return querySnapshot.size;
+  const snapshot = await firestore.collection('waitlist').get();
+  return snapshot.size;
 }
 
+// Kontrollera om e-post redan finns
 export async function checkEmailInWaitlist(email) {
-  const q = query(collection(db, 'waitlist'), where('email', '==', email));
-  const querySnapshot = await getDocs(q);
-  return !querySnapshot.empty;
+  const doc = await firestore.collection('waitlist').doc(email).get();
+  return doc.exists;
 }

@@ -18,8 +18,8 @@ const Waitlist = () => {
   const [shareLinks, setShareLinks] = useState(null);
 
   // 👇 Hämta referrer från URL
-  const urlParams = new URLSearchParams(window.location.search);
-  const referrer = urlParams.get("referrer");
+const urlParams = new URLSearchParams(window.location.search);
+const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/waitlist/count`)
@@ -33,14 +33,14 @@ const Waitlist = () => {
     e.preventDefault();
     if (!email || !name) return;
 
-    setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // 👇 Skicka med referrer till backend
-        body: JSON.stringify({ email, name, referrer })
-      });
+      const handleSignup = async () => {
+        const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, name, referrer }) // 🔑 skickar värvaren
+        });
+      };
 
       if (res.ok) {
         // Show success overlay instead of toast

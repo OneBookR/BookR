@@ -5,6 +5,7 @@ dotenv.config();
 console.log("ADMIN_KEY från .env:", process.env.ADMIN_KEY);
 
 import express from 'express';
+import dotenv from 'dotenv';
 import session from 'express-session';
 import passport from 'passport';
 import cors from 'cors';
@@ -1133,25 +1134,23 @@ app.post('/api/contact', async (req, res) => {
 // Väntelista - PERMANENT LAGRING I FIRESTORE (INGEN DATA FÖRSVINNER ALDRIG)
 import { addToWaitlist, getWaitlist, getWaitlistCount, checkEmailInWaitlist } from './firestore.js';
 
-// Lägg till på väntelista - PERMANENT LAGRING
 app.post('/api/waitlist', async (req, res) => {
   const { email, name, referrer } = req.body;
 
-  if (!email || !name) {
-    return res.status(400).json({ error: 'Namn och e-post krävs.' });
+  if (!email || !name) return res.status(400).json({ error: 'Namn och e-post krävs.' });
+
+  try {
+    const existing = await checkEmailInWaitlist(email);
+    if (existing) return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
+
+    await addToWaitlist(email, name, referrer || null);
+    const totalCount = await getWaitlistCount();
+
+    res.json({ success: true, count: totalCount });
+  } catch (err) {
+    console.error('Fel vid registrering på väntelista:', err);
+    res.status(500).json({ error: 'Kunde inte registrera på väntelistan.' });
   }
-
-  const newEntry = {
-    email,
-    name,
-    referredBy: referrer || null,
-    timestamp: new Date().toISOString()
-  };
-
-  // 👉 Spara newEntry i databasen (eller JSON-fil om du kör filbaserat)
-  await addToWaitlist(email, name);
-
-  res.json({ success: true, entry: newEntry });
 });
 
 // Lägg till på väntelista - PERMANENT LAGRING
@@ -1209,26 +1208,21 @@ app.get('/api/waitlist/count', async (req, res) => {
 });
 
 
+// Admin-route
 app.get("/api/waitlist/admin", async (req, res) => {
   const incomingKey = req.headers["x-admin-key"];
-  console.log("Inkommen x-admin-key:", incomingKey);
-
   if (incomingKey !== process.env.ADMIN_KEY) {
-    console.log("Fel admin-nyckel!");
     return res.status(401).json({ error: "Fel nyckel" });
   }
 
   try {
-    const waitlist = await getWaitlist(); // Firestore-funktion
-    console.log("Hämtade väntelista:", waitlist.length, "poster");
+    const waitlist = await getWaitlist(); // hämtar alla fält, inklusive referredBy
     res.json({ waitlist });
   } catch (err) {
     console.error("Fel vid hämtning av väntelista:", err);
     res.status(500).json({ error: "Serverfel" });
   }
 });
-
-
 
 
 // Generera delningslänk för väntelistan
