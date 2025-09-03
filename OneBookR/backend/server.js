@@ -1132,7 +1132,29 @@ import { addToWaitlist, getWaitlist, getWaitlistCount, checkEmailInWaitlist } fr
 
 // Lägg till på väntelista - PERMANENT LAGRING
 app.post('/api/waitlist', async (req, res) => {
-  const { email, name } = req.body;
+  const { email, name, referrer } = req.body;
+
+  if (!email || !name) {
+    return res.status(400).json({ error: 'Namn och e-post krävs.' });
+  }
+
+  const newEntry = {
+    email,
+    name,
+    referredBy: referrer || null,
+    timestamp: new Date().toISOString()
+  };
+
+  // 👉 Spara newEntry i databasen (eller JSON-fil om du kör filbaserat)
+  await addToWaitlist(email, name);
+
+  res.json({ success: true, entry: newEntry });
+});
+
+// Lägg till på väntelista - PERMANENT LAGRING
+app.post('/api/waitlist', async (req, res) => {
+  const { email, name, referrer } = req.body;
+  
   if (!email || !name) {
     return res.status(400).json({ error: 'Namn och e-post krävs.' });
   }
@@ -1183,21 +1205,15 @@ app.get('/api/waitlist/count', async (req, res) => {
   }
 });
 
-// Admin: Hämta hela väntelistan (skyddad) - FRÅN FIRESTORE
-app.get('/api/waitlist/admin', async (req, res) => {
-  const adminKey = req.headers['x-admin-key'];
-  if (adminKey !== 'bookr-admin-2024') {
-    return res.status(401).json({ error: 'Unauthorized' });
+app.get("/api/waitlist/admin", async (req, res) => {
+  if (req.headers["x-admin-key"] !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: "Fel nyckel" });
   }
-  
-  try {
-    const waitlist = await getWaitlist();
-    res.json({ waitlist, count: waitlist.length });
-  } catch (error) {
-    console.error('Fel vid hämtning av väntelista för admin:', error);
-    res.status(500).json({ error: 'Kunde inte hämta väntelista.' });
-  }
+
+  const waitlist = await db.waitlist.findAll(); // ska inkludera referredBy
+  res.json({ waitlist });
 });
+
 
 // Generera delningslänk för väntelistan
 app.post('/api/waitlist/share', (req, res) => {

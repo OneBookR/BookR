@@ -634,6 +634,14 @@ const WaitlistAdmin = () => {
                 }}>
                   Registrerad
                 </TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 700, 
+                  bgcolor: '#f8f9ff',
+                  borderBottom: '2px solid #635bff',
+                  color: '#0a2540'
+                }}>
+                  Värvad av
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -659,6 +667,9 @@ const WaitlistAdmin = () => {
                   </TableCell>
                   <TableCell sx={{ color: '#666', fontSize: '0.875rem' }}>
                     {new Date(entry.timestamp).toLocaleString('sv-SE')}
+                  </TableCell>
+                  <TableCell sx={{ color: '#666', fontSize: '0.875rem' }}>
+                    {entry.referredBy ? entry.referredBy : "—"}
                   </TableCell>
                 </TableRow>
               ))}
