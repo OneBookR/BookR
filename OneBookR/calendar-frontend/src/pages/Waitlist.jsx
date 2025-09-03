@@ -7,6 +7,11 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { API_BASE_URL } from '../config';
 
+
+const shareLink = `https://din-url.se/waitlist?referrer=${email}`;
+const urlParams = new URLSearchParams(window.location.search);
+const referrer = urlParams.get('referrer');
+
 const Waitlist = () => {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
