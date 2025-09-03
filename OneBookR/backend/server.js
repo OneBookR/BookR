@@ -52,7 +52,7 @@ app.post('/invite', async (req, res) => {
     console.log("Försöker skicka mejl till:", invitedUserEmail);
 
     const response = await resend.emails.send({
-      from: `BookR <${fromEmail}>`,
+      from: `BookR <${process.env.RESEND_FROM}>`,
       to: invitedUserEmail,
       subject: "Inbjudan till BookR",
       text: `Hej ${invitedUserName},\n\n${inviterName} vill jämföra sina kalendrar med dig.\nKlicka på länken för att gå med: ${groupLink}`,
@@ -683,7 +683,7 @@ setImmediate(async () => {
       if (inv.email && inv.email !== creatorEmail) {
         try {
           await resend.emails.send({
-            from: "BookR <onboarding@resend.dev>",
+            from: "BookR <info@onebookr.se>",
             to: inv.email,
             subject: 'Inbjudan till Kalenderjämförelse',
             text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
@@ -701,7 +701,7 @@ setImmediate(async () => {
     try {
       const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
       await resend.emails.send({
-        from: "BookR <onboarding@resend.dev>",
+        from: "BookR <info@onebookr.se>",
         to: creatorEmail,
         subject: 'Du har bjudit in personer till din kalendergrupp',
         text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
@@ -1037,7 +1037,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         // Skicka mejl till ALLA (en och en, så att alla får ett eget mejl)
         for (const email of allEmails) {
           await resend.emails.send({
-            from: "BookR <onboarding@resend.dev>",
+            from: "BookR <info@onebookr.se>",
             to: email,
             subject: 'Möte bokat!',
             text: mailText,
@@ -1106,7 +1106,7 @@ app.get('/api/invitations/:email', async (req, res) => {
   }
 });
 
-// Kontaktformulär: Skicka mail till onboarding@resend.dev
+// Kontaktformulär: Skicka mail till info@onebookr.se
 app.post('/api/contact', async (req, res) => {
   const { name, email, message } = req.body;
   if (!name || !email || !message) {
@@ -1114,8 +1114,8 @@ app.post('/api/contact', async (req, res) => {
   }
   try {
     await resend.emails.send({
-      from: "BookR <onboarding@resend.dev>",
-      to: "onebookr@gmail.com",   // ✅ admin får detta
+      from: "BookR <info@onebookr.se>",
+      to: "info@onebookr.se",   // ✅ admin får detta
       subject: "Bokningsförfrågan via BookR",
       text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
     });
@@ -1155,8 +1155,8 @@ app.post('/api/waitlist', async (req, res) => {
         
         // Endast admin-notifiering
         await resend.emails.send({
-          from: "BookR <onboarding@resend.dev>",
-          to: 'onebookr@gmail.com',
+          from: "BookR <info@onebookr.se>",
+          to: 'info@onebookr.se',
           subject: 'Ny registrering på BookR väntelista',
           text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
         });
