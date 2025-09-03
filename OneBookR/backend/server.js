@@ -25,14 +25,18 @@ app.set('trust proxy', 1); // Behövs för secure cookies bakom Railway/Heroku
 app.use(express.json());
 app.use(bodyParser.json());
 
-// ✅ Initiera Resend
+// Kontrollera att API-nyckeln finns vid start
+if (!process.env.RESEND_API_KEY) {
+  console.error('FEL: RESEND_API_KEY saknas. Sätt den i Railway / .env som RESEND_API_KEY.');
+  // Omdirigera ej automatiskt i produktion — men logga tydligt. Du kan välja process.exit(1) om du vill stoppa servern.
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 console.log("Resend API key exists?", !!process.env.RESEND_API_KEY);
 
 
 // --- ROUTES --- //
 
-// Inbjudan via e-post
 app.post('/invite', async (req, res) => {
   try {
     const { invitedUserEmail, invitedUserName, groupId, inviterName } = req.body;
@@ -41,38 +45,36 @@ app.post('/invite', async (req, res) => {
       return res.status(400).json({ error: 'Alla fält krävs: invitedUserEmail, invitedUserName, groupId, inviterName' });
     }
 
+    // Använd en verifierad from-adress (sätt RESEND_FROM i Railway -> t.ex. noreply@bookr.se)
+    const fromEmail = process.env.RESEND_FROM || 'noreply@your-verified-domain.com';
     const groupLink = `https://bookr-production.up.railway.app/${groupId}`;
 
     console.log("Försöker skicka mejl till:", invitedUserEmail);
 
     const response = await resend.emails.send({
-      from: "BookR <onboarding@resend.dev>",
+      from: `BookR <${fromEmail}>`,
       to: invitedUserEmail,
       subject: "Inbjudan till BookR",
-      text: `Hej ${invitedUserName},\n\n${inviterName} vill jämföra sina kalendrar med dig.\nKlicka på länken för att gå med: ${groupLink}`
+      text: `Hej ${invitedUserName},\n\n${inviterName} vill jämföra sina kalendrar med dig.\nKlicka på länken för att gå med: ${groupLink}`,
+      html: `<p>Hej ${invitedUserName},</p>
+             <p>${inviterName} vill jämföra sina kalendrar med dig.</p>
+             <p><a href="${groupLink}">Klicka för att gå med i gruppen</a></p>`
     });
 
-    console.log("Resend response:", response);
+    // Skriv ut hela svaret för debugging
+    console.log("Resend send success:", JSON.stringify(response, null, 2));
 
-    res.status(200).json({ success: true, response });
+    // Resend kan returnera ett objekt med id; skicka tillbaka relevant info
+    return res.status(200).json({ success: true, id: response?.id || null, response });
   } catch (err) {
+    // Mer utförlig fel-logging om Resend returnerar extra info
+    if (err?.response) {
+      console.error('Resend error response:', JSON.stringify(err.response, null, 2));
+    }
     console.error('Fel vid utskick av mejl:', err);
-    res.status(500).json({ error: 'Kunde inte skicka mejl' });
+    return res.status(500).json({ error: err?.message || 'Kunde inte skicka mejl' });
   }
 });
-
-
-try {
-  const response = await resend.emails.send({
-    from: "BookR <onboarding@resend.dev>",
-    to: invitedUserEmail,
-    subject: "Inbjudan till Kalenderjämförelse",
-    text: `Hej!\n\n${creatorEmail} har bjudit in dig...`
-  });
-  console.log("Resend response for", invitedUserEmail, response);
-} catch (sendErr) {
-  console.error("Fel vid utskick av mejl:", sendErr);
-}
 
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
