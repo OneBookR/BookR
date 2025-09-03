@@ -22,20 +22,21 @@ const handleAddToWaitlist = async () => {
   try {
     const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-key': adminKey   // 🔑 lägg till denna!
+      },
       body: JSON.stringify({ email: newEmail, name: newName, referrer: newReferrer || null })
     });
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Något gick fel.');
 
-    // Lägg till i state direkt så tabellen uppdateras
     setWaitlist(prev => [
       ...prev,
       { email: newEmail, name: newName, referredBy: newReferrer || null, timestamp: new Date().toISOString() }
     ]);
 
-    // Rensa formulär
     setNewEmail('');
     setNewName('');
     setNewReferrer('');
@@ -47,6 +48,7 @@ const handleAddToWaitlist = async () => {
     setError(err.message);
   }
 };
+
 
 
 
