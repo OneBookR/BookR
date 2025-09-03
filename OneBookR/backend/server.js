@@ -1208,7 +1208,6 @@ app.get('/api/waitlist/count', async (req, res) => {
   }
 });
 
-import { getWaitlist } from './firestore.js';
 
 app.get("/api/waitlist/admin", async (req, res) => {
   const incomingKey = req.headers["x-admin-key"];
