@@ -56,17 +56,6 @@ export async function getWaitlist() {
 }
 
 
-export async function getWaitlist() {
-  try {
-    const q = query(collection(db, 'waitlist'), orderBy('timestamp', 'asc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => doc.data());
-  } catch (err) {
-    console.error('Fel vid getWaitlist:', err);
-    throw err;
-  }
-}
-
 export async function checkEmailInWaitlist(email) {
   const docSnap = await getDoc(doc(db, 'waitlist', email));
   return docSnap.exists();
