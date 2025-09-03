@@ -19,7 +19,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // 🔑 Exportera Firestore-instansen korrekt
-export const db = getFirestore(app);
 
 // Grupper
 export async function createGroup(groupData) {
