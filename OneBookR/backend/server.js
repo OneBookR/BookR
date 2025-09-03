@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
-console.log("ADMIN_KEY från .env:", process.env.ADMIN_KEY);
-
+console.log("ADMIN_KEY:", process.env.ADMIN_KEY);
 
 import express from 'express';
 import session from 'express-session';
@@ -1207,16 +1206,23 @@ app.get('/api/waitlist/count', async (req, res) => {
   }
 });
 
+import { getWaitlist } from './firestore.js';
+
 app.get("/api/waitlist/admin", async (req, res) => {
-  console.log("Inkommen x-admin-key:", req.headers["x-admin-key"]);
   if (req.headers["x-admin-key"] !== process.env.ADMIN_KEY) {
-    console.log("Fel admin-nyckel!");
+    console.log("Fel admin-nyckel:", req.headers["x-admin-key"]);
     return res.status(401).json({ error: "Fel nyckel" });
   }
 
-  const waitlist = await db.waitlist.findAll(); // ska inkludera referredBy
-  res.json({ waitlist });
+  try {
+    const waitlist = await getWaitlist(); // Firestore-funktion
+    res.json({ waitlist });
+  } catch (err) {
+    console.error("Fel vid hämtning av väntelista:", err);
+    res.status(500).json({ error: "Serverfel" });
+  }
 });
+
 
 
 // Generera delningslänk för väntelistan
