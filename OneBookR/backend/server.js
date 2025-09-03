@@ -65,11 +65,11 @@ app.post('/invite', async (req, res) => {
 try {
   const response = await resend.emails.send({
     from: "BookR <onboarding@resend.dev>",
-    to: inv.email,
+    to: invitedUserEmail,
     subject: "Inbjudan till Kalenderjämförelse",
     text: `Hej!\n\n${creatorEmail} har bjudit in dig...`
   });
-  console.log("Resend response for", inv.email, response);
+  console.log("Resend response for", invitedUserEmail, response);
 } catch (sendErr) {
   console.error("Fel vid utskick av mejl:", sendErr);
 }
@@ -663,7 +663,7 @@ app.post('/api/invite', async (req, res) => {
     const inviteLinks = invitees.map(inv =>
       `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
     );
-    console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
+    console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${invitedUserEmail}: ${inviteLinks[i]}`));
 
     // Returnera svar omedelbart
     res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
