@@ -663,7 +663,7 @@ app.post('/api/invite', async (req, res) => {
     const inviteLinks = invitees.map(inv =>
       `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
     );
-    console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${invitedUserEmail}: ${inviteLinks[i]}`));
+    console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
     // Returnera svar omedelbart
     res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
