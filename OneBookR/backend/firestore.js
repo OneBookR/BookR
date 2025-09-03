@@ -11,7 +11,7 @@ import {
   where,
   serverTimestamp 
 } from 'firebase/firestore';
-
+import { Firestore } from 'firebase/firestore';
 // Grupper
 export async function createGroup(groupData) {
   const docRef = await addDoc(collection(db, 'groups'), {
