@@ -17,6 +17,10 @@ const Waitlist = () => {
   const [successOverlay, setSuccessOverlay] = useState(false);
   const [shareLinks, setShareLinks] = useState(null);
 
+  // 👇 Hämta referrer från URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const referrer = urlParams.get("referrer");
+
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/waitlist/count`)
       .then(res => res.json())
@@ -34,7 +38,8 @@ const Waitlist = () => {
       const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, name })
+        // 👇 Skicka med referrer till backend
+        body: JSON.stringify({ email, name, referrer })
       });
 
       if (res.ok) {
@@ -43,6 +48,10 @@ const Waitlist = () => {
         setEmail('');
         setName('');
         setWaitlistCount(prev => prev + 1);
+        // 👇 Skapa användarens unika referral-länk
+        const referralLink = `${window.location.origin}/waitlist?referrer=${encodeURIComponent(email)}`;
+        setShareLinks({ copy: referralLink });
+
       } else {
         const data = await res.json();
         setToast({ open: true, message: data.error || 'Något gick fel', severity: 'error' });
@@ -54,8 +63,32 @@ const Waitlist = () => {
     }
   };
 
-  const handleShare = async (platform) => {
+  const handleShare = (platform) => {
     if (!shareLinks) {
+      setToast({ open: true, message: 'Registrera dig först för att få en unik länk!', severity: 'error' });
+      return;
+    }
+
+    if (platform === 'copy') {
+      navigator.clipboard.writeText(shareLinks.copy);
+      setToast({ open: true, message: 'Din unika länk kopierad! 📋', severity: 'success' });
+    } else if (platform === 'email') {
+      window.open(`mailto:?subject=Kolla in BookR&body=Registrera dig här: ${encodeURIComponent(shareLinks.copy)}`);
+    } else if (platform === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent("Kolla in BookR: " + shareLinks.copy)}`);
+    }
+  };
+
+  const handleShareWaitlist = async (platform) => {
+    if (!shareLinks) {
+      setToast({ open: true, message: 'Registrera dig först för att få en unik länk!', severity: 'error' });
+      return;
+    }
+
+    if (platform === 'copy' || platform === 'email' || platform === 'whatsapp') {
+      if (shareLinks[platform]) {
+    }
+
       try {
         const res = await fetch(`${API_BASE_URL}/api/waitlist/share`, {
           method: 'POST',
