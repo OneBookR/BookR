@@ -148,26 +148,6 @@ app.post('/invite', async (req, res) => {
   }
 });
 
-// Servera frontend static files
-app.use(express.static('OneBookR/calendar-frontend/dist'));
-
-// Dashboard route
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-// Privacy policy route
-app.get('/privacy-policy', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(process.cwd(), 'policy.html'));
-});
-
-// Terms of service route
-app.get('/terms-of-service', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(process.cwd(), 'policy.html'));
-});
-
 // Middleware för auth
 app.use(cors({
   origin: ['https://onebookr.se', 'https://www.onebookr.se'],
@@ -317,6 +297,26 @@ app.get('/auth/logout', (req, res) => {
       res.redirect('https://onebookr.se/');
     });
   });
+});
+
+// Servera frontend static files
+app.use(express.static('OneBookR/calendar-frontend/dist'));
+
+// Dashboard route
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+// Privacy policy route
+app.get('/privacy-policy', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(path.join(process.cwd(), 'policy.html'));
+});
+
+// Terms of service route
+app.get('/terms-of-service', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(path.join(process.cwd(), 'policy.html'));
 });
 
 const fetchCalendarEvents = async (token, min, max) => {
