@@ -1269,23 +1269,23 @@ app.get("/api/user", (req, res) => {
 
 // ------------------ REACT SPA ROUTES ------------------
 app.get("/waitlist", (req, res) => {
-  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
 });
 
 app.get("/admin/waitlist", (req, res) => {
-  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
 });
 
 app.get("/about", (req, res) => {
-  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
 });
 
 app.get("/contact", (req, res) => {
-  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
 });
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "calendar-frontend/dist/index.html"));
+  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
 });
 
 // ------------------ START SERVER ------------------
