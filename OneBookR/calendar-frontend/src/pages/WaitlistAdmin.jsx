@@ -72,33 +72,78 @@ const handleLogin = async () => {
   }
 };
 
+// useEffect för att initiera graferna när data laddas
+useEffect(() => {
+  if (waitlist.length > 0 && isAuthenticated) {
+    // Vänta lite för att säkerställa att DOM-elementen finns
+    setTimeout(() => {
+      initializeCharts(waitlist);
+    }, 100);
+  }
+}, [waitlist, isAuthenticated]);
+
+// useEffect för att uppdatera stapeldiagrammet när period ändras
+useEffect(() => {
+  if (waitlist.length > 0 && window.Chart && barChart) {
+    createBarChart(waitlist);
+  }
+}, [chartPeriod]);
+
   
   const initializeCharts = (data) => {
+    console.log('Initializing charts with data:', data.length, 'entries');
+    
     // Ladda Chart.js dynamiskt
     if (window.Chart) {
-      createLineChart(data);
-      createBarChart(data);
+      console.log('Chart.js already loaded, creating charts');
+      setTimeout(() => {
+        createLineChart(data);
+        createBarChart(data);
+      }, 50);
       return;
     }
     
+    console.log('Loading Chart.js...');
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js';
     script.onload = () => {
+      console.log('Chart.js loaded, loading date adapter...');
       // Registrera datum-adapter
       const dateScript = document.createElement('script');
       dateScript.src = 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js';
       dateScript.onload = () => {
-        createLineChart(data);
-        createBarChart(data);
+        console.log('Date adapter loaded, creating charts');
+        setTimeout(() => {
+          createLineChart(data);
+          createBarChart(data);
+        }, 100);
+      };
+      dateScript.onerror = () => {
+        console.error('Failed to load date adapter, creating charts without it');
+        setTimeout(() => {
+          createLineChart(data);
+          createBarChart(data);
+        }, 100);
       };
       document.head.appendChild(dateScript);
+    };
+    script.onerror = () => {
+      console.error('Failed to load Chart.js');
     };
     document.head.appendChild(script);
   };
 
   const createLineChart = (data) => {
+    console.log('Creating line chart...');
     const ctx = document.getElementById('lineChart');
-    if (!ctx || !window.Chart) return;
+    if (!ctx) {
+      console.error('Line chart canvas not found');
+      return;
+    }
+    if (!window.Chart) {
+      console.error('Chart.js not loaded');
+      return;
+    }
 
     // Gruppera data per dag
     const dailyData = {};
@@ -178,8 +223,16 @@ const handleLogin = async () => {
   };
 
   const createBarChart = (data) => {
+    console.log('Creating bar chart with period:', chartPeriod);
     const ctx = document.getElementById('barChart');
-    if (!ctx || !window.Chart) return;
+    if (!ctx) {
+      console.error('Bar chart canvas not found');
+      return;
+    }
+    if (!window.Chart) {
+      console.error('Chart.js not loaded');
+      return;
+    }
 
     const chartData = getBarChartData(data, chartPeriod);
     
