@@ -40,6 +40,12 @@ console.log("Resend API key exists?", !!process.env.RESEND_API_KEY);
 
 // --- ROUTES --- //
 
+// Test endpoint
+app.get('/api/test', (req, res) => {
+  console.log('Test endpoint called');
+  res.json({ status: 'OK', message: 'API fungerar', timestamp: new Date().toISOString() });
+});
+
 app.post('/invite', async (req, res) => {
   try {
     const { invitedUserEmail, invitedUserName, groupId, inviterName } = req.body;
