@@ -119,7 +119,7 @@ app.post('/invite', async (req, res) => {
 
     // Använd en verifierad from-adress (sätt RESEND_FROM i Railway -> t.ex. noreply@bookr.se)
     const fromEmail = process.env.RESEND_FROM || 'noreply@your-verified-domain.com';
-    const groupLink = `https://bookr-production.up.railway.app/${groupId}`;
+    const groupLink = `https://onebookr.se/${groupId}`;
 
     console.log("Försöker skicka mejl till:", invitedUserEmail);
 
@@ -170,7 +170,7 @@ app.get('/terms-of-service', (req, res) => {
 
 // Middleware för auth
 app.use(cors({
-  origin: 'https://bookr-production.up.railway.app',
+  origin: ['https://onebookr.se', 'https://www.onebookr.se'],
   credentials: true
 }));
 app.use(session({
@@ -195,7 +195,7 @@ app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 passport.use(new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
-  callbackURL: 'https://bookr-production.up.railway.app/auth/google/callback',
+  callbackURL: 'https://onebookr.se/auth/google/callback',
   accessType: 'offline',
   includeGrantedScopes: true  // Enable incremental authorization
 }, (accessToken, refreshToken, profile, done) => {
@@ -272,7 +272,7 @@ app.get('/auth/google/callback',
       }
     }
     
-    const frontendUrl = 'https://bookr-production.up.railway.app';
+    const frontendUrl = 'https://onebookr.se';
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
@@ -319,7 +319,7 @@ app.get('/auth/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
     req.session.destroy(() => {
-      res.redirect('https://bookr-production.up.railway.app/');
+      res.redirect('https://onebookr.se/');
     });
   });
 });
@@ -750,7 +750,7 @@ app.post('/api/invite', async (req, res) => {
     }
 
     // Skicka ut unika länkar
-    const frontendUrl = 'https://bookr-production.up.railway.app';
+    const frontendUrl = 'https://onebookr.se';
     const inviteLinks = invitees.map(inv =>
       `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
     );
@@ -1301,7 +1301,7 @@ app.post("/api/waitlist/share", (req, res) => {
   const { referrerEmail } = req.body;
   
   // Skapa personlig värvningslänk om referrerEmail finns
-  let waitlistUrl = "https://bookr-production.up.railway.app/waitlist";
+  let waitlistUrl = "https://onebookr.se/waitlist";
   if (referrerEmail) {
     const encodedEmail = encodeURIComponent(referrerEmail);
     waitlistUrl += `?ref=${encodedEmail}`;

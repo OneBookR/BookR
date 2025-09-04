@@ -12,7 +12,7 @@ export default function InvitationSidebar({ user }) {
     
     const fetchInvitations = async () => {
       try {
-        const response = await fetch(`https://bookr-production.up.railway.app/api/invitations/${encodeURIComponent(user.email)}`);
+        const response = await fetch(`https://onebookr.se/api/invitations/${encodeURIComponent(user.email)}`);
         if (response.ok) {
           const data = await response.json();
           setInvitations(data.invitations || []);

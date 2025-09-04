@@ -106,7 +106,7 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
       }
     } else {
       if (platform === 'copy') {
-        navigator.clipboard.writeText('https://bookr-production.up.railway.app/waitlist');
+        navigator.clipboard.writeText('https://onebookr.se/waitlist');
         setToast({ open: true, message: 'Länk kopierad! 📋', severity: 'success' });
       } else {
         window.open(shareLinks[platform], '_blank');

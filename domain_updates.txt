@@ -1,0 +1,17 @@
+UPPDATERINGAR FÖR ONEBOOKR.SE DOMÄN:
+
+BACKEND (server.js):
+1. CORS origin (rad ~155)
+2. OAuth callback URL (rad ~170) 
+3. Redirect URLs (rad ~220)
+4. Logout redirect (rad ~260)
+5. Invite links (rad ~520)
+6. Waitlist share URLs (rad ~1050)
+7. Group links i mejl (rad ~110)
+
+FRONTEND:
+1. API_BASE_URL i config
+2. Waitlist share URLs
+
+GOOGLE OAUTH:
+- Uppdatera authorized redirect URIs i Google Console

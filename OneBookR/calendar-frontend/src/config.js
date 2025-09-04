@@ -1,1 +1,1 @@
-export const API_BASE_URL = 'https://bookr-production.up.railway.app';
+export const API_BASE_URL = 'https://onebookr.se';
