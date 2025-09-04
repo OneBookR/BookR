@@ -26,7 +26,7 @@ export async function addToWaitlist(email, name, referredBy = null) {
       email,
       name,
       referredBy,
-      timestamp: new Date().toISOString()
+      timestamp: serverTimestamp()   // 🔥 rätt typ
     });
     console.log("Lyckades lägga till väntelista:", email);
   } catch (err) {
@@ -34,6 +34,7 @@ export async function addToWaitlist(email, name, referredBy = null) {
     throw err;
   }
 }
+
 
 // Hämta hela väntelistan, inklusive vem som värvat
 export async function getWaitlist() {
