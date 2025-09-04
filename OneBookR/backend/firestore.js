@@ -42,7 +42,7 @@ export async function getWaitlist() {
     const q = query(collection(db, 'waitlist'), orderBy('timestamp', 'desc'));
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map(doc => {
+    const results = snapshot.docs.map(doc => {
       const data = doc.data();
       return {
         email: data.email,
@@ -53,6 +53,9 @@ export async function getWaitlist() {
                   data.timestamp instanceof Date ? data.timestamp.toISOString() : data.timestamp
       };
     });
+    
+    // Extra sortering på klientsidan för att säkerställa korrekt ordning
+    return results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   } catch (err) {
     console.error('Fel vid getWaitlist:', err);
     throw err;
