@@ -13,7 +13,7 @@ export default function Contact() {
     e.preventDefault();
     setContactStatus('');
     try {
-      const res = await fetch('https://onebookr.se/api/contact', {
+      const res = await fetch('https://www.onebookr.se/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -62,7 +62,7 @@ function App() {
       }
     } else {
       // Om ingen auth-token, försök hämta användaren från backend-session (om det finns)
-      fetch('https://onebookr.se/api/user', {
+      fetch('https://www.onebookr.se/api/user', {
         credentials: 'include'
       })
         .then(res => res.ok ? res.json() : null)
@@ -171,7 +171,7 @@ function App() {
     const groupId = urlParams.get('group');
     const inviteeId = urlParams.get('invitee');
     
-    let googleLoginUrl = 'https://onebookr.se/auth/google';
+    let googleLoginUrl = 'https://www.onebookr.se/auth/google';
     if (groupId) {
       const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
       googleLoginUrl += `?state=${encodeURIComponent(state)}`;

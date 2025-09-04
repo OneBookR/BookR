@@ -155,7 +155,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
     }
 
     try {
-      const res = await fetch('https://onebookr.se/api/invite', {
+      const res = await fetch('https://www.onebookr.se/api/invite', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

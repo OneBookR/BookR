@@ -42,6 +42,14 @@ const MAINTENANCE_MODE = process.env.MAINTENANCE_MODE === 'true';
 console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist)' : 'OFF (full app available)');
 
 
+// Redirect non-www to www
+app.use((req, res, next) => {
+  if (req.headers.host === 'onebookr.se') {
+    return res.redirect(301, `https://www.onebookr.se${req.url}`);
+  }
+  next();
+});
+
 // Middleware för maintenance mode
 app.use((req, res, next) => {
   if (MAINTENANCE_MODE) {

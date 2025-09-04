@@ -32,7 +32,7 @@ export default function Dashboard({ user }) {
       console.log('Joining group:', { groupId, email, inviteeId });
       
       // Kontrollera om gruppen existerar först
-      fetch(`https://onebookr.se/api/group/${groupId}/status`)
+      fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
         .then(res => {
           console.log('Group status response:', res.status);
           if (!res.ok) {
@@ -46,7 +46,7 @@ export default function Dashboard({ user }) {
           console.log('Group exists, joining...');
           
           // Gruppen finns, fortsätt med join
-          return fetch('https://onebookr.se/api/group/join', {
+          return fetch('https://www.onebookr.se/api/group/join', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -60,7 +60,7 @@ export default function Dashboard({ user }) {
         .then(joinRes => {
           if (joinRes) {
             console.log('Join response:', joinRes.status);
-            return fetch(`https://onebookr.se/api/group/${groupId}/tokens`);
+            return fetch(`https://www.onebookr.se/api/group/${groupId}/tokens`);
           }
         })
         .then(tokensRes => {
@@ -84,12 +84,12 @@ export default function Dashboard({ user }) {
     if (groupId) {
       // Hämta status för gruppen
       const pollStatus = () => {
-        fetch(`https://onebookr.se/api/group/${groupId}/status`)
+        fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
           .then(res => res.json())
           .then(status => setGroupStatus(status))
           .catch(err => console.log('Status poll failed:', err));
         // Hämta anslutna e-postadresser (om backend stödjer det)
-        fetch(`https://onebookr.se/api/group/${groupId}/joined`)
+        fetch(`https://www.onebookr.se/api/group/${groupId}/joined`)
           .then(res => res.json())
           .then(data => setJoinedEmails(data.joined || []))
           .catch(() => setJoinedEmails([]));
