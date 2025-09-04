@@ -722,7 +722,7 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
           borderTop: '1px solid #e0e3e7',
         }}
       >
-        © {new Date().getFullYear()} BookR – Hitta lediga tider tillsammans | <a href="mailto:info@onebookr.se" style={{ color: '#1976d2', textDecoration: 'none' }}>info@onebookr.se</a>
+        © {new Date().getFullYear()} BookR – Hitta lediga tider tillsammans nu| <a href="mailto:info@onebookr.se" style={{ color: '#1976d2', textDecoration: 'none' }}>info@onebookr.se</a>
       </Box>
 
       <Snackbar
