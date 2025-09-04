@@ -411,9 +411,9 @@ useEffect(() => {
 
   const exportCSV = () => {
     const csv = [
-      'Namn,E-post,Registrerad',
+      'Namn,E-post,Registrerad,Värvad av',
       ...waitlist.map(entry => 
-        `"${entry.name}","${entry.email}","${new Date(entry.timestamp).toLocaleString('sv-SE')}"`
+        `"${entry.name}","${entry.email}","${new Date(entry.timestamp).toLocaleString('sv-SE')}","${entry.referredBy || ''}"`
       )
     ].join('\n');
     
