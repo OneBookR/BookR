@@ -186,11 +186,6 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ Starta servern sist
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-
 // Google OAuth-strategi
 passport.use(new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
@@ -1402,6 +1397,7 @@ app.get("/", (req, res) => {
 });
 
 // ------------------ START SERVER ------------------
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
