@@ -1153,21 +1153,28 @@ import { addToWaitlist, getWaitlist, getWaitlistCount, checkEmailInWaitlist } fr
 // Lägg till på väntelista
 app.post("/api/waitlist", async (req, res) => {
   const { email, name, referrer } = req.body;
+  console.log('Waitlist registration attempt:', { email, name, referrer });
 
   if (!email || !name) {
+    console.log('Missing email or name');
     return res.status(400).json({ error: "Namn och e-post krävs." });
   }
 
   try {
     // Kolla om redan registrerad
+    console.log('Checking if email already exists...');
     const existing = await checkEmailInWaitlist(email);
     if (existing) {
+      console.log('Email already exists in waitlist');
       return res.status(400).json({ error: "Du är redan registrerad på väntelistan!" });
     }
 
     // Lägg till i Firestore
+    console.log('Adding to waitlist with referrer:', referrer || 'none');
     await addToWaitlist(email, name, referrer || null);
+    console.log('Successfully added to waitlist');
     const totalCount = await getWaitlistCount();
+    console.log('Total waitlist count:', totalCount);
 
     // Skicka admin-notifiering (valfritt)
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
@@ -1185,6 +1192,7 @@ app.post("/api/waitlist", async (req, res) => {
       }
     }
 
+    console.log('Sending success response with count:', totalCount);
     res.json({ success: true, count: totalCount });
   } catch (error) {
     console.error("Fel vid registrering på väntelista:", error);
@@ -1221,7 +1229,15 @@ app.get("/api/waitlist/admin", async (req, res) => {
 
 // Generera delningslänkar
 app.post("/api/waitlist/share", (req, res) => {
-  const waitlistUrl = "https://bookr-production.up.railway.app/waitlist";
+  const { referrerEmail } = req.body;
+  
+  // Skapa personlig värvningslänk om referrerEmail finns
+  let waitlistUrl = "https://bookr-production.up.railway.app/waitlist";
+  if (referrerEmail) {
+    const encodedEmail = encodeURIComponent(referrerEmail);
+    waitlistUrl += `?ref=${encodedEmail}`;
+  }
+  
   const message = encodeURIComponent("Kolla in BookR - slipp mejlkaoset när ni ska boka möten! 🚀");
 
   const shareLinks = {
@@ -1238,6 +1254,17 @@ app.post("/api/waitlist/share", (req, res) => {
   };
 
   res.json({ shareLinks, waitlistUrl });
+});
+
+// Hämta referrer från URL-parameter
+app.get("/api/waitlist/referrer", (req, res) => {
+  const { ref } = req.query;
+  if (ref) {
+    const decodedEmail = decodeURIComponent(ref);
+    res.json({ referrer: decodedEmail });
+  } else {
+    res.json({ referrer: null });
+  }
 });
 
 // Svara på inbjudan
