@@ -39,7 +39,7 @@ export async function addToWaitlist(email, name, referredBy = null) {
 // Hämta hela väntelistan, inklusive vem som värvat
 export async function getWaitlist() {
   try {
-    const q = query(collection(db, 'waitlist'), orderBy('timestamp', 'asc'));
+    const q = query(collection(db, 'waitlist'), orderBy('timestamp', 'desc'));
     const snapshot = await getDocs(q);
 
     return snapshot.docs.map(doc => {

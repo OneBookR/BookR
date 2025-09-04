@@ -17,6 +17,7 @@ const WaitlistAdmin = () => {
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newReferrer, setNewReferrer] = useState(''); // valfri värvare
+  const [searchTerm, setSearchTerm] = useState('');
 
 const handleAddToWaitlist = async () => {
   try {
@@ -464,6 +465,13 @@ useEffect(() => {
 
   const stats = getGrowthStats();
 
+  // Filter waitlist based on search term
+  const filteredWaitlist = waitlist.filter(entry => 
+    entry.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    entry.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (entry.referredBy && entry.referredBy.toLowerCase().includes(searchTerm.toLowerCase()))
+  ) || [];
+
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       {/* Header */}
@@ -675,10 +683,40 @@ useEffect(() => {
               Registrerade användare
             </Typography>
             <Typography variant="body2" sx={{ opacity: 0.9 }}>
-              {waitlist.length} personer på väntelistan
+              {filteredWaitlist.length} av {waitlist.length} personer visas
             </Typography>
           </Box>
-          <Button 
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <TextField
+              placeholder="Sök namn, e-post eller värvare..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              size="small"
+              sx={{
+                minWidth: 300,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 3,
+                  bgcolor: 'rgba(255,255,255,0.9)',
+                  '& fieldset': {
+                    borderColor: 'rgba(255,255,255,0.5)'
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(255,255,255,0.8)'
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: 'rgba(255,255,255,1)'
+                  }
+                },
+                '& .MuiInputBase-input': {
+                  color: '#0a2540',
+                  '&::placeholder': {
+                    color: '#666',
+                    opacity: 0.8
+                  }
+                }
+              }}
+            />
+            <Button 
             variant="contained" 
             onClick={exportCSV}
             sx={{ 
@@ -695,6 +733,7 @@ useEffect(() => {
           >
             📈 Exportera CSV
           </Button>
+          </Box>
         </Box>
         
         <TableContainer sx={{ maxHeight: 600 }}>
@@ -736,7 +775,7 @@ useEffect(() => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {waitlist.map((entry, index) => (
+              {filteredWaitlist.map((entry, index) => (
                 <TableRow 
                   key={index} 
                   sx={{ 
