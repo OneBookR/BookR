@@ -227,6 +227,16 @@ app.get('/api/user', (req, res) => {
   }
 });
 
+// Optional user endpoint för sidor som inte kräver inloggning
+app.get('/api/user/optional', (req, res) => {
+  const user = req.user || req.session.user;
+  if (user) {
+    res.json({ user: user, token: user.accessToken, authenticated: true });
+  } else {
+    res.json({ user: null, token: null, authenticated: false });
+  }
+});
+
 app.get('/auth/logout', (req, res) => {
   req.logout((err) => {
     if (err) {
