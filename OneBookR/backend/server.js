@@ -22,6 +22,12 @@ import {
   deleteUserData
 } from './firestore.js';
 
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // ✅ Skapa express app direkt
 const app = express();
 app.set('trust proxy', 1); // Behövs för secure cookies bakom Railway/Heroku
@@ -84,19 +90,19 @@ app.use(express.static('OneBookR/calendar-frontend/dist'));
 
 // Dashboard route
 app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+  res.sendFile(path.join(__dirname, 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
 // Privacy policy route
 app.get('/privacy-policy', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(process.cwd(), 'policy.html'));
+  res.sendFile(path.join(__dirname, 'policy.html'));
 });
 
 // Terms of service route
 app.get('/terms-of-service', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(process.cwd(), 'policy.html'));
+res.sendFile(path.join(__dirname, 'policy.html'));
 });
 
 // Middleware för auth
