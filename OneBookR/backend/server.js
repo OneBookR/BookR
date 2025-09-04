@@ -40,6 +40,29 @@ console.log("Resend API key exists?", !!process.env.RESEND_API_KEY);
 
 // --- ROUTES --- //
 
+// HELT NY WAITLIST ENDPOINT - ENKEL VERSION
+app.post('/api/waitlist/simple', (req, res) => {
+  console.log('=== SIMPLE WAITLIST CALLED ===');
+  console.log('Body:', req.body);
+  console.log('Headers:', req.headers);
+  
+  try {
+    const { email, name } = req.body;
+    console.log('Extracted:', { email, name });
+    
+    if (!email || !name) {
+      console.log('Missing data');
+      return res.status(400).json({ error: 'Saknar data' });
+    }
+    
+    console.log('SUCCESS - returning response');
+    res.json({ success: true, message: 'Fungerar!', data: { email, name } });
+  } catch (error) {
+    console.error('ERROR in simple waitlist:', error);
+    res.status(500).json({ error: 'Server error: ' + error.message });
+  }
+});
+
 // Enkel waitlist test-endpoint
 app.post('/api/waitlist/test', (req, res) => {
   console.log('Waitlist test endpoint called with body:', req.body);
