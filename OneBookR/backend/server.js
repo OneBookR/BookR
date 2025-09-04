@@ -214,7 +214,8 @@ app.get('/api/user', (req, res) => {
     sessionID: req.sessionID,
     user: req.user ? 'User exists' : 'No user',
     sessionUser: req.session.user ? 'Session user exists' : 'No session user',
-    cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
+    cookies: req.headers.cookie ? 'Cookies present' : 'No cookies',
+    referer: req.headers.referer
   });
   
   // Kolla både passport auth och session
@@ -223,7 +224,13 @@ app.get('/api/user', (req, res) => {
   if (user) {
     res.json({ user: user, token: user.accessToken });
   } else {
-    res.status(401).json({ error: 'Not authenticated' });
+    // Om det är från waitlist-sidan, returnera null istället för 401
+    const referer = req.headers.referer || '';
+    if (referer.includes('/waitlist') || referer.includes('/admin/waitlist')) {
+      res.json({ user: null, token: null, authenticated: false });
+    } else {
+      res.status(401).json({ error: 'Not authenticated' });
+    }
   }
 });
 
