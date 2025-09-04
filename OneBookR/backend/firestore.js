@@ -26,7 +26,7 @@ export async function addToWaitlist(email, name, referredBy = null) {
       email,
       name,
       referredBy,
-      timestamp: serverTimestamp()   // 🔥 rätt typ
+      timestamp: new Date()
     });
     console.log("Lyckades lägga till väntelista:", email);
   } catch (err) {
@@ -49,7 +49,8 @@ export async function getWaitlist() {
         name: data.name,
         referredBy: data.referredBy || null,
         // Konvertera timestamp till ISO-sträng
-        timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : data.timestamp
+        timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : 
+                  data.timestamp instanceof Date ? data.timestamp.toISOString() : data.timestamp
       };
     });
   } catch (err) {
