@@ -80,14 +80,24 @@ app.post('/invite', async (req, res) => {
 });
 
 // Servera frontend static files
-// Servera frontend-builden
-app.use(express.static(path.join(__dirname, "../calendar-frontend/dist")));
+app.use(express.static('OneBookR/calendar-frontend/dist'));
 
-// Alla okända routes -> React index.html
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../calendar-frontend/dist/index.html"));
+// Dashboard route
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
+// Privacy policy route
+app.get('/privacy-policy', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(path.join(process.cwd(), 'policy.html'));
+});
+
+// Terms of service route
+app.get('/terms-of-service', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(path.join(process.cwd(), 'policy.html'));
+});
 
 // Middleware för auth
 app.use(cors({
