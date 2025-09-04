@@ -29,18 +29,16 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
   }, []);
 
   const handleSubmit = async (e) => {
-    body: JSON.stringify({ email, name, referrer })
     e.preventDefault();
     if (!email || !name) return;
 
+    setIsSubmitting(true);
     try {
-      const handleSignup = async () => {
-        const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, name, referrer }) // 🔑 skickar värvaren
-        });
-      };
+      const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name, referrer }) // 🔑 skickar värvaren
+      });
 
       if (res.ok) {
         // Show success overlay instead of toast
