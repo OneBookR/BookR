@@ -40,6 +40,20 @@ console.log("Resend API key exists?", !!process.env.RESEND_API_KEY);
 
 // --- ROUTES --- //
 
+// Enkel waitlist test-endpoint
+app.post('/api/waitlist/test', (req, res) => {
+  console.log('Waitlist test endpoint called with body:', req.body);
+  const { email, name } = req.body;
+  
+  if (!email || !name) {
+    console.log('Missing email or name in test endpoint');
+    return res.status(400).json({ error: 'Email och namn krävs' });
+  }
+  
+  console.log('Test endpoint success for:', email, name);
+  res.json({ success: true, message: 'Test lyckades', email, name });
+});
+
 app.post('/invite', async (req, res) => {
   try {
     const { invitedUserEmail, invitedUserName, groupId, inviterName } = req.body;
