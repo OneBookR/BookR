@@ -89,23 +89,6 @@ app.get("*", (req, res) => {
 });
 
 
-// Dashboard route
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-// Privacy policy route
-app.get('/privacy-policy', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(process.cwd(), 'policy.html'));
-});
-
-// Terms of service route
-app.get('/terms-of-service', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(process.cwd(), 'policy.html'));
-});
-
 // Middleware för auth
 app.use(cors({
   origin: 'https://bookr-production.up.railway.app',
