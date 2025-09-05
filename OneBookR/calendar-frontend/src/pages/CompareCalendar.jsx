@@ -862,7 +862,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
 
 
   return (
-    <div style={{ marginRight: sidebarOpen ? 400 : 60, transition: 'margin-right 0.3s ease' }}>
+    <div style={{ 
+      marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
+      transition: 'margin-right 0.3s ease',
+      minHeight: '100vh',
+      padding: isMobile ? '10px' : '0'
+    }}>
       {/* Header placerad precis under inloggningsstripen */}
       <AppBar
         position="fixed"
@@ -1022,7 +1027,11 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       {/* Spacer för att innehållet inte ska hamna under headern och login-indikatorn */}
       <Box sx={{ height: 30 }} />
 
-      <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>
+      <Typography variant="h5" gutterBottom sx={{ 
+        mb: 3,
+        fontSize: { xs: '1.5rem', md: '2.125rem' },
+        textAlign: { xs: 'center', md: 'left' }
+      }}>
         Gemensam tillgänglighet
       </Typography>
 
