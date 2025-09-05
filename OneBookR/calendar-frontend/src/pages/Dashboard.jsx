@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import InviteFriend from './InviteFriend';
 import CompareCalendar from './CompareCalendar';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
+import { useTheme } from '../hooks/useTheme';
 
 export default function Dashboard({ user }) {
+  const { theme } = useTheme();
   const [groupTokens, setGroupTokens] = useState([]);
   const [showCompare, setShowCompare] = useState(false);
   const [groupStatus, setGroupStatus] = useState({
@@ -168,7 +170,7 @@ export default function Dashboard({ user }) {
         </Typography>
       {!groupId && (
         <Box sx={{ mb: 2, mt: 3 }}>
-          <InviteFriend fromUser={user} fromToken={user.accessToken} />
+          <InviteFriend key={`theme-${theme?.isDark}`} fromUser={user} fromToken={user.accessToken} />
         </Box>
       )}
       

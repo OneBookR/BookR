@@ -575,7 +575,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         document.getElementById(styleId).remove();
       }
     };
-  }, []);
+  }, [theme.isDark]);
 
   // NYTT: Visa automatiskt alla lediga tider från idag och 30 dagar framåt vid första render
   useEffect(() => {
