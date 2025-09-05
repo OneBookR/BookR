@@ -4,9 +4,9 @@ import SendIcon from '@mui/icons-material/Send';
 import { useContacts } from '../hooks/useContacts';
 import { useTheme } from '../hooks/useTheme';
 
-const InviteFriend = ({ fromUser, fromToken }) => {
+const InviteFriend = ({ fromUser, fromToken, theme }) => {
   const { contacts } = useContacts();
-  const { theme } = useTheme();
+  const currentTheme = theme || useTheme().theme;
   const [emails, setEmails] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [message, setMessage] = useState('');
@@ -206,11 +206,11 @@ const InviteFriend = ({ fromUser, fromToken }) => {
   return (
     <Box sx={{ 
       p: 2, 
-      bgcolor: theme.colors.surface, 
+      bgcolor: currentTheme.colors.surface, 
       borderRadius: 2, 
       boxShadow: 1,
-      border: `1px solid ${theme.colors.border}`,
-      color: theme.colors.text
+      border: `1px solid ${currentTheme.colors.border}`,
+      color: currentTheme.colors.text
     }}>
       <Typography variant="h6" gutterBottom>Bjud in vänner</Typography>
       <TextField
@@ -223,14 +223,14 @@ const InviteFriend = ({ fromUser, fromToken }) => {
           mb: 2,
           '& .MuiOutlinedInput-root': {
             borderRadius: 999,
-            background: theme.colors.bg,
-            color: theme.colors.text,
+            background: currentTheme.colors.bg,
+            color: currentTheme.colors.text,
             '& fieldset': {
-              borderColor: theme.colors.border
+              borderColor: currentTheme.colors.border
             }
           },
           '& .MuiInputLabel-root': {
-            color: theme.colors.textSecondary
+            color: currentTheme.colors.textSecondary
           }
         }}
         variant="outlined"
@@ -243,7 +243,7 @@ const InviteFriend = ({ fromUser, fromToken }) => {
             onDelete={() => handleDelete(email)}
             sx={{ 
               mb: 1,
-              bgcolor: theme.colors.primary,
+              bgcolor: currentTheme.colors.primary,
               color: '#fff',
               '& .MuiChip-deleteIcon': {
                 color: '#fff'
@@ -271,17 +271,17 @@ const InviteFriend = ({ fromUser, fromToken }) => {
             sx={{
               '& .MuiOutlinedInput-root': {
                 borderRadius: 999,
-                background: theme.colors.bg,
-                color: theme.colors.text,
+                background: currentTheme.colors.bg,
+                color: currentTheme.colors.text,
                 '& fieldset': {
-                  borderColor: theme.colors.border
+                  borderColor: currentTheme.colors.border
                 }
               },
               '& .MuiInputBase-root': {
                 borderRadius: 999,
               },
               '& .MuiInputLabel-root': {
-                color: theme.colors.textSecondary
+                color: currentTheme.colors.textSecondary
               }
             }}
             variant="outlined"

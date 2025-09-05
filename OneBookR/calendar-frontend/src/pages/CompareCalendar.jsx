@@ -534,6 +534,27 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       .rbc-day-slot .rbc-time-slot {
         border-top: 1px solid ${calendarBorderColor};
       }
+      .rbc-time-content {
+        background: ${calendarBgColor};
+      }
+      .rbc-time-header-content {
+        background: ${calendarHeaderBgColor};
+      }
+      .rbc-allday-cell {
+        background: ${calendarHeaderBgColor};
+      }
+      .rbc-day-bg {
+        background: ${calendarBgColor};
+      }
+      .rbc-month-row {
+        background: ${calendarBgColor};
+      }
+      .rbc-date-cell {
+        color: ${calendarTextColor};
+      }
+      .rbc-button-link {
+        color: ${calendarTextColor};
+      }
       /* Förbättra visning av överlappande events */
       .rbc-event-overlaps {
         margin-left: 2px !important;

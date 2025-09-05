@@ -170,7 +170,7 @@ export default function Dashboard({ user }) {
         </Typography>
       {!groupId && (
         <Box sx={{ mb: 2, mt: 3 }}>
-          <InviteFriend key={`theme-${theme?.isDark}`} fromUser={user} fromToken={user.accessToken} />
+          <InviteFriend key={`theme-${theme?.isDark}`} fromUser={user} fromToken={user.accessToken} theme={theme} />
         </Box>
       )}
       
