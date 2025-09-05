@@ -698,7 +698,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         setSidebarOpen(false);
       } else {
         setCalendarView('week');
-        setSidebarOpen(true);
+        setSidebarOpen(false);
       }
     };
     
