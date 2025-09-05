@@ -158,7 +158,13 @@ export default function Dashboard({ user }) {
   return (
     <Container maxWidth="md" sx={{ mt: 10 }}>
         <Typography variant="h5" gutterBottom sx={{ mt: 20 }}>
-          Hej {user.displayName}
+          Hej {(() => {
+            try {
+              return user.displayName ? decodeURIComponent(escape(user.displayName)) : user.email;
+            } catch {
+              return user.displayName || user.email;
+            }
+          })()}
         </Typography>
       {!groupId && (
         <Box sx={{ mb: 2, mt: 3 }}>
