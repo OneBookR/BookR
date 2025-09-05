@@ -1075,11 +1075,18 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 999,
-                    background: '#f7f9fc',
+                    background: theme.colors.bg,
+                    color: theme.colors.text,
+                    '& fieldset': {
+                      borderColor: theme.colors.border
+                    }
                   },
                   '& .MuiInputBase-root': {
                     borderRadius: 999,
                   },
+                  '& .MuiInputLabel-root': {
+                    color: theme.colors.textSecondary
+                  }
                 }}
                 variant="outlined"
               />
@@ -1098,11 +1105,18 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                   maxWidth: 160,
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 999,
-                    background: '#f7f9fc',
+                    background: theme.colors.bg,
+                    color: theme.colors.text,
+                    '& fieldset': {
+                      borderColor: theme.colors.border
+                    }
                   },
                   '& .MuiInputBase-root': {
                     borderRadius: 999,
                   },
+                  '& .MuiInputLabel-root': {
+                    color: theme.colors.textSecondary
+                  }
                 }}
                 variant="outlined"
               />

@@ -222,8 +222,15 @@ const InviteFriend = ({ fromUser, fromToken }) => {
           mb: 2,
           '& .MuiOutlinedInput-root': {
             borderRadius: 999,
-            background: '#f7f9fc',
+            background: theme.colors.bg,
+            color: theme.colors.text,
+            '& fieldset': {
+              borderColor: theme.colors.border
+            }
           },
+          '& .MuiInputLabel-root': {
+            color: theme.colors.textSecondary
+          }
         }}
         variant="outlined"
       />
@@ -256,11 +263,18 @@ const InviteFriend = ({ fromUser, fromToken }) => {
             sx={{
               '& .MuiOutlinedInput-root': {
                 borderRadius: 999,
-                background: '#f7f9fc',
+                background: theme.colors.bg,
+                color: theme.colors.text,
+                '& fieldset': {
+                  borderColor: theme.colors.border
+                }
               },
               '& .MuiInputBase-root': {
                 borderRadius: 999,
               },
+              '& .MuiInputLabel-root': {
+                color: theme.colors.textSecondary
+              }
             }}
             variant="outlined"
           />
