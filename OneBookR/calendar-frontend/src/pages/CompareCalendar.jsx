@@ -392,24 +392,32 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
     if (document.getElementById(styleId)) return;
     const style = document.createElement("style");
     style.id = styleId;
+    const isDark = theme.isDark;
+    const calendarBgColor = isDark ? theme.colors.surface : calendarBg;
+    const calendarBorderColor = isDark ? theme.colors.border : calendarBorder;
+    const calendarTextColor = isDark ? theme.colors.text : '#000';
+    const calendarHeaderBgColor = isDark ? theme.colors.bg : calendarHeaderBg;
+    
     style.innerHTML = `
       .rbc-calendar, .rbc-time-view, .rbc-agenda-view, .rbc-month-view {
         font-family: ${calendarFontFamily} !important;
-        background: ${calendarBg};
+        background: ${calendarBgColor};
         border-radius: 10px;
-        border: 1px solid ${calendarBorder};
+        border: 1px solid ${calendarBorderColor};
         box-shadow: 0 2px 8px 0 rgba(60,64,67,.06);
+        color: ${calendarTextColor};
       }
       .rbc-toolbar {
         font-family: ${calendarFontFamily} !important;
-        background: ${calendarHeaderBg};
-        border-bottom: 1px solid ${calendarBorder};
+        background: ${calendarHeaderBgColor};
+        border-bottom: 1px solid ${calendarBorderColor};
         border-radius: 10px 10px 0 0;
         padding: 10px 16px;
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
         align-items: center;
+        color: ${calendarTextColor};
       }
       /* Dölj vy-knapparna */
       .rbc-toolbar .rbc-btn-group:last-of-type {
@@ -457,11 +465,11 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         transform: scale(1.03) !important;
       }
       .rbc-header {
-        background: ${calendarHeaderBg};
-        color: ${calendarHeaderText};
+        background: ${calendarHeaderBgColor};
+        color: ${calendarTextColor};
         font-weight: 400;
         font-size: 0.98rem;
-        border-bottom: 1px solid ${calendarBorder};
+        border-bottom: 1px solid ${calendarBorderColor};
         padding: 7px 0;
       }
       .rbc-today {
@@ -514,6 +522,17 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       .rbc-time-slot {
         min-height: 28px;
         position: relative;
+        border-color: ${calendarBorderColor};
+      }
+      .rbc-time-gutter, .rbc-time-header-gutter {
+        background: ${calendarHeaderBgColor};
+        color: ${calendarTextColor};
+      }
+      .rbc-timeslot-group {
+        border-bottom: 1px solid ${calendarBorderColor};
+      }
+      .rbc-day-slot .rbc-time-slot {
+        border-top: 1px solid ${calendarBorderColor};
       }
       /* Förbättra visning av överlappande events */
       .rbc-event-overlaps {

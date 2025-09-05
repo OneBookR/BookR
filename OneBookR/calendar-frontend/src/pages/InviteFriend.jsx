@@ -209,7 +209,8 @@ const InviteFriend = ({ fromUser, fromToken }) => {
       bgcolor: theme.colors.surface, 
       borderRadius: 2, 
       boxShadow: 1,
-      border: `1px solid ${theme.colors.border}`
+      border: `1px solid ${theme.colors.border}`,
+      color: theme.colors.text
     }}>
       <Typography variant="h6" gutterBottom>Bjud in vänner</Typography>
       <TextField
@@ -240,7 +241,14 @@ const InviteFriend = ({ fromUser, fromToken }) => {
             key={email}
             label={email}
             onDelete={() => handleDelete(email)}
-            sx={{ mb: 1 }}
+            sx={{ 
+              mb: 1,
+              bgcolor: theme.colors.primary,
+              color: '#fff',
+              '& .MuiChip-deleteIcon': {
+                color: '#fff'
+              }
+            }}
           />
         ))}
       </Stack>
