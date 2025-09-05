@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import { useContacts } from '../hooks/useContacts';
+import { useTheme } from '../hooks/useTheme';
 
 const InviteFriend = ({ fromUser, fromToken }) => {
   const { contacts } = useContacts();
+  const { theme } = useTheme();
   const [emails, setEmails] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [message, setMessage] = useState('');
@@ -202,7 +204,13 @@ const InviteFriend = ({ fromUser, fromToken }) => {
   };
 
   return (
-    <Box sx={{ p: 2, bgcolor: 'white', borderRadius: 2, boxShadow: 1 }}>
+    <Box sx={{ 
+      p: 2, 
+      bgcolor: theme.colors.surface, 
+      borderRadius: 2, 
+      boxShadow: 1,
+      border: `1px solid ${theme.colors.border}`
+    }}>
       <Typography variant="h6" gutterBottom>Bjud in vänner</Typography>
       <TextField
         label="Gruppnamn"

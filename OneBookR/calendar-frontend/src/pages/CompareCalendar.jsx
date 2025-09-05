@@ -1038,7 +1038,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       <Slide direction="up" in={true} timeout={800}>
         <Box
           sx={{
-            bgcolor: 'white',
+            bgcolor: theme.colors.surface,
             borderRadius: 3,
             boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
             border: `1px solid ${theme.colors.border}`,
