@@ -25,7 +25,7 @@ import {
 // ✅ Skapa express app direkt
 const app = express();
 app.set('trust proxy', 1); // Behövs för secure cookies bakom Railway/Heroku
-app.use(express.json({ charset: 'utf-8' }));
+app.use(express.json());
 app.use(bodyParser.json());
 
 // Kontrollera att API-nyckeln finns vid start
