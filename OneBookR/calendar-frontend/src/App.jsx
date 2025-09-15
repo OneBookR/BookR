@@ -4,6 +4,7 @@ import Contact from './pages/Contact.jsx';
 import About from './pages/About.jsx';
 import Waitlist from './pages/Waitlist.jsx';
 import WaitlistAdmin from './pages/WaitlistAdmin.jsx';
+import BusinessSignup from './pages/BusinessSignup.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -151,6 +152,9 @@ function App() {
   }
   if (path === '/admin/waitlist') {
     return <WaitlistAdmin />;
+  }
+  if (path === '/business-signup') {
+    return <BusinessSignup />;
   }
 
   // NYTT: Visa laddar tills vi vet om användaren är inloggad

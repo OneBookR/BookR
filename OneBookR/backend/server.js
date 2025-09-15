@@ -19,6 +19,8 @@ import {
   createGroup, getGroup, updateGroup,
   createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation,
   createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion,
+  createBusiness, getBusinessByCode, getBusinessByEmail, updateBusiness,
+  createBookingSession, getBookingSession, updateBookingSession,
   deleteUserData
 } from './firestore.js';
 
@@ -1383,12 +1385,126 @@ app.get("/api/user", (req, res) => {
   res.json({ user: null });
 });
 
+// =============== BUSINESS ENDPOINTS ===============
+
+// Registrera företag
+app.post('/api/business/register', async (req, res) => {
+  try {
+    const { companyName, businessType, contactPerson, phone, address, website, googleEmail, googleId } = req.body;
+    
+    if (!companyName || !businessType || !contactPerson || !googleEmail) {
+      return res.status(400).json({ error: 'Företagsnamn, bransch, kontaktperson och Google-email krävs' });
+    }
+
+    // Generera unik bokningskod
+    const bookingCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+    
+    // Spara företag i Firestore (vi behöver skapa denna funktion)
+    const businessData = {
+      companyName,
+      businessType,
+      contactPerson,
+      phone: phone || '',
+      address: address || '',
+      website: website || '',
+      googleEmail,
+      googleId,
+      bookingCode,
+      createdAt: new Date().toISOString(),
+      isActive: true
+    };
+    
+    // Spara företag i Firestore
+    const businessId = await createBusiness(businessData);
+    
+    console.log('Business registered:', businessId, businessData);
+    
+    res.json({ 
+      success: true, 
+      bookingCode,
+      message: 'Företag registrerat framgångsrikt!' 
+    });
+  } catch (error) {
+    console.error('Error registering business:', error);
+    res.status(500).json({ error: 'Kunde inte registrera företag' });
+  }
+});
+
+// Hämta företagsinformation via bokningskod
+app.get('/api/business/:bookingCode', async (req, res) => {
+  try {
+    const { bookingCode } = req.params;
+    
+    // Hämta företag från Firestore
+    const business = await getBusinessByCode(bookingCode);
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Företag inte hittat' });
+    }
+    
+    res.json({ business });
+  } catch (error) {
+    console.error('Error fetching business:', error);
+    res.status(500).json({ error: 'Kunde inte hämta företagsinformation' });
+  }
+});
+
+// Skapa bokningssession med företag
+app.post('/api/business/:bookingCode/book', async (req, res) => {
+  try {
+    const { bookingCode } = req.params;
+    const { customerToken, customerEmail } = req.body;
+    
+    if (!customerToken || !customerEmail) {
+      return res.status(400).json({ error: 'Kundtoken och email krävs' });
+    }
+    
+    // Hämta företagets information
+    const business = await getBusinessByCode(bookingCode);
+    if (!business) {
+      return res.status(404).json({ error: 'Företag inte hittat' });
+    }
+    
+    // Skapa bokningssession
+    const sessionData = {
+      bookingCode,
+      businessId: business.id,
+      customerEmail,
+      customerToken,
+      businessEmail: business.googleEmail
+    };
+    
+    const sessionId = await createBookingSession(sessionData);
+    
+    res.json({ 
+      success: true, 
+      sessionId,
+      message: 'Bokningssession skapad' 
+    });
+  } catch (error) {
+    console.error('Error creating booking session:', error);
+    res.status(500).json({ error: 'Kunde inte skapa bokningssession' });
+  }
+});
+
 // ------------------ REACT SPA ROUTES ------------------
 app.get("/waitlist", (req, res) => {
   res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
 });
 
 app.get("/admin/waitlist", (req, res) => {
+  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
+});
+
+app.get("/business-signup", (req, res) => {
+  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
+});
+
+app.get("/business-admin", (req, res) => {
+  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
+});
+
+app.get("/book/:bookingCode", (req, res) => {
   res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
 });
 

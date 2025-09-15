@@ -172,6 +172,65 @@ export async function getSuggestion(suggestionId) {
 }
 
 // -----------------------------
+// Företag (Business)
+// -----------------------------
+
+export async function createBusiness(businessData) {
+  const docRef = await addDoc(collection(db, 'businesses'), {
+    ...businessData,
+    createdAt: serverTimestamp()
+  });
+  return docRef.id;
+}
+
+export async function getBusinessByCode(bookingCode) {
+  const q = query(collection(db, 'businesses'), where('bookingCode', '==', bookingCode));
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return null;
+  
+  const doc = snapshot.docs[0];
+  return { id: doc.id, ...doc.data() };
+}
+
+export async function getBusinessByEmail(googleEmail) {
+  const q = query(collection(db, 'businesses'), where('googleEmail', '==', googleEmail));
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return null;
+  
+  const doc = snapshot.docs[0];
+  return { id: doc.id, ...doc.data() };
+}
+
+export async function updateBusiness(businessId, updateData) {
+  const docRef = doc(db, 'businesses', businessId);
+  await updateDoc(docRef, updateData);
+}
+
+// -----------------------------
+// Bokningssessioner
+// -----------------------------
+
+export async function createBookingSession(sessionData) {
+  const docRef = await addDoc(collection(db, 'booking_sessions'), {
+    ...sessionData,
+    createdAt: serverTimestamp(),
+    status: 'active'
+  });
+  return docRef.id;
+}
+
+export async function getBookingSession(sessionId) {
+  const docRef = doc(db, 'booking_sessions', sessionId);
+  const docSnap = await getDoc(docRef);
+  return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+}
+
+export async function updateBookingSession(sessionId, updateData) {
+  const docRef = doc(db, 'booking_sessions', sessionId);
+  await updateDoc(docRef, updateData);
+}
+
+// -----------------------------
 // GDPR – radera användardata
 // -----------------------------
 
@@ -192,6 +251,11 @@ export async function deleteUserData(email) {
   const suggestionsQuery = query(collection(db, 'suggestions'), where('fromEmail', '==', email));
   const suggestionsSnapshot = await getDocs(suggestionsQuery);
   suggestionsSnapshot.docs.forEach(doc => batch.push(deleteDoc(doc.ref)));
+
+  // Företag
+  const businessQuery = query(collection(db, 'businesses'), where('googleEmail', '==', email));
+  const businessSnapshot = await getDocs(businessQuery);
+  businessSnapshot.docs.forEach(doc => batch.push(deleteDoc(doc.ref)));
 
   await Promise.all(batch);
 }
