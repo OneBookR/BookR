@@ -243,7 +243,9 @@ app.get('/auth/google/callback',
       try {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
         
-        if (decoded.groupId) {
+        if (decoded.type === 'business-signup') {
+          redirectUrl = `/business-signup?auth=${authToken}`;
+        } else if (decoded.groupId) {
           redirectUrl = `/?auth=${authToken}&group=${decoded.groupId}`;
           if (decoded.inviteeId) {
             redirectUrl += `&invitee=${decoded.inviteeId}`;
@@ -1390,7 +1392,7 @@ app.get("/api/user", (req, res) => {
 // Registrera företag
 app.post('/api/business/register', async (req, res) => {
   try {
-    const { companyName, businessType, contactPerson, phone, address, website, googleEmail, googleId } = req.body;
+    const { companyName, businessType, contactPerson, phone, address, website, googleEmail, googleId, googleToken } = req.body;
     
     if (!companyName || !businessType || !contactPerson || !googleEmail) {
       return res.status(400).json({ error: 'Företagsnamn, bransch, kontaktperson och Google-email krävs' });
@@ -1409,6 +1411,7 @@ app.post('/api/business/register', async (req, res) => {
       website: website || '',
       googleEmail,
       googleId,
+      googleToken: googleToken || null,
       bookingCode,
       createdAt: new Date().toISOString(),
       isActive: true
@@ -1445,6 +1448,26 @@ app.get('/api/business/:bookingCode', async (req, res) => {
     res.json({ business });
   } catch (error) {
     console.error('Error fetching business:', error);
+    res.status(500).json({ error: 'Kunde inte hämta företagsinformation' });
+  }
+});
+
+// Hämta företagsinformation via email
+app.get('/api/business/by-email/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const decodedEmail = decodeURIComponent(email);
+    
+    // Hämta företag från Firestore
+    const business = await getBusinessByEmail(decodedEmail);
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Företag inte hittat' });
+    }
+    
+    res.json({ business });
+  } catch (error) {
+    console.error('Error fetching business by email:', error);
     res.status(500).json({ error: 'Kunde inte hämta företagsinformation' });
   }
 });

@@ -33,21 +33,32 @@ const BusinessSignup = () => {
     'Annat'
   ];
 
-  const handleGoogleLogin = async () => {
-    try {
-      // Implementera Google OAuth här
-      // För nu simulerar vi inloggning
-      const mockUser = {
-        email: 'business@example.com',
-        name: 'Business Owner',
-        googleId: '123456789'
-      };
-      setGoogleUser(mockUser);
-      setFormData(prev => ({ ...prev, contactPerson: mockUser.name }));
-    } catch (error) {
-      setToast({ open: true, message: 'Kunde inte logga in med Google', severity: 'error' });
-    }
+  const handleGoogleLogin = () => {
+    // Omdirigera till Google OAuth med business-state
+    const state = btoa(JSON.stringify({ type: 'business-signup' }));
+    window.location.href = `${API_BASE_URL}/auth/google?state=${encodeURIComponent(state)}`;
   };
+
+  // Kolla om användaren kommer tillbaka från Google OAuth
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const authToken = urlParams.get('auth');
+    
+    if (authToken) {
+      try {
+        const decoded = JSON.parse(atob(authToken));
+        setGoogleUser(decoded.user);
+        setFormData(prev => ({ ...prev, contactPerson: decoded.user.displayName || decoded.user.name || '' }));
+        
+        // Rensa auth-parameter
+        urlParams.delete('auth');
+        const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+        window.history.replaceState({}, '', newUrl);
+      } catch (e) {
+        console.error('Fel vid dekodning av auth token:', e);
+      }
+    }
+  }, []);
 
   const handleInputChange = (field) => (event) => {
     setFormData(prev => ({
@@ -70,8 +81,9 @@ const BusinessSignup = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          googleEmail: googleUser.email,
-          googleId: googleUser.googleId
+          googleEmail: googleUser.email || googleUser.emails?.[0]?.value,
+          googleId: googleUser.id,
+          googleToken: googleUser.accessToken
         })
       });
 

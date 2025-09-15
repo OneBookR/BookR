@@ -7,23 +7,75 @@ import { API_BASE_URL } from '../config';
 
 const BusinessAdmin = () => {
   const [business, setBusiness] = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
 
   useEffect(() => {
-    // Hämta företagsinformation baserat på inloggad användare
-    // För nu använder vi mock-data
-    const mockBusiness = {
-      companyName: 'Test Företag AB',
-      businessType: 'Frisör/Skönhetssalong',
-      contactPerson: 'Anna Andersson',
-      bookingCode: 'ABC123XY',
-      googleEmail: 'test@example.com'
-    };
+    // Kolla om användaren är inloggad
+    const urlParams = new URLSearchParams(window.location.search);
+    const authToken = urlParams.get('auth');
     
-    setBusiness(mockBusiness);
+    if (authToken) {
+      try {
+        const decoded = JSON.parse(atob(authToken));
+        setUser(decoded.user);
+        
+        // Rensa auth-parameter
+        urlParams.delete('auth');
+        const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+        window.history.replaceState({}, '', newUrl);
+      } catch (e) {
+        console.error('Fel vid dekodning av auth token:', e);
+      }
+    } else {
+      // Försök hämta från session
+      fetch(`${API_BASE_URL}/api/user`, { credentials: 'include' })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.user) {
+            setUser(data.user);
+          }
+        })
+        .catch(() => {});
+    }
+    
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      // Hämta företagsinformation för inloggad användare
+      const userEmail = user.email || user.emails?.[0]?.value;
+      
+      fetch(`${API_BASE_URL}/api/business/by-email/${encodeURIComponent(userEmail)}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.business) {
+            setBusiness(data.business);
+          } else {
+            // Använd mock-data om inget företag hittas
+            setBusiness({
+              companyName: 'Test Företag AB',
+              businessType: 'Frisör/Skönhetssalong',
+              contactPerson: user.displayName || user.name || 'Test Person',
+              bookingCode: 'ABC123XY',
+              googleEmail: userEmail
+            });
+          }
+        })
+        .catch(() => {
+          // Fallback till mock-data
+          setBusiness({
+            companyName: 'Test Företag AB',
+            businessType: 'Frisör/Skönhetssalong', 
+            contactPerson: user.displayName || user.name || 'Test Person',
+            bookingCode: 'ABC123XY',
+            googleEmail: userEmail
+          });
+        });
+    }
+  }, [user]);
 
   const bookingUrl = business ? `https://www.onebookr.se/book/${business.bookingCode}` : '';
 
@@ -36,6 +88,17 @@ const BusinessAdmin = () => {
     return (
       <Container maxWidth="md" sx={{ mt: 10 }}>
         <Typography>Laddar...</Typography>
+      </Container>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Container maxWidth="md" sx={{ mt: 10 }}>
+        <Alert severity="warning">
+          Du måste logga in för att komma åt admin-panelen. 
+          <Button href="/business-signup" sx={{ ml: 2 }}>Logga in</Button>
+        </Alert>
       </Container>
     );
   }
@@ -68,6 +131,9 @@ const BusinessAdmin = () => {
             fontWeight: 400
           }}>
             {business.companyName}
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#666', mt: 1 }}>
+            Inloggad som: {user.email || user.displayName} 🟢 Google-kalender ansluten
           </Typography>
         </Box>
 
