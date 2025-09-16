@@ -43,7 +43,7 @@ app.get('/terms-of-service', (req, res) => {
 
 // Middleware
 app.use(cors({
-  origin: 'https://bookr-production.up.railway.app',
+  origin: 'https://www.onebookr.se',
   credentials: true
 }));
 app.use(session({
@@ -64,7 +64,7 @@ app.use(passport.session());
 passport.use(new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
-  callbackURL: 'https://bookr-production.up.railway.app/auth/google/callback',
+  callbackURL: 'https://www.onebookr.se/auth/google/callback',
   accessType: 'offline',
   includeGrantedScopes: true  // Enable incremental authorization
 }, (accessToken, refreshToken, profile, done) => {
@@ -141,7 +141,7 @@ app.get('/auth/google/callback',
       }
     }
     
-    const frontendUrl = 'https://bookr-production.up.railway.app';
+    const frontendUrl = 'https://www.onebookr.se';
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
@@ -171,7 +171,7 @@ app.get('/auth/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
     req.session.destroy(() => {
-      res.redirect('https://bookr-production.up.railway.app/');
+      res.redirect('https://www.onebookr.se/');
     });
   });
 });
@@ -602,7 +602,7 @@ app.post('/api/invite', async (req, res) => {
     }
 
     // Skicka ut unika länkar
-    const frontendUrl = 'https://bookr-production.up.railway.app';
+    const frontendUrl = 'https://www.onebookr.se';
     const inviteLinks = invitees.map(inv =>
       `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
     );
@@ -1088,26 +1088,15 @@ app.post('/api/waitlist', async (req, res) => {
     const totalCount = await getWaitlistCount();
     
     // Skicka endast admin-notifiering för att spara kostnader
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
-        
-        // Endast admin-notifiering
-        await transporter.sendMail({
-          from: `"BookR" <${process.env.EMAIL_USER}>`,
-          to: 'onebookr@gmail.com',
-          subject: 'Ny registrering på BookR väntelista',
-          text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
-        });
-      } catch (err) {
-        console.error('Fel vid mejlutskick:', err);
-      }
+    try {
+      await resend.emails.send({
+        from: 'BookR <info@onebookr.se>',
+        to: 'info@onebookr.se',
+        subject: 'Ny registrering på BookR väntelista',
+        text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
+      });
+    } catch (err) {
+      console.error('Fel vid mejlutskick:', err);
     }
     
     res.json({ success: true, count: totalCount });
@@ -1146,7 +1135,7 @@ app.get('/api/waitlist/admin', async (req, res) => {
 
 // Generera delningslänk för väntelistan
 app.post('/api/waitlist/share', (req, res) => {
-  const waitlistUrl = 'https://bookr-production.up.railway.app/waitlist';
+  const waitlistUrl = 'https://www.onebookr.se/waitlist';
   const message = encodeURIComponent('Kolla in BookR - slipp mejlkaoset när ni ska boka möten! 🚀');
   
   const shareLinks = {
