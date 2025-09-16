@@ -18,7 +18,6 @@ const BusinessSignup = () => {
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [googleUser, setGoogleUser] = useState(null);
   const [bookingCode, setBookingCode] = useState(null);
-  const [showCodeModal, setShowCodeModal] = useState(false);
 
   const businessTypes = [
     'Frisör/Skönhetssalong',
@@ -90,8 +89,11 @@ const BusinessSignup = () => {
       if (response.ok) {
         const data = await response.json();
         setBookingCode(data.bookingCode);
-        // Omdirigera direkt till admin-sidan istället för att visa modal
-        window.location.href = '/business-admin';
+        setToast({ open: true, message: `Företag registrerat! Bokningskod: ${data.bookingCode}`, severity: 'success' });
+        // Omdirigera till admin-sidan efter kort fördröjning
+        setTimeout(() => {
+          window.location.href = '/business-admin';
+        }, 2000);
       } else {
         const error = await response.json();
         setToast({ open: true, message: error.message || 'Något gick fel', severity: 'error' });

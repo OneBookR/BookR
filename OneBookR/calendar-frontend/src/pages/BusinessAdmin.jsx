@@ -102,7 +102,15 @@ const BusinessAdmin = () => {
       <Container maxWidth="md" sx={{ mt: 10 }}>
         <Alert severity="warning">
           Du måste logga in för att komma åt admin-panelen. 
-          <Button href="/business-signup" sx={{ ml: 2 }}>Logga in</Button>
+          <Button 
+            onClick={() => {
+              const state = btoa(JSON.stringify({ type: 'business-admin' }));
+              window.location.href = `${API_BASE_URL}/auth/google?state=${encodeURIComponent(state)}`;
+            }}
+            sx={{ ml: 2 }}
+          >
+            Logga in
+          </Button>
         </Alert>
       </Container>
     );
