@@ -146,7 +146,29 @@ function App() {
     return <BusinessSignup />;
   }
   if (path === '/business-admin') {
-    return <BusinessAdmin />;
+    // NYTT: Hantera auth-token även på admin-sidan
+    const urlParams = new URLSearchParams(window.location.search);
+    const authToken = urlParams.get('auth');
+    if (!user && authToken) {
+      try {
+        const decoded = JSON.parse(atob(authToken));
+        setUser(decoded.user);
+        setLoading(false);
+        urlParams.delete('auth');
+        const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '') + window.location.hash;
+        window.history.replaceState({}, '', newUrl);
+      } catch (e) {
+        setUser(null);
+        setLoading(false);
+      }
+      return (
+        <>{loginIndicator}<Box sx={{ mt: 12, textAlign: 'center' }}><span>Laddar admin...</span></Box></>
+      );
+    }
+    if (!user) {
+      return (<>{loginIndicator}<Box sx={{ mt: 12, textAlign: 'center' }}><span>Laddar admin...</span></Box></>);
+    }
+    return <BusinessAdmin user={user} />;
   }
   if (path === '/contact') {
     return <Contact />;
