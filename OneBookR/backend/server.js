@@ -1171,6 +1171,48 @@ app.get('/business-signup', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
+app.get('/business-admin', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+// Business API endpoints
+app.post('/api/business/register', async (req, res) => {
+  const { companyName, businessType, contactPerson, googleEmail, googleId, googleToken } = req.body;
+  
+  if (!companyName || !businessType || !contactPerson || !googleEmail) {
+    return res.status(400).json({ error: 'Alla obligatoriska fält krävs' });
+  }
+  
+  try {
+    const bookingCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+    
+    // Här skulle vi spara till databas, men för nu returnerar vi bara koden
+    res.json({ 
+      success: true, 
+      bookingCode,
+      message: 'Företag registrerat framgångsrikt'
+    });
+  } catch (error) {
+    console.error('Error registering business:', error);
+    res.status(500).json({ error: 'Kunde inte registrera företag' });
+  }
+});
+
+app.get('/api/business/by-email/:email', async (req, res) => {
+  const { email } = req.params;
+  
+  // Mock data för nu
+  const mockBusiness = {
+    companyName: 'Test Företag AB',
+    businessType: 'Frisör/Skönhetssalong',
+    contactPerson: 'Test Person',
+    bookingCode: 'ABC123XY',
+    googleEmail: email
+  };
+  
+  res.json({ business: mockBusiness });
+});
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });

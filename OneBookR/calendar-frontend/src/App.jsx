@@ -5,6 +5,7 @@ import About from './pages/About.jsx';
 import Waitlist from './pages/Waitlist.jsx';
 import WaitlistAdmin from './pages/WaitlistAdmin.jsx';
 import BusinessSignup from './pages/BusinessSignup.jsx';
+import BusinessAdmin from './pages/BusinessAdmin.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -155,6 +156,9 @@ function App() {
   }
   if (path === '/business-signup') {
     return <BusinessSignup />;
+  }
+  if (path === '/business-admin') {
+    return <BusinessAdmin />;
   }
 
   // NYTT: Visa laddar tills vi vet om användaren är inloggad
@@ -381,7 +385,35 @@ function App() {
               >
                 Logga in med Google
               </Button>
+              <Button
+                variant="outlined"
+                href="/business-signup"
+                size="large"
+                sx={{
+                  mt: 2,
+                  ml: 2,
+                  px: 4,
+                  py: 1.7,
+                  fontWeight: 600,
+                  fontSize: 16,
+                  borderRadius: 4,
+                  borderColor: '#635bff',
+                  color: '#635bff',
+                  '&:hover': {
+                    borderColor: '#7a5af8',
+                    color: '#7a5af8',
+                    bgcolor: 'rgba(99,91,255,0.05)',
+                  },
+                }}
+              >
+                Logga in för företag
+              </Button>
             </Paper>
+            <Box sx={{ textAlign: 'center', mt: 3 }}>
+              <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
+                Är du företagare? Få din egen bokningslänk för kunder
+              </Typography>
+            </Box>
             <Box sx={{ maxWidth: 700, width: '100%', mx: 'auto', textAlign: 'center', mb: 4 }}>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 Din kalenderdata används endast för att hitta gemensamma lediga tider och delas aldrig vidare.
