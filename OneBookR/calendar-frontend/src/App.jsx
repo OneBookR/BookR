@@ -385,29 +385,50 @@ function App() {
               >
                 Logga in med Google
               </Button>
-              <Button
-                variant="outlined"
-                href="/business-signup"
-                size="large"
-                sx={{
-                  mt: 2,
-                  ml: 2,
-                  px: 4,
-                  py: 1.7,
-                  fontWeight: 600,
-                  fontSize: 16,
-                  borderRadius: 4,
-                  borderColor: '#635bff',
-                  color: '#635bff',
-                  '&:hover': {
-                    borderColor: '#7a5af8',
-                    color: '#7a5af8',
-                    bgcolor: 'rgba(99,91,255,0.05)',
-                  },
-                }}
-              >
-                Logga in för företag
-              </Button>
+              <Box sx={{ display: 'flex', gap: 2, mt: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    const state = btoa(JSON.stringify({ type: 'business-signup' }));
+                    window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
+                  }}
+                  size="large"
+                  sx={{
+                    px: 4,
+                    py: 1.7,
+                    fontWeight: 600,
+                    fontSize: 16,
+                    borderRadius: 4,
+                    borderColor: '#635bff',
+                    color: '#635bff',
+                    '&:hover': {
+                      borderColor: '#7a5af8',
+                      color: '#7a5af8',
+                      bgcolor: 'rgba(99,91,255,0.05)',
+                    },
+                  }}
+                >
+                  Registrera företag
+                </Button>
+                <Button
+                  variant="text"
+                  href="/business-admin"
+                  size="large"
+                  sx={{
+                    px: 4,
+                    py: 1.7,
+                    fontWeight: 600,
+                    fontSize: 16,
+                    borderRadius: 4,
+                    color: '#635bff',
+                    '&:hover': {
+                      bgcolor: 'rgba(99,91,255,0.05)',
+                    },
+                  }}
+                >
+                  Admin-panel
+                </Button>
+              </Box>
             </Paper>
             <Box sx={{ textAlign: 'center', mt: 3 }}>
               <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
