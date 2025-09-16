@@ -110,6 +110,7 @@ app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
   (req, res) => {
     console.log('OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
+    console.log('OAuth state received:', req.session.oauthState);
     
     // Skapa en enkel auth token och skicka som URL-parameter
     const authToken = Buffer.from(JSON.stringify({
@@ -126,11 +127,14 @@ app.get('/auth/google/callback',
     if (state) {
       try {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
+        console.log('OAuth state decoded:', decoded);
         
         if (decoded.type === 'business-signup') {
           redirectUrl = `/business-signup?auth=${authToken}`;
+          console.log('Redirecting to business-signup');
         } else if (decoded.type === 'business-admin') {
           redirectUrl = `/business-admin?auth=${authToken}`;
+          console.log('Redirecting to business-admin');
         } else if (decoded.groupId) {
           redirectUrl = `/?auth=${authToken}&group=${decoded.groupId}`;
           if (decoded.inviteeId) {
@@ -144,8 +148,8 @@ app.get('/auth/google/callback',
         console.error('Fel vid dekodning av state:', e);
       }
     }
-    
-    const frontendUrl = 'https://www.onebookr.se';
+
+    const frontendUrl = 'https://www.onebookr.se/business-signup';
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
