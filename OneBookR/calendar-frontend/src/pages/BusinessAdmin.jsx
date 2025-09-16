@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Container, Typography, Box, Button, Paper, 
-  Alert, Snackbar, Card, CardContent, Divider
+  Alert, Snackbar, Card, CardContent, Divider, Grid
 } from '@mui/material';
+import { Calendar, momentLocalizer } from 'react-big-calendar';
+import moment from 'moment';
+import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { API_BASE_URL } from '../config';
+
+const localizer = momentLocalizer(moment);
 
 const BusinessAdmin = () => {
   const [business, setBusiness] = useState(null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
+  const [meetings, setMeetings] = useState([]);
 
   useEffect(() => {
     // Kolla om användaren är inloggad
@@ -76,6 +82,20 @@ const BusinessAdmin = () => {
         });
     }
   }, [user]);
+  
+  // Hämta möten när business är laddat
+  useEffect(() => {
+    if (business?.bookingCode) {
+      fetch(`${API_BASE_URL}/api/business/${business.bookingCode}/meetings`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.meetings) {
+            setMeetings(data.meetings);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [business]);
 
   const bookingUrl = business ? `https://www.onebookr.se/book/${business.bookingCode}` : '';
 
@@ -263,6 +283,75 @@ const BusinessAdmin = () => {
               💡 Tips: Skapa en knapp på din hemsida med texten "Boka tid" som länkar till din BookR-länk
             </Typography>
           </Box>
+        </Paper>
+        
+        {/* Möteskalender */}
+        <Paper sx={{
+          p: 4,
+          borderRadius: 4,
+          border: '1px solid #e3e8ff',
+          mt: 4
+        }}>
+          <Typography variant="h6" sx={{ 
+            color: '#0a2540', 
+            fontWeight: 600, 
+            mb: 3
+          }}>
+            📅 Dina bokade möten
+          </Typography>
+          
+          {meetings.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography sx={{ color: '#666' }}>
+                Inga möten bokade ännu. När kunder bokar tider via din länk visas de här.
+              </Typography>
+            </Box>
+          ) : (
+            <>
+              <Box sx={{ height: 400, mb: 4 }}>
+                <Calendar
+                  localizer={localizer}
+                  events={meetings.map(meeting => ({
+                    ...meeting,
+                    start: new Date(meeting.start),
+                    end: new Date(meeting.end)
+                  }))}
+                  startAccessor="start"
+                  endAccessor="end"
+                  titleAccessor="title"
+                  style={{ height: '100%' }}
+                  views={['month', 'week', 'day']}
+                  defaultView="week"
+                />
+              </Box>
+              
+              <Typography variant="h6" sx={{ mb: 2, color: '#0a2540' }}>
+                Kommande möten
+              </Typography>
+              <Grid container spacing={2}>
+                {meetings.map(meeting => (
+                  <Grid item xs={12} md={6} key={meeting.id}>
+                    <Card sx={{ border: '1px solid #e3e8ff' }}>
+                      <CardContent>
+                        <Typography variant="h6" sx={{ mb: 1 }}>
+                          {meeting.title}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
+                          📅 {new Date(meeting.start).toLocaleString('sv-SE')}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
+                          📧 {meeting.clientEmail}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#666' }}>
+                          📍 {meeting.location}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            </>
+          )}
         </Paper>
       </Container>
 

@@ -127,7 +127,9 @@ app.get('/auth/google/callback',
       try {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
         
-        if (decoded.groupId) {
+        if (decoded.type === 'business-signup') {
+          redirectUrl = `/business-signup?auth=${authToken}`;
+        } else if (decoded.groupId) {
           redirectUrl = `/?auth=${authToken}&group=${decoded.groupId}`;
           if (decoded.inviteeId) {
             redirectUrl += `&invitee=${decoded.inviteeId}`;
@@ -1211,6 +1213,32 @@ app.get('/api/business/by-email/:email', async (req, res) => {
   };
   
   res.json({ business: mockBusiness });
+});
+
+app.get('/api/business/:bookingCode/meetings', async (req, res) => {
+  const { bookingCode } = req.params;
+  
+  // Mock meetings data
+  const mockMeetings = [
+    {
+      id: '1',
+      title: 'Möte med Anna Andersson',
+      start: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      end: new Date(Date.now() + 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
+      clientEmail: 'anna@example.com',
+      location: 'Kontoret'
+    },
+    {
+      id: '2', 
+      title: 'Konsultation med Erik Svensson',
+      start: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      end: new Date(Date.now() + 48 * 60 * 60 * 1000 + 90 * 60 * 1000).toISOString(),
+      clientEmail: 'erik@example.com',
+      location: 'Online'
+    }
+  ];
+  
+  res.json({ meetings: mockMeetings });
 });
 
 app.get('/', (req, res) => {
