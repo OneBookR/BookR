@@ -140,8 +140,14 @@ function App() {
     }
   }, []);
 
-  // Enkel routing
+  // Enkel routing - kontrollera business-sidor först
   const path = window.location.pathname;
+  if (path === '/business-signup') {
+    return <BusinessSignup />;
+  }
+  if (path === '/business-admin') {
+    return <BusinessAdmin />;
+  }
   if (path === '/contact') {
     return <Contact />;
   }
@@ -153,12 +159,6 @@ function App() {
   }
   if (path === '/admin/waitlist') {
     return <WaitlistAdmin />;
-  }
-  if (path === '/business-signup') {
-    return <BusinessSignup />;
-  }
-  if (path === '/business-admin') {
-    return <BusinessAdmin />;
   }
 
   // NYTT: Visa laddar tills vi vet om användaren är inloggad
@@ -472,10 +472,7 @@ function App() {
     );
   }
 
-  // Om användaren är på business-admin sidan, visa den även utan inloggning
-  if (path === '/business-admin') {
-    return <BusinessAdmin />;
-  }
+
 
   return (
     <>
