@@ -166,6 +166,12 @@ function App() {
       );
     }
     if (!user) {
+      // NYTT: Business admin redirect med state
+      if (window.location.pathname === '/business-admin') {
+        const state = btoa(JSON.stringify({ type: 'business-admin' }));
+        window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
+        return null;
+      }
       return (<>{loginIndicator}<Box sx={{ mt: 12, textAlign: 'center' }}><span>Laddar admin...</span></Box></>);
     }
     return <BusinessAdmin user={user} />;
