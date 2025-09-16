@@ -149,7 +149,7 @@ app.get('/auth/google/callback',
       }
     }
 
-    const frontendUrl = 'https://www.onebookr.se/business-signup';
+    const frontendUrl = 'https://www.onebookr.se';
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
