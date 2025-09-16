@@ -8,7 +8,8 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import fetch from 'node-fetch';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
+const resend = new Resend(process.env.RESEND_API_KEY);
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
@@ -1199,6 +1200,10 @@ app.get('/about', (req, res) => {
 });
 
 app.get('/contact', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/business-signup', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
