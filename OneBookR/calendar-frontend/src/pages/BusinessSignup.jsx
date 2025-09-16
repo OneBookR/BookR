@@ -90,7 +90,8 @@ const BusinessSignup = () => {
       if (response.ok) {
         const data = await response.json();
         setBookingCode(data.bookingCode);
-        setShowCodeModal(true);
+        // Omdirigera direkt till admin-sidan istället för att visa modal
+        window.location.href = '/business-admin';
       } else {
         const error = await response.json();
         setToast({ open: true, message: error.message || 'Något gick fel', severity: 'error' });
@@ -265,90 +266,7 @@ const BusinessSignup = () => {
         </Box>
       </Container>
 
-      {/* Bokningskod Modal */}
-      {showCodeModal && (
-        <Box sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          bgcolor: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <Paper sx={{
-            p: 6,
-            borderRadius: 4,
-            textAlign: 'center',
-            maxWidth: 500,
-            mx: 2,
-            background: 'linear-gradient(135deg, #f8fff8 0%, #e8f5e8 100%)',
-            border: '2px solid #4caf50'
-          }}>
-            <Typography sx={{ fontSize: '4rem', mb: 2 }}>🏢</Typography>
-            <Typography variant="h4" sx={{
-              color: '#2e7d32',
-              fontWeight: 700,
-              mb: 3
-            }}>
-              Företag registrerat!
-            </Typography>
-            <Typography variant="h6" sx={{
-              color: '#1b5e20',
-              mb: 2,
-              fontWeight: 600
-            }}>
-              Detta är din bokningskod:
-            </Typography>
-            <Box sx={{
-              bgcolor: '#fff',
-              border: '3px solid #4caf50',
-              borderRadius: 3,
-              p: 3,
-              mb: 4
-            }}>
-              <Typography variant="h3" sx={{
-                color: '#2e7d32',
-                fontWeight: 800,
-                letterSpacing: 2,
-                fontFamily: 'monospace'
-              }}>
-                {bookingCode}
-              </Typography>
-            </Box>
-            <Typography variant="body1" sx={{
-              color: '#1b5e20',
-              mb: 3,
-              lineHeight: 1.6
-            }}>
-              Spara denna kod! Du hittar den även i din admin-panel när du loggar in.
-            </Typography>
-            <Button
-              variant="contained"
-              onClick={() => {
-                setShowCodeModal(false);
-                window.location.href = '/business-admin';
-              }}
-              sx={{
-                bgcolor: '#4caf50',
-                color: '#fff',
-                fontWeight: 600,
-                py: 1.5,
-                px: 4,
-                borderRadius: 3,
-                '&:hover': {
-                  bgcolor: '#45a049'
-                }
-              }}
-            >
-              Gå till Admin-panel
-            </Button>
-          </Paper>
-        </Box>
-      )}
+
 
       <Snackbar
         open={toast.open}
