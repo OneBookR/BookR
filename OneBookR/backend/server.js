@@ -126,26 +126,14 @@ app.get('/auth/google/callback',
     
     if (state) {
       try {
-        const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
-        console.log('OAuth state decoded:', decoded);
-        
-        if (decoded.type === 'business-signup') {
-          redirectUrl = `/business-signup?auth=${authToken}`;
-          console.log('Redirecting to business-signup');
-        } else if (decoded.type === 'business-admin') {
+        const parsed = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+        if (parsed.type === 'business-admin') {
           redirectUrl = `/business-admin?auth=${authToken}`;
-          console.log('Redirecting to business-admin');
-        } else if (decoded.groupId) {
-          redirectUrl = `/?auth=${authToken}&group=${decoded.groupId}`;
-          if (decoded.inviteeId) {
-            redirectUrl += `&invitee=${decoded.inviteeId}`;
-          }
-          if (decoded.hash) {
-            redirectUrl += decoded.hash;
-          }
+        } else if (parsed.returnUrl) {
+          redirectUrl = `${parsed.returnUrl}${parsed.returnUrl.includes('?') ? '&' : '?'}auth=${authToken}`;
         }
       } catch (e) {
-        console.error('Fel vid dekodning av state:', e);
+        // Om state inte kan tolkas, använd standard redirect
       }
     }
 

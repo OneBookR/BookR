@@ -178,7 +178,12 @@ function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const groupId = urlParams.get('group');
     const inviteeId = urlParams.get('invitee');
-    
+    // NYTT: Business admin redirect
+    if (window.location.pathname === '/business-admin') {
+      const state = btoa(JSON.stringify({ type: 'business-admin' }));
+      window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
+      return null;
+    }
     let googleLoginUrl = 'https://www.onebookr.se/auth/google';
     if (groupId) {
       const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
