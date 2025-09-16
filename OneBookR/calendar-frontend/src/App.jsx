@@ -142,6 +142,7 @@ function App() {
 
   useEffect(() => {
     if (window.location.pathname === '/business-admin' && !user) {
+      console.log('[DEBUG] Redirecting to Google-login for business-admin');
       const state = btoa(JSON.stringify({ type: 'business-admin' }));
       window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
     }
@@ -153,18 +154,20 @@ function App() {
     return <BusinessSignup />;
   }
   if (path === '/business-admin') {
-    // NYTT: Hantera auth-token även på admin-sidan
     const urlParams = new URLSearchParams(window.location.search);
     const authToken = urlParams.get('auth');
+    console.log('[DEBUG] /business-admin, authToken:', authToken);
     if (!user && authToken) {
       try {
         const decoded = JSON.parse(atob(authToken));
+        console.log('[DEBUG] Decoded user from authToken:', decoded.user);
         setUser(decoded.user);
         setLoading(false);
         urlParams.delete('auth');
         const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '') + window.location.hash;
         window.history.replaceState({}, '', newUrl);
       } catch (e) {
+        console.error('[DEBUG] Error decoding authToken:', e);
         setUser(null);
         setLoading(false);
       }
@@ -173,8 +176,10 @@ function App() {
       );
     }
     if (!user) {
+      console.log('[DEBUG] Ingen user, visar laddar admin...');
       return (<>{loginIndicator}<Box sx={{ mt: 12, textAlign: 'center' }}><span>Laddar admin...</span></Box></>);
     }
+    console.log('[DEBUG] Visar BusinessAdmin, user:', user);
     return <BusinessAdmin user={user} />;
   }
   if (path === '/contact') {

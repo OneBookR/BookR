@@ -21,10 +21,12 @@ const BusinessAdmin = () => {
     // Kolla om användaren är inloggad
     const urlParams = new URLSearchParams(window.location.search);
     const authToken = urlParams.get('auth');
+    console.log('[DEBUG][BusinessAdmin] authToken:', authToken);
     
     if (authToken) {
       try {
         const decoded = JSON.parse(atob(authToken));
+        console.log('[DEBUG][BusinessAdmin] Decoded user:', decoded.user);
         setUser(decoded.user);
         
         // Rensa auth-parameter
@@ -39,6 +41,7 @@ const BusinessAdmin = () => {
       fetch(`${API_BASE_URL}/api/user`, { credentials: 'include' })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
+          console.log('[DEBUG][BusinessAdmin] Fetched user from session:', data?.user);
           if (data && data.user) {
             setUser(data.user);
           }
@@ -53,10 +56,12 @@ const BusinessAdmin = () => {
     if (user) {
       // Hämta företagsinformation för inloggad användare
       const userEmail = user.email || user.emails?.[0]?.value;
+      console.log('[DEBUG][BusinessAdmin] Fetching business for email:', userEmail);
       
       fetch(`${API_BASE_URL}/api/business/by-email/${encodeURIComponent(userEmail)}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => {
+          console.log('[DEBUG][BusinessAdmin] Fetched business:', data?.business);
           if (data && data.business) {
             setBusiness(data.business);
           }
@@ -71,9 +76,11 @@ const BusinessAdmin = () => {
   // Hämta möten när business är laddat
   useEffect(() => {
     if (business?.bookingCode) {
+      console.log('[DEBUG][BusinessAdmin] Fetching meetings for bookingCode:', business.bookingCode);
       fetch(`${API_BASE_URL}/api/business/${business.bookingCode}/meetings`)
         .then(res => res.ok ? res.json() : null)
         .then(data => {
+          console.log('[DEBUG][BusinessAdmin] Fetched meetings:', data?.meetings);
           if (data && data.meetings) {
             setMeetings(data.meetings);
           }
@@ -101,7 +108,7 @@ const BusinessAdmin = () => {
     return (
       <Container maxWidth="md" sx={{ mt: 10 }}>
         <Alert severity="warning">
-          Du måste logga in för att komma åt admin-panelen. 
+          Du måste logga in för att komma åt admin-panelen.
           <Button 
             onClick={() => {
               const state = btoa(JSON.stringify({ type: 'business-admin' }));
