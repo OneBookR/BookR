@@ -388,10 +388,7 @@ function App() {
               <Box sx={{ display: 'flex', gap: 2, mt: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
                 <Button
                   variant="outlined"
-                  onClick={() => {
-                    const state = btoa(JSON.stringify({ type: 'business-signup' }));
-                    window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
-                  }}
+                  href="/business-signup"
                   size="large"
                   sx={{
                     px: 4,
@@ -412,10 +409,7 @@ function App() {
                 </Button>
                 <Button
                   variant="text"
-                  onClick={() => {
-                    const state = btoa(JSON.stringify({ type: 'business-admin' }));
-                    window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
-                  }}
+                  href="/business-admin"
                   size="large"
                   sx={{
                     px: 4,
@@ -476,6 +470,11 @@ function App() {
         </Box>
       </>
     );
+  }
+
+  // Om användaren är på business-admin sidan, visa den även utan inloggning
+  if (path === '/business-admin') {
+    return <BusinessAdmin />;
   }
 
   return (
