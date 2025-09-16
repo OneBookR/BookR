@@ -105,7 +105,7 @@ const BusinessAdmin = () => {
           <Button 
             onClick={() => {
               const state = btoa(JSON.stringify({ type: 'business-admin' }));
-              window.location.href = `${API_BASE_URL}/auth/google?state=${encodeURIComponent(state)}`;
+              window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
             }}
             sx={{ ml: 2 }}
           >
