@@ -129,6 +129,8 @@ app.get('/auth/google/callback',
         
         if (decoded.type === 'business-signup') {
           redirectUrl = `/business-signup?auth=${authToken}`;
+        } else if (decoded.type === 'business-admin') {
+          redirectUrl = `/business-admin?auth=${authToken}`;
         } else if (decoded.groupId) {
           redirectUrl = `/?auth=${authToken}&group=${decoded.groupId}`;
           if (decoded.inviteeId) {
@@ -1177,6 +1179,9 @@ app.get('/business-admin', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
+// In-memory storage för företag (i produktion skulle detta vara databas)
+const businesses = new Map();
+
 // Business API endpoints
 app.post('/api/business/register', async (req, res) => {
   const { companyName, businessType, contactPerson, googleEmail, googleId, googleToken } = req.body;
@@ -1188,7 +1193,17 @@ app.post('/api/business/register', async (req, res) => {
   try {
     const bookingCode = Math.random().toString(36).substring(2, 10).toUpperCase();
     
-    // Här skulle vi spara till databas, men för nu returnerar vi bara koden
+    // Spara företaget
+    businesses.set(googleEmail, {
+      companyName,
+      businessType,
+      contactPerson,
+      googleEmail,
+      googleId,
+      bookingCode,
+      createdAt: new Date().toISOString()
+    });
+    
     res.json({ 
       success: true, 
       bookingCode,
@@ -1203,16 +1218,13 @@ app.post('/api/business/register', async (req, res) => {
 app.get('/api/business/by-email/:email', async (req, res) => {
   const { email } = req.params;
   
-  // Mock data för nu
-  const mockBusiness = {
-    companyName: 'Test Företag AB',
-    businessType: 'Frisör/Skönhetssalong',
-    contactPerson: 'Test Person',
-    bookingCode: 'ABC123XY',
-    googleEmail: email
-  };
+  const business = businesses.get(email);
   
-  res.json({ business: mockBusiness });
+  if (business) {
+    res.json({ business });
+  } else {
+    res.status(404).json({ error: 'Företag inte hittat' });
+  }
 });
 
 app.get('/api/business/:bookingCode/meetings', async (req, res) => {

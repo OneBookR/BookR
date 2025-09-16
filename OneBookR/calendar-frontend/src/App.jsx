@@ -412,7 +412,10 @@ function App() {
                 </Button>
                 <Button
                   variant="text"
-                  href="/business-admin"
+                  onClick={() => {
+                    const state = btoa(JSON.stringify({ type: 'business-admin' }));
+                    window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
+                  }}
                   size="large"
                   sx={{
                     px: 4,

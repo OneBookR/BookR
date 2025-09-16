@@ -59,26 +59,11 @@ const BusinessAdmin = () => {
         .then(data => {
           if (data && data.business) {
             setBusiness(data.business);
-          } else {
-            // Använd mock-data om inget företag hittas
-            setBusiness({
-              companyName: 'Test Företag AB',
-              businessType: 'Frisör/Skönhetssalong',
-              contactPerson: user.displayName || user.name || 'Test Person',
-              bookingCode: 'ABC123XY',
-              googleEmail: userEmail
-            });
           }
         })
         .catch(() => {
-          // Fallback till mock-data
-          setBusiness({
-            companyName: 'Test Företag AB',
-            businessType: 'Frisör/Skönhetssalong', 
-            contactPerson: user.displayName || user.name || 'Test Person',
-            bookingCode: 'ABC123XY',
-            googleEmail: userEmail
-          });
+          // Inget företag hittat - låt business vara null
+          setBusiness(null);
         });
     }
   }, [user]);
@@ -126,9 +111,27 @@ const BusinessAdmin = () => {
   if (!business) {
     return (
       <Container maxWidth="md" sx={{ mt: 10 }}>
-        <Alert severity="error">
-          Företag inte hittat. <Button href="/business-signup">Registrera företag</Button>
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          Detta konto finns inte som registrerat företag.
         </Alert>
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Vill du registrera dig som företag?
+          </Typography>
+          <Button 
+            variant="contained" 
+            href="/business-signup"
+            sx={{ mr: 2 }}
+          >
+            Registrera företag
+          </Button>
+          <Button 
+            variant="outlined" 
+            href="/"
+          >
+            Tillbaka till startsidan
+          </Button>
+        </Paper>
       </Container>
     );
   }
