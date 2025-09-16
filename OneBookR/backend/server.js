@@ -617,27 +617,18 @@ app.post('/api/invite', async (req, res) => {
         // Extra loggning för felsökning
         console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
 
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.EMAIL_USER, // Måste vara onebookr@gmail.com
-            pass: process.env.EMAIL_PASS,
-          },
-        });
-
         // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
           // Skicka inte till samma adress som avsändaren
           if (inv.email && inv.email !== creatorEmail) {
-            const mailOptions = {
-              from: `"BookR" <${process.env.EMAIL_USER}>`, // Måste vara samma som EMAIL_USER
-              to: inv.email,
-              subject: 'Inbjudan till Kalenderjämförelse',
-              text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
-            };
             try {
-              await transporter.sendMail(mailOptions);
+              await resend.emails.send({
+                from: 'BookR <info@onebookr.se>',
+                to: inv.email,
+                subject: 'Inbjudan till Kalenderjämförelse',
+                text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
+              });
               console.log('Inbjudningsmejl skickat till:', inv.email);
             } catch (sendErr) {
               console.error('Fel vid utskick till', inv.email, sendErr);
@@ -650,8 +641,8 @@ app.post('/api/invite', async (req, res) => {
         // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
         try {
           const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
-          await transporter.sendMail({
-            from: `"BookR" <${process.env.EMAIL_USER}>`,
+          await resend.emails.send({
+            from: 'BookR <info@onebookr.se>',
             to: creatorEmail,
             subject: 'Du har bjudit in personer till din kalendergrupp',
             text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
@@ -970,15 +961,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         });
         console.log('Suggestion updated in Firebase with meet link');
 
-      // Skapa transporter med rätt avsändare
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
-        },
-      });
-
         // Bygg mejltext med alla detaljer
         let mailText = `Alla har accepterat mötestiden!\n\n`;
         mailText += `Möte: ${suggestion.title ? suggestion.title : 'Föreslaget möte'}\n`;
@@ -994,8 +976,8 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
         // Skicka mejl till ALLA (en och en, så att alla får ett eget mejl)
         for (const email of allEmails) {
-          await transporter.sendMail({
-            from: `"BookR" <${process.env.EMAIL_USER}>`, // Viktigt! Måste vara samma som EMAIL_USER
+          await resend.emails.send({
+            from: 'BookR <info@onebookr.se>',
             to: email,
             subject: 'Möte bokat!',
             text: mailText,
@@ -1071,16 +1053,9 @@ app.post('/api/contact', async (req, res) => {
     return res.status(400).json({ error: 'Alla fält krävs.' });
   }
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-    await transporter.sendMail({
-      from: `"BookR" <${process.env.EMAIL_USER}>`,
-      to: 'onebookr@gmail.com',
+    await resend.emails.send({
+      from: 'BookR <info@onebookr.se>',
+      to: 'info@onebookr.se',
       subject: 'Bokningsförfrågan via BookR',
       text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
     });
