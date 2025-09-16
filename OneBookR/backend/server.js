@@ -1,9 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-// DEBUG: Kolla att servern verkligen ser nyckeln
-console.log("ADMIN_KEY från .env:", process.env.ADMIN_KEY);
-
 import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
@@ -11,166 +8,52 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import fetch from 'node-fetch';
-import { Resend } from "resend";
+import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
-import {
-  createGroup, getGroup, updateGroup,
-  createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation,
-  createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion,
-  createBusiness, getBusinessByCode, getBusinessByEmail, updateBusiness,
-  createBookingSession, getBookingSession, updateBookingSession,
-  deleteUserData
-} from './firestore.js';
+import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
 
-// ✅ Skapa express app direkt
 const app = express();
-app.set('trust proxy', 1); // Behövs för secure cookies bakom Railway/Heroku
+app.set('trust proxy', 1); // NYTT: Behövs för secure cookies bakom proxy (Railway/Heroku/Render)
 app.use(express.json());
 app.use(bodyParser.json());
+const PORT = process.env.PORT || 3000;
 
-// Kontrollera att API-nyckeln finns vid start
-if (!process.env.RESEND_API_KEY) {
-  console.error('FEL: RESEND_API_KEY saknas. Sätt den i Railway / .env som RESEND_API_KEY.');
-  // Omdirigera ej automatiskt i produktion — men logga tydligt. Du kan välja process.exit(1) om du vill stoppa servern.
-}
+// Servera frontend static files
+app.use(express.static('OneBookR/calendar-frontend/dist'));
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-console.log("Resend API key exists?", !!process.env.RESEND_API_KEY);
-
-// Maintenance mode - omdirigera till väntelistan
-const MAINTENANCE_MODE = process.env.MAINTENANCE_MODE === 'true';
-console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist)' : 'OFF (full app available)');
-
-
-// Redirect non-www to www
-app.use((req, res, next) => {
-  if (req.headers.host === 'onebookr.se') {
-    return res.redirect(301, `https://www.onebookr.se${req.url}`);
-  }
-  next();
+// Dashboard route
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
-// Middleware för maintenance mode
-app.use((req, res, next) => {
-  if (MAINTENANCE_MODE) {
-    // Tillåt dessa sidor även i maintenance mode
-    const allowedPaths = [
-      '/waitlist',
-      '/admin/waitlist', 
-      '/api/waitlist',
-      '/api/waitlist/count',
-      '/api/waitlist/admin',
-      '/api/waitlist/share',
-      '/api/waitlist/referrer',
-      '/api/user',
-      '/api/user/optional'
-    ];
-    
-    // Tillåt statiska filer (CSS, JS, bilder)
-    if (req.path.includes('.') || allowedPaths.some(path => req.path.startsWith(path))) {
-      return next();
-    }
-    
-    // Omdirigera alla andra requests till väntelistan
-    return res.redirect('/waitlist');
-  }
-  
-  next();
+// Privacy policy route
+app.get('/privacy-policy', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(path.join(process.cwd(), 'policy.html'));
 });
 
-// --- ROUTES --- //
-
-// HELT NY WAITLIST ENDPOINT - ENKEL VERSION
-app.post('/api/waitlist/simple', (req, res) => {
-  console.log('=== SIMPLE WAITLIST CALLED ===');
-  console.log('Body:', req.body);
-  console.log('Headers:', req.headers);
-  
-  try {
-    const { email, name } = req.body;
-    console.log('Extracted:', { email, name });
-    
-    if (!email || !name) {
-      console.log('Missing data');
-      return res.status(400).json({ error: 'Saknar data' });
-    }
-    
-    console.log('SUCCESS - returning response');
-    res.json({ success: true, message: 'Fungerar!', data: { email, name } });
-  } catch (error) {
-    console.error('ERROR in simple waitlist:', error);
-    res.status(500).json({ error: 'Server error: ' + error.message });
-  }
+// Terms of service route
+app.get('/terms-of-service', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.sendFile(path.join(process.cwd(), 'policy.html'));
 });
 
-// Enkel waitlist test-endpoint
-app.post('/api/waitlist/test', (req, res) => {
-  console.log('Waitlist test endpoint called with body:', req.body);
-  const { email, name } = req.body;
-  
-  if (!email || !name) {
-    console.log('Missing email or name in test endpoint');
-    return res.status(400).json({ error: 'Email och namn krävs' });
-  }
-  
-  console.log('Test endpoint success for:', email, name);
-  res.json({ success: true, message: 'Test lyckades', email, name });
-});
-
-app.post('/invite', async (req, res) => {
-  try {
-    const { invitedUserEmail, invitedUserName, groupId, inviterName } = req.body;
-
-    if (!invitedUserEmail || !invitedUserName || !groupId || !inviterName) {
-      return res.status(400).json({ error: 'Alla fält krävs: invitedUserEmail, invitedUserName, groupId, inviterName' });
-    }
-
-    // Använd en verifierad from-adress (sätt RESEND_FROM i Railway -> t.ex. noreply@bookr.se)
-    const fromEmail = process.env.RESEND_FROM || 'noreply@your-verified-domain.com';
-    const groupLink = `https://www.onebookr.se/${groupId}`;
-
-    console.log("Försöker skicka mejl till:", invitedUserEmail);
-
-    const response = await resend.emails.send({
-      from: `BookR <${process.env.RESEND_FROM}>`,
-      to: invitedUserEmail,
-      subject: "Inbjudan till BookR",
-      text: `Hej ${invitedUserName},\n\n${inviterName} vill jämföra sina kalendrar med dig.\nKlicka på länken för att gå med: ${groupLink}`,
-      html: `<p>Hej ${invitedUserName},</p>
-             <p>${inviterName} vill jämföra sina kalendrar med dig.</p>
-             <p><a href="${groupLink}">Klicka för att gå med i gruppen</a></p>`
-    });
-
-    // Skriv ut hela svaret för debugging
-    console.log("Resend send success:", JSON.stringify(response, null, 2));
-
-    // Resend kan returnera ett objekt med id; skicka tillbaka relevant info
-    return res.status(200).json({ success: true, id: response?.id || null, response });
-  } catch (err) {
-    // Mer utförlig fel-logging om Resend returnerar extra info
-    if (err?.response) {
-      console.error('Resend error response:', JSON.stringify(err.response, null, 2));
-    }
-    console.error('Fel vid utskick av mejl:', err);
-    return res.status(500).json({ error: err?.message || 'Kunde inte skicka mejl' });
-  }
-});
-
-// Middleware för auth
+// Middleware
 app.use(cors({
-  origin: ['https://www.onebookr.se', 'https://www.onebookr.se'],
+  origin: 'https://bookr-production.up.railway.app',
   credentials: true
 }));
 app.use(session({
-  secret: process.env.SESSION_SECRET || "supersecret",
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: true,
   cookie: {
     sameSite: 'none',
     secure: true,
     httpOnly: true
+    // Ta bort maxAge för att göra cookien till en session-cookie (försvinner när webbläsaren stängs)
   }
 }));
 app.use(passport.initialize());
@@ -180,7 +63,7 @@ app.use(passport.session());
 passport.use(new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
-  callbackURL: 'https://www.onebookr.se/auth/google/callback',
+  callbackURL: 'https://bookr-production.up.railway.app/auth/google/callback',
   accessType: 'offline',
   includeGrantedScopes: true  // Enable incremental authorization
 }, (accessToken, refreshToken, profile, done) => {
@@ -243,9 +126,7 @@ app.get('/auth/google/callback',
       try {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
         
-        if (decoded.type === 'business-signup') {
-          redirectUrl = `/business-signup?auth=${authToken}`;
-        } else if (decoded.groupId) {
+        if (decoded.groupId) {
           redirectUrl = `/?auth=${authToken}&group=${decoded.groupId}`;
           if (decoded.inviteeId) {
             redirectUrl += `&invitee=${decoded.inviteeId}`;
@@ -259,7 +140,7 @@ app.get('/auth/google/callback',
       }
     }
     
-    const frontendUrl = 'https://www.onebookr.se';
+    const frontendUrl = 'https://bookr-production.up.railway.app';
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
@@ -270,8 +151,7 @@ app.get('/api/user', (req, res) => {
     sessionID: req.sessionID,
     user: req.user ? 'User exists' : 'No user',
     sessionUser: req.session.user ? 'Session user exists' : 'No session user',
-    cookies: req.headers.cookie ? 'Cookies present' : 'No cookies',
-    referer: req.headers.referer
+    cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
   });
   
   // Kolla både passport auth och session
@@ -280,23 +160,7 @@ app.get('/api/user', (req, res) => {
   if (user) {
     res.json({ user: user, token: user.accessToken });
   } else {
-    // Om det är från waitlist-sidan, returnera null istället för 401
-    const referer = req.headers.referer || '';
-    if (referer.includes('/waitlist') || referer.includes('/admin/waitlist')) {
-      res.json({ user: null, token: null, authenticated: false });
-    } else {
-      res.status(401).json({ error: 'Not authenticated' });
-    }
-  }
-});
-
-// Optional user endpoint för sidor som inte kräver inloggning
-app.get('/api/user/optional', (req, res) => {
-  const user = req.user || req.session.user;
-  if (user) {
-    res.json({ user: user, token: user.accessToken, authenticated: true });
-  } else {
-    res.json({ user: null, token: null, authenticated: false });
+    res.status(401).json({ error: 'Not authenticated' });
   }
 });
 
@@ -306,29 +170,9 @@ app.get('/auth/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
     req.session.destroy(() => {
-      res.redirect('https://www.onebookr.se/');
+      res.redirect('https://bookr-production.up.railway.app/');
     });
   });
-});
-
-// Servera frontend static files
-app.use(express.static('OneBookR/calendar-frontend/dist'));
-
-// Dashboard route
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-// Privacy policy route
-app.get('/privacy-policy', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(process.cwd(), 'policy.html'));
-});
-
-// Terms of service route
-app.get('/terms-of-service', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.sendFile(path.join(process.cwd(), 'policy.html'));
 });
 
 const fetchCalendarEvents = async (token, min, max) => {
@@ -757,7 +601,7 @@ app.post('/api/invite', async (req, res) => {
     }
 
     // Skicka ut unika länkar
-    const frontendUrl = 'https://www.onebookr.se';
+    const frontendUrl = 'https://bookr-production.up.railway.app';
     const inviteLinks = invitees.map(inv =>
       `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
     );
@@ -766,59 +610,68 @@ app.post('/api/invite', async (req, res) => {
     // Returnera svar omedelbart
     res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
     
-// Skicka mejl asynkront med Resend
-setImmediate(async () => {
-  try {
-    // Extra loggning för felsökning
-    console.log('Försöker skicka mejl med Resend');
+    // Skicka mejl asynkront med Gmail
+    setImmediate(async () => {
+      try {
+        // Extra loggning för felsökning
+        console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
 
-    // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
-    for (let i = 0; i < invitees.length; i++) {
-      const inv = invitees[i];
-      // Skicka inte till samma adress som avsändaren
-      if (inv.email && inv.email !== creatorEmail) {
-        try {
-          await resend.emails.send({
-            from: "BookR <info@onebookr.se>",
-            to: inv.email,
-            subject: 'Inbjudan till Kalenderjämförelse',
-            text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
-          });
-          console.log('Inbjudningsmejl skickat till:', inv.email);
-        } catch (sendErr) {
-          console.error('Fel vid utskick till', inv.email, sendErr);
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: process.env.EMAIL_USER, // Måste vara onebookr@gmail.com
+            pass: process.env.EMAIL_PASS,
+          },
+        });
+
+        // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
+        for (let i = 0; i < invitees.length; i++) {
+          const inv = invitees[i];
+          // Skicka inte till samma adress som avsändaren
+          if (inv.email && inv.email !== creatorEmail) {
+            const mailOptions = {
+              from: `"BookR" <${process.env.EMAIL_USER}>`, // Måste vara samma som EMAIL_USER
+              to: inv.email,
+              subject: 'Inbjudan till Kalenderjämförelse',
+              text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
+            };
+            try {
+              await transporter.sendMail(mailOptions);
+              console.log('Inbjudningsmejl skickat till:', inv.email);
+            } catch (sendErr) {
+              console.error('Fel vid utskick till', inv.email, sendErr);
+            }
+          } else {
+            console.log('Hoppar över att skicka inbjudan till skaparen:', inv.email);
+          }
         }
-      } else {
-        console.log('Hoppar över att skicka inbjudan till skaparen:', inv.email);
+
+        // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
+        try {
+          const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
+          await transporter.sendMail({
+            from: `"BookR" <${process.env.EMAIL_USER}>`,
+            to: creatorEmail,
+            subject: 'Du har bjudit in personer till din kalendergrupp',
+            text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
+          });
+          console.log('Mejl skickat till skaparen:', creatorEmail);
+        } catch (creatorMailErr) {
+          console.error('Fel vid mejlutskick till skaparen:', creatorMailErr);
+        }
+
+        console.log('Mejl skickade till:', invitees.map(inv => inv.email));
+      } catch (emailError) {
+        console.error('Fel vid mejlutskick:', emailError);
+        if (emailError && emailError.stack) {
+          console.error('Stacktrace:', emailError.stack);
+        }
       }
-    }
-
-    // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
-    try {
-      const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
-      await resend.emails.send({
-        from: "BookR <info@onebookr.se>",
-        to: creatorEmail,
-        subject: 'Du har bjudit in personer till din kalendergrupp',
-        text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
-      });
-      console.log('Mejl skickat till skaparen:', creatorEmail);
-    } catch (creatorMailErr) {
-      console.error('Fel vid mejlutskick till skaparen:', creatorMailErr);
-    }
-
-    console.log('Mejl skickade till:', invitees.map(inv => inv.email));
-  } catch (emailError) {
-    console.error('Fel vid mejlutskick:', emailError);
-    if (emailError && emailError.stack) {
-      console.error('Stacktrace:', emailError.stack);
-    }
-  }
-});
+    });
 
   } catch (error) {
-    console.error('Fel vid skapande av grupp:', error);
-    res.status(500).json({ error: 'Fel vid skapande av grupp' });
+    console.error('Error creating group:', error);
+    res.status(500).json({ error: 'Kunde inte skapa grupp' });
   }
 });
 
@@ -1116,6 +969,14 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         });
         console.log('Suggestion updated in Firebase with meet link');
 
+      // Skapa transporter med rätt avsändare
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS,
+        },
+      });
 
         // Bygg mejltext med alla detaljer
         let mailText = `Alla har accepterat mötestiden!\n\n`;
@@ -1132,8 +993,8 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
         // Skicka mejl till ALLA (en och en, så att alla får ett eget mejl)
         for (const email of allEmails) {
-          await resend.emails.send({
-            from: "BookR <info@onebookr.se>",
+          await transporter.sendMail({
+            from: `"BookR" <${process.env.EMAIL_USER}>`, // Viktigt! Måste vara samma som EMAIL_USER
             to: email,
             subject: 'Möte bokat!',
             text: mailText,
@@ -1202,20 +1063,26 @@ app.get('/api/invitations/:email', async (req, res) => {
   }
 });
 
-// Kontaktformulär: Skicka mail till info@onebookr.se
+// Kontaktformulär: Skicka mail till onebookr@gmail.com
 app.post('/api/contact', async (req, res) => {
   const { name, email, message } = req.body;
   if (!name || !email || !message) {
     return res.status(400).json({ error: 'Alla fält krävs.' });
   }
   try {
-    await resend.emails.send({
-      from: "BookR <info@onebookr.se>",
-      to: "info@onebookr.se",   // ✅ admin får detta
-      subject: "Bokningsförfrågan via BookR",
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+    await transporter.sendMail({
+      from: `"BookR" <${process.env.EMAIL_USER}>`,
+      to: 'onebookr@gmail.com',
+      subject: 'Bokningsförfrågan via BookR',
       text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
     });
-
     res.json({ success: true });
   } catch (err) {
     console.error('Fel vid kontaktmail:', err);
@@ -1226,325 +1093,158 @@ app.post('/api/contact', async (req, res) => {
 // Väntelista - PERMANENT LAGRING I FIRESTORE (INGEN DATA FÖRSVINNER ALDRIG)
 import { addToWaitlist, getWaitlist, getWaitlistCount, checkEmailInWaitlist } from './firestore.js';
 
-// Lägg till på väntelista
-app.post("/api/waitlist", async (req, res) => {
-  const { email, name, referrer } = req.body;
-  console.log('Waitlist registration attempt:', { email, name, referrer });
-
+// Lägg till på väntelista - PERMANENT LAGRING
+app.post('/api/waitlist', async (req, res) => {
+  const { email, name } = req.body;
   if (!email || !name) {
-    console.log('Missing email or name');
-    return res.status(400).json({ error: "Namn och e-post krävs." });
+    return res.status(400).json({ error: 'Namn och e-post krävs.' });
   }
-
+  
   try {
-    // Kolla om redan registrerad
-    console.log('Checking if email already exists...');
+    // Kolla om redan registrerad i Firestore
     const existing = await checkEmailInWaitlist(email);
     if (existing) {
-      console.log('Email already exists in waitlist');
-      return res.status(400).json({ error: "Du är redan registrerad på väntelistan!" });
+      return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
     }
-
-    // Lägg till i Firestore
-    console.log('Adding to waitlist with referrer:', referrer || 'none');
-    await addToWaitlist(email, name, referrer || null);
-    console.log('Successfully added to waitlist');
+    
+    // Lägg till i Firestore - PERMANENT LAGRING
+    await addToWaitlist(email, name);
     const totalCount = await getWaitlistCount();
-    console.log('Total waitlist count:', totalCount);
-
-    // Skicka admin-notifiering (valfritt)
+    
+    // Skicka endast admin-notifiering för att spara kostnader
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
-        await resend.emails.send({
-          from: "BookR <info@onebookr.se>",
-          to: "info@onebookr.se",
-          subject: "Ny registrering på BookR väntelista",
-          text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nReferrer: ${
-            referrer || "Ingen"
-          }\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+          },
+        });
+        
+        // Endast admin-notifiering
+        await transporter.sendMail({
+          from: `"BookR" <${process.env.EMAIL_USER}>`,
+          to: 'onebookr@gmail.com',
+          subject: 'Ny registrering på BookR väntelista',
+          text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
         });
       } catch (err) {
-        console.error("Fel vid mejlutskick:", err);
+        console.error('Fel vid mejlutskick:', err);
       }
     }
-
-    console.log('Sending success response with count:', totalCount);
+    
     res.json({ success: true, count: totalCount });
   } catch (error) {
-    console.error("Fel vid registrering på väntelista:", error);
-    res.status(500).json({ error: "Kunde inte registrera på väntelistan." });
+    console.error('Fel vid registrering på väntelista:', error);
+    res.status(500).json({ error: 'Kunde inte registrera på väntelistan.' });
   }
 });
 
-// Hämta antal på väntelista
-app.get("/api/waitlist/count", async (req, res) => {
+// Hämta antal på väntelista - FRÅN FIRESTORE
+app.get('/api/waitlist/count', async (req, res) => {
   try {
     const count = await getWaitlistCount();
     res.json({ count });
   } catch (error) {
-    console.error("Fel vid hämtning av väntelista-antal:", error);
-    res.status(500).json({ error: "Kunde inte hämta antal." });
+    console.error('Fel vid hämtning av väntelista-antal:', error);
+    res.status(500).json({ error: 'Kunde inte hämta antal.' });
   }
 });
 
-// Admin-route
-app.get("/api/waitlist/admin", async (req, res) => {
-  const incomingKey = req.headers["x-admin-key"];
-  if (incomingKey !== process.env.ADMIN_KEY) {
-    return res.status(401).json({ error: "Fel nyckel" });
+// Admin: Hämta hela väntelistan (skyddad) - FRÅN FIRESTORE
+app.get('/api/waitlist/admin', async (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+  if (adminKey !== 'bookr-admin-2024') {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
-
+  
   try {
-    const waitlist = await getWaitlist(); // hämtar alla fält
-    res.json({ waitlist });
-  } catch (err) {
-    console.error("Fel vid hämtning av väntelista:", err);
-    res.status(500).json({ error: "Serverfel" });
+    const waitlist = await getWaitlist();
+    res.json({ waitlist, count: waitlist.length });
+  } catch (error) {
+    console.error('Fel vid hämtning av väntelista för admin:', error);
+    res.status(500).json({ error: 'Kunde inte hämta väntelista.' });
   }
 });
 
-// Generera delningslänkar
-app.post("/api/waitlist/share", (req, res) => {
-  const { referrerEmail } = req.body;
+// Generera delningslänk för väntelistan
+app.post('/api/waitlist/share', (req, res) => {
+  const waitlistUrl = 'https://bookr-production.up.railway.app/waitlist';
+  const message = encodeURIComponent('Kolla in BookR - slipp mejlkaoset när ni ska boka möten! 🚀');
   
-  // Skapa personlig värvningslänk om referrerEmail finns
-  let waitlistUrl = "https://www.onebookr.se/waitlist";
-  if (referrerEmail) {
-    const encodedEmail = encodeURIComponent(referrerEmail);
-    waitlistUrl += `?ref=${encodedEmail}`;
-  }
-  
-  const message = encodeURIComponent("Kolla in BookR - slipp mejlkaoset när ni ska boka möten! 🚀");
-
   const shareLinks = {
-    email: `mailto:?subject=${encodeURIComponent(
-      "Du borde kolla in BookR!"
-    )}&body=${encodeURIComponent(
-      `Hej!\n\nJag hittade BookR - en app som gör slut på mejlkaoset när man ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!`
-    )}`,
+    email: `mailto:?subject=${encodeURIComponent('Du borde kolla in BookR!')}&body=${encodeURIComponent(`Hej!\n\nJag hittade BookR - en app som gör slut på mejlkaoset när man ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!`)}`,
     whatsapp: `https://wa.me/?text=${message}%20${encodeURIComponent(waitlistUrl)}`,
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(waitlistUrl)}`,
     twitter: `https://twitter.com/intent/tweet?text=${message}&url=${encodeURIComponent(waitlistUrl)}`,
     linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(waitlistUrl)}`,
-    copy: waitlistUrl,
+    copy: waitlistUrl
   };
-
+  
   res.json({ shareLinks, waitlistUrl });
 });
 
-// Hämta referrer från URL-parameter
-app.get("/api/waitlist/referrer", (req, res) => {
-  const { ref } = req.query;
-  if (ref) {
-    const decodedEmail = decodeURIComponent(ref);
-    res.json({ referrer: decodedEmail });
-  } else {
-    res.json({ referrer: null });
-  }
+// Specifika routes för React SPA
+app.get('/waitlist', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
-// Svara på inbjudan
-app.post("/api/invitation/:invitationId/respond", async (req, res) => {
+app.get('/admin/waitlist', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/about', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/contact', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on http://0.0.0.0:${PORT}`);
+});
+
+// Svara på inbjudan (acceptera eller neka)
+app.post('/api/invitation/:invitationId/respond', async (req, res) => {
   try {
     const { invitationId } = req.params;
-    const { response } = req.body;
-
-    if (!response || !["accept", "decline"].includes(response)) {
-      return res.status(400).json({ error: "Response måste vara accept eller decline" });
+    const { response } = req.body; // 'accept' eller 'decline'
+    
+    if (!response || !['accept', 'decline'].includes(response)) {
+      return res.status(400).json({ error: 'Response måste vara accept eller decline' });
     }
-
+    
     await updateInvitation(invitationId, {
       responded: true,
-      accepted: response === "accept",
+      accepted: response === 'accept'
     });
-
+    
     res.json({ success: true });
   } catch (error) {
-    console.error("Error responding to invitation:", error);
-    res.status(500).json({ error: "Kunde inte svara på inbjudan" });
+    console.error('Error responding to invitation:', error);
+    res.status(500).json({ error: 'Kunde inte svara på inbjudan' });
   }
 });
 
-// GDPR - radera användardata
-app.delete("/api/user/delete-data", async (req, res) => {
+// GDPR-endpoint för att radera användardata
+app.delete('/api/user/delete-data', async (req, res) => {
   const { email } = req.body;
-
-  if (!email || !email.includes("@")) {
-    return res.status(400).json({ error: "Giltig e-postadress krävs" });
+  
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'Giltig e-postadress krävs' });
   }
-
+  
   try {
     await deleteUserData(email);
-    res.json({ success: true, message: "All användardata har raderats från Firebase" });
+    res.json({ success: true, message: 'All användardata har raderats från Firebase' });
   } catch (error) {
-    console.error("Error deleting user data:", error);
-    res.status(500).json({ error: "Kunde inte radera användardata" });
+    console.error('Error deleting user data:', error);
+    res.status(500).json({ error: 'Kunde inte radera användardata' });
   }
-});
-
-// Dummy user-route (för att slippa 401 på /api/user)
-app.get("/api/user", (req, res) => {
-  res.json({ user: null });
-});
-
-// =============== BUSINESS ENDPOINTS ===============
-
-// Registrera företag
-app.post('/api/business/register', async (req, res) => {
-  try {
-    const { companyName, businessType, contactPerson, phone, address, website, googleEmail, googleId, googleToken } = req.body;
-    
-    if (!companyName || !businessType || !contactPerson || !googleEmail) {
-      return res.status(400).json({ error: 'Företagsnamn, bransch, kontaktperson och Google-email krävs' });
-    }
-
-    // Generera unik bokningskod
-    const bookingCode = Math.random().toString(36).substring(2, 10).toUpperCase();
-    
-    // Spara företag i Firestore (vi behöver skapa denna funktion)
-    const businessData = {
-      companyName,
-      businessType,
-      contactPerson,
-      phone: phone || '',
-      address: address || '',
-      website: website || '',
-      googleEmail,
-      googleId,
-      googleToken: googleToken || null,
-      bookingCode,
-      createdAt: new Date().toISOString(),
-      isActive: true
-    };
-    
-    // Spara företag i Firestore
-    const businessId = await createBusiness(businessData);
-    
-    console.log('Business registered:', businessId, businessData);
-    
-    res.json({ 
-      success: true, 
-      bookingCode,
-      message: 'Företag registrerat framgångsrikt!' 
-    });
-  } catch (error) {
-    console.error('Error registering business:', error);
-    res.status(500).json({ error: 'Kunde inte registrera företag' });
-  }
-});
-
-// Hämta företagsinformation via bokningskod
-app.get('/api/business/:bookingCode', async (req, res) => {
-  try {
-    const { bookingCode } = req.params;
-    
-    // Hämta företag från Firestore
-    const business = await getBusinessByCode(bookingCode);
-    
-    if (!business) {
-      return res.status(404).json({ error: 'Företag inte hittat' });
-    }
-    
-    res.json({ business });
-  } catch (error) {
-    console.error('Error fetching business:', error);
-    res.status(500).json({ error: 'Kunde inte hämta företagsinformation' });
-  }
-});
-
-// Hämta företagsinformation via email
-app.get('/api/business/by-email/:email', async (req, res) => {
-  try {
-    const { email } = req.params;
-    const decodedEmail = decodeURIComponent(email);
-    
-    // Hämta företag från Firestore
-    const business = await getBusinessByEmail(decodedEmail);
-    
-    if (!business) {
-      return res.status(404).json({ error: 'Företag inte hittat' });
-    }
-    
-    res.json({ business });
-  } catch (error) {
-    console.error('Error fetching business by email:', error);
-    res.status(500).json({ error: 'Kunde inte hämta företagsinformation' });
-  }
-});
-
-// Skapa bokningssession med företag
-app.post('/api/business/:bookingCode/book', async (req, res) => {
-  try {
-    const { bookingCode } = req.params;
-    const { customerToken, customerEmail } = req.body;
-    
-    if (!customerToken || !customerEmail) {
-      return res.status(400).json({ error: 'Kundtoken och email krävs' });
-    }
-    
-    // Hämta företagets information
-    const business = await getBusinessByCode(bookingCode);
-    if (!business) {
-      return res.status(404).json({ error: 'Företag inte hittat' });
-    }
-    
-    // Skapa bokningssession
-    const sessionData = {
-      bookingCode,
-      businessId: business.id,
-      customerEmail,
-      customerToken,
-      businessEmail: business.googleEmail
-    };
-    
-    const sessionId = await createBookingSession(sessionData);
-    
-    res.json({ 
-      success: true, 
-      sessionId,
-      message: 'Bokningssession skapad' 
-    });
-  } catch (error) {
-    console.error('Error creating booking session:', error);
-    res.status(500).json({ error: 'Kunde inte skapa bokningssession' });
-  }
-});
-
-// ------------------ REACT SPA ROUTES ------------------
-app.get("/waitlist", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
-});
-
-app.get("/admin/waitlist", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
-});
-
-app.get("/business-signup", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
-});
-
-app.get("/business-admin", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
-});
-
-app.get("/book/:bookingCode", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
-});
-
-app.get("/about", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
-});
-
-app.get("/contact", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
-});
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "OneBookR/calendar-frontend/dist/index.html"));
-});
-
-// ------------------ START SERVER ------------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });

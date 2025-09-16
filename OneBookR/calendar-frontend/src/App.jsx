@@ -5,7 +5,6 @@ import About from './pages/About.jsx';
 import Waitlist from './pages/Waitlist.jsx';
 import WaitlistAdmin from './pages/WaitlistAdmin.jsx';
 import BusinessSignup from './pages/BusinessSignup.jsx';
-import BusinessAdmin from './pages/BusinessAdmin.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -64,7 +63,7 @@ function App() {
       }
     } else {
       // Om ingen auth-token, försök hämta användaren från backend-session (om det finns)
-      fetch('https://www.onebookr.se/api/user', {
+      fetch('https://bookr-production.up.railway.app/api/user', {
         credentials: 'include'
       })
         .then(res => res.ok ? res.json() : null)
@@ -157,9 +156,6 @@ function App() {
   if (path === '/business-signup') {
     return <BusinessSignup />;
   }
-  if (path === '/business-admin') {
-    return <BusinessAdmin />;
-  }
 
   // NYTT: Visa laddar tills vi vet om användaren är inloggad
   if (loading) {
@@ -179,7 +175,7 @@ function App() {
     const groupId = urlParams.get('group');
     const inviteeId = urlParams.get('invitee');
     
-    let googleLoginUrl = 'https://www.onebookr.se/auth/google';
+    let googleLoginUrl = 'https://bookr-production.up.railway.app/auth/google';
     if (groupId) {
       const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
       googleLoginUrl += `?state=${encodeURIComponent(state)}`;
@@ -336,7 +332,7 @@ function App() {
               </Grid>
               <Typography variant="body1" sx={{
                 color: '#425466',
-                mb: 1,
+                mb: 3,
                 mt: 2,
                 fontSize: 17,
                 lineHeight: 1.7,
@@ -345,15 +341,6 @@ function App() {
                 animation: 'fadeInUp 1.3s 0.22s cubic-bezier(.23,1.01,.32,1) both',
               }}>
                 BookR hjälper dig och dina vänner eller kollegor att snabbt hitta tider då alla kan. Logga in med Google, bjud in andra och se direkt när ni är lediga samtidigt.
-              </Typography>
-              
-              <Typography variant="body2" sx={{
-                color: '#666',
-                mb: 3,
-                fontSize: 14,
-                textAlign: 'center'
-              }}>
-                Är du företag? Skapa ett företagskonto för automatiska bokningar från din hemsida.
               </Typography>
               <Typography variant="h4" gutterBottom sx={{
                 fontWeight: 600,
@@ -393,29 +380,6 @@ function App() {
                 }}
               >
                 Logga in med Google
-              </Button>
-              
-              <Button
-                variant="outlined"
-                href="/business-signup"
-                size="large"
-                sx={{
-                  mt: 2,
-                  px: 4,
-                  py: 1.5,
-                  fontWeight: 600,
-                  fontSize: 16,
-                  borderRadius: 4,
-                  borderColor: '#635bff',
-                  color: '#635bff',
-                  textTransform: 'none',
-                  '&:hover': {
-                    borderColor: '#635bff',
-                    bgcolor: 'rgba(99,91,255,0.1)',
-                  },
-                }}
-              >
-                🏢 Logga in som företag
               </Button>
             </Paper>
             <Box sx={{ maxWidth: 700, width: '100%', mx: 'auto', textAlign: 'center', mb: 4 }}>
