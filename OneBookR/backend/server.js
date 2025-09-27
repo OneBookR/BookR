@@ -363,6 +363,58 @@ function splitFreeSlots(freeSlots, durationMinutes) {
   return result;
 }
 
+// Generera lediga slots för hall baserat på öppettider minus upptagna tider
+function generateVenueFreeSlots(busyEvents, startDate, endDate) {
+  const freeSlots = [];
+  const openHour = 9; // Öppnar 09:00
+  const closeHour = 21; // Stänger 21:00
+  const slotDuration = 2 * 60 * 60 * 1000; // 2 timmar per slot
+  
+  // Konvertera busy events till millisekunder
+  const busyTimes = busyEvents.map(e => ({
+    start: new Date(e.start.dateTime || e.start.date).getTime(),
+    end: new Date(e.end.dateTime || e.end.date).getTime()
+  })).sort((a, b) => a.start - b.start);
+  
+  // Gå igenom varje dag
+  const currentDate = new Date(startDate);
+  while (currentDate < endDate) {
+    // Skapa öppettider för dagen
+    const dayStart = new Date(currentDate);
+    dayStart.setHours(openHour, 0, 0, 0);
+    const dayEnd = new Date(currentDate);
+    dayEnd.setHours(closeHour, 0, 0, 0);
+    
+    // Hitta lediga slots under dagen
+    let slotStart = dayStart.getTime();
+    
+    while (slotStart + slotDuration <= dayEnd.getTime()) {
+      const slotEnd = slotStart + slotDuration;
+      
+      // Kolla om denna slot överlappar med något upptaget event
+      const isOccupied = busyTimes.some(busy => 
+        (slotStart < busy.end && slotEnd > busy.start)
+      );
+      
+      if (!isOccupied) {
+        freeSlots.push({
+          start: new Date(slotStart).toISOString(),
+          end: new Date(slotEnd).toISOString(),
+          title: 'Ledig bana',
+          type: 'venue'
+        });
+      }
+      
+      slotStart += slotDuration;
+    }
+    
+    // Nästa dag
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return freeSlots;
+}
+
 // Hjälpfunktion för att filtrera block inom daglig tidsram
 function filterSlotsByDayTime(slots, dayStart, dayEnd) {
   if (!dayStart || !dayEnd) return slots;
@@ -1257,10 +1309,10 @@ app.get('/api/business/:bookingCode/meetings', async (req, res) => {
 
 // Venue API endpoints
 app.post('/api/venues/register', async (req, res) => {
-  const { name, website, scheduleUrl, contactEmail } = req.body;
+  const { name, website, contactEmail, googleEmail, googleToken } = req.body;
   
-  if (!name || !scheduleUrl || !contactEmail) {
-    return res.status(400).json({ error: 'Namn, schema-URL och kontakt-email krävs' });
+  if (!name || !contactEmail || !googleEmail || !googleToken) {
+    return res.status(400).json({ error: 'Namn, kontakt-email och Google-inloggning krävs' });
   }
   
   try {
@@ -1271,31 +1323,48 @@ app.post('/api/venues/register', async (req, res) => {
       id: venueId,
       name,
       website,
-      scheduleUrl,
       contactEmail,
+      googleEmail,
+      googleToken,
       createdAt: new Date().toISOString()
     });
     
-    // Skapa mock-schema för demonstration
-    const mockSlots = [];
-    const now = new Date();
-    for (let i = 1; i <= 7; i++) {
-      const date = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
-      for (let hour = 9; hour <= 20; hour += 2) {
-        const start = new Date(date);
-        start.setHours(hour, 0, 0, 0);
-        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-        
-        mockSlots.push({
-          start: start.toISOString(),
-          end: end.toISOString(),
-          title: 'Ledig bana',
-          type: 'venue'
-        });
+    // Hämta riktiga lediga tider från Google Calendar
+    try {
+      const now = new Date();
+      const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      
+      const { events } = await fetchCalendarEvents(
+        googleToken, 
+        now.toISOString(), 
+        weekFromNow.toISOString()
+      );
+      
+      // Skapa lediga slots baserat på öppettider minus upptagna tider
+      const freeSlots = generateVenueFreeSlots(events, now, weekFromNow);
+      venueSchedules.set(venueId, freeSlots);
+    } catch (error) {
+      console.error('Error fetching venue calendar:', error);
+      // Fallback till mock-data
+      const mockSlots = [];
+      const now = new Date();
+      for (let i = 1; i <= 7; i++) {
+        const date = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+        for (let hour = 9; hour <= 20; hour += 2) {
+          const start = new Date(date);
+          start.setHours(hour, 0, 0, 0);
+          const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+          
+          mockSlots.push({
+            start: start.toISOString(),
+            end: end.toISOString(),
+            title: 'Ledig bana',
+            type: 'venue'
+          });
+        }
       }
+      venueSchedules.set(venueId, mockSlots);
     }
-    
-    venueSchedules.set(venueId, mockSlots);
     
     res.json({ 
       success: true, 
