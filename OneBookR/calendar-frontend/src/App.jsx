@@ -6,6 +6,8 @@ import Waitlist from './pages/Waitlist.jsx';
 import WaitlistAdmin from './pages/WaitlistAdmin.jsx';
 import BusinessSignup from './pages/BusinessSignup.jsx';
 import BusinessAdmin from './pages/BusinessAdmin.jsx';
+import VenueAdmin from './pages/VenueAdmin.jsx';
+import VenueBooking from './pages/VenueBooking.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -193,6 +195,12 @@ function App() {
   }
   if (path === '/admin/waitlist') {
     return <WaitlistAdmin />;
+  }
+  if (path === '/venue-admin') {
+    return <VenueAdmin />;
+  }
+  if (path.startsWith('/venue/')) {
+    return <VenueBooking />;
   }
 
   // NYTT: Visa laddar tills vi vet om användaren är inloggad
@@ -463,6 +471,24 @@ function App() {
                   }}
                 >
                   Admin-panel
+                </Button>
+                <Button
+                  variant="text"
+                  href="/venue-admin"
+                  size="large"
+                  sx={{
+                    px: 4,
+                    py: 1.7,
+                    fontWeight: 600,
+                    fontSize: 16,
+                    borderRadius: 4,
+                    color: '#635bff',
+                    '&:hover': {
+                      bgcolor: 'rgba(99,91,255,0.05)',
+                    },
+                  }}
+                >
+                  Hall-admin
                 </Button>
               </Box>
             </Paper>

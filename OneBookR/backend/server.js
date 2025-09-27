@@ -1171,8 +1171,18 @@ app.get('/business-admin', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
-// In-memory storage för företag (i produktion skulle detta vara databas)
+app.get('/venue-admin', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.get('/venue/:venueId', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+// In-memory storage för företag och hallar (i produktion skulle detta vara databas)
 const businesses = new Map();
+const venues = new Map();
+const venueSchedules = new Map();
 
 // Business API endpoints
 app.post('/api/business/register', async (req, res) => {
@@ -1243,6 +1253,73 @@ app.get('/api/business/:bookingCode/meetings', async (req, res) => {
   ];
   
   res.json({ meetings: mockMeetings });
+});
+
+// Venue API endpoints
+app.post('/api/venues/register', async (req, res) => {
+  const { name, website, scheduleUrl, contactEmail } = req.body;
+  
+  if (!name || !scheduleUrl || !contactEmail) {
+    return res.status(400).json({ error: 'Namn, schema-URL och kontakt-email krävs' });
+  }
+  
+  try {
+    const venueId = Math.random().toString(36).substring(2, 10).toLowerCase();
+    const uniqueLink = `https://www.onebookr.se/venue/${venueId}`;
+    
+    venues.set(venueId, {
+      id: venueId,
+      name,
+      website,
+      scheduleUrl,
+      contactEmail,
+      createdAt: new Date().toISOString()
+    });
+    
+    // Skapa mock-schema för demonstration
+    const mockSlots = [];
+    const now = new Date();
+    for (let i = 1; i <= 7; i++) {
+      const date = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+      for (let hour = 9; hour <= 20; hour += 2) {
+        const start = new Date(date);
+        start.setHours(hour, 0, 0, 0);
+        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+        
+        mockSlots.push({
+          start: start.toISOString(),
+          end: end.toISOString(),
+          title: 'Ledig bana',
+          type: 'venue'
+        });
+      }
+    }
+    
+    venueSchedules.set(venueId, mockSlots);
+    
+    res.json({ 
+      success: true, 
+      uniqueLink,
+      venueId,
+      message: 'Hall registrerad framgångsrikt'
+    });
+  } catch (error) {
+    console.error('Error registering venue:', error);
+    res.status(500).json({ error: 'Kunde inte registrera hall' });
+  }
+});
+
+app.get('/api/venues/:venueId', async (req, res) => {
+  const { venueId } = req.params;
+  
+  const venue = venues.get(venueId);
+  const availableSlots = venueSchedules.get(venueId) || [];
+  
+  if (venue) {
+    res.json({ venue, availableSlots });
+  } else {
+    res.status(404).json({ error: 'Hall inte hittad' });
+  }
 });
 
 app.get('/', (req, res) => {
