@@ -87,22 +87,28 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
   // Hämta förslag
   useEffect(() => {
     if (groupId) {
-      fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
-        .then(res => res.json())
-        .then(data => setSuggestions(data.suggestions || []))
-        .catch(error => {
-          console.error('Fel vid hämtning av tidsförslag:', error);
-          setSuggestions([]);
-        });
-      // Poll för realtidsuppdatering (mindre frekvent)
-      const interval = setInterval(() => {
+      const fetchSuggestions = () => {
         fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
           .then(res => res.json())
-          .then(data => setSuggestions(data.suggestions || []))
+          .then(data => {
+            setSuggestions(data.suggestions || []);
+            // Kontrollera om något förslag blev finalized
+            const finalizedSuggestions = (data.suggestions || []).filter(s => s.finalized);
+            finalizedSuggestions.forEach(s => {
+              if (s.finalized && s.meetLink) {
+                console.log('Möte bokat:', s.title, s.meetLink);
+              }
+            });
+          })
           .catch(error => {
             console.error('Fel vid hämtning av tidsförslag:', error);
+            setSuggestions([]);
           });
-      }, 10000);
+      };
+      
+      fetchSuggestions();
+      // Poll för realtidsuppdatering (oftare för att fånga finalized status)
+      const interval = setInterval(fetchSuggestions, 5000);
       return () => clearInterval(interval);
     } else {
       setSuggestions([]);
@@ -304,13 +310,40 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         }),
       });
       if (response.ok) {
+        const result = await response.json();
         const voteText = vote === 'accepted' ? 'accepterat' : 'nekat';
         setToast({ open: true, message: `Du har ${voteText} tidsförslaget!`, severity: 'success' });
-        // Uppdatera förslag direkt om vi är i samma grupp
+        
+        // Uppdatera förslag direkt med det returnerade förslaget
+        if (result.suggestion) {
+          console.log('Updated suggestion received:', result.suggestion);
+          setSuggestions(prev => prev.map(s => 
+            s.id === suggestionId ? result.suggestion : s
+          ));
+        }
+        
+        // Hämta alla förslag igen för att säkerställa synkronisering
         if (targetGroup === groupId) {
-          fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
-            .then(res => res.json())
-            .then(data => setSuggestions(data.suggestions || []));
+          setTimeout(() => {
+            fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
+              .then(res => res.json())
+              .then(data => setSuggestions(data.suggestions || []));
+          }, 1000);
+        }
+        
+        // Visa notifikation om mötet är bokat
+        if (result.suggestion && result.suggestion.finalized) {
+          showNotification('Möte bokat!', {
+            body: 'Alla har accepterat tiden. Kalenderinbjudan skickas ut via mejl.',
+            tag: 'meeting-booked'
+          });
+          
+          // Visa success toast med mer information
+          setToast({ 
+            open: true, 
+            message: '🎉 Möte bokat! Alla har accepterat tiden. Kalenderinbjudan och möteslänk skickas ut via mejl.', 
+            severity: 'success' 
+          });
         }
       }
     } catch (error) {
