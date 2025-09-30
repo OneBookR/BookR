@@ -405,13 +405,18 @@ function App() {
                   ? 'Logga in för att jämföra kalendrar' 
                   : 'Välkommen till BookR'}
               </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2, fontSize: 14 }}>
+                Genom att logga in godkänner du våra{' '}
+                <a href="/terms-of-service" style={{ color: '#1976d2' }}>användarvillkor</a> och{' '}
+                <a href="/privacy-policy" style={{ color: '#1976d2' }}>integritetspolicy</a>
+              </Typography>
               <Button
                 variant="contained"
                 color="primary"
                 href={googleLoginUrl}
                 size="large"
                 sx={{
-                  mt: 2,
+                  mt: 1,
                   px: 6,
                   py: 1.7,
                   fontWeight: 600,
@@ -528,8 +533,10 @@ function App() {
                 borderTop: '1px solid #e0e3e7',
               }}
             >
-              © {new Date().getFullYear()} BookR – Hitta lediga tider tillsammans | <a href="mailto:support@bookr.se" style={{ color: '#1976d2', textDecoration: 'none' }}>support@bookr.se</a>
-
+              © {new Date().getFullYear()} BookR – Hitta lediga tider tillsammans | 
+              <a href="/privacy-policy" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Integritetspolicy</a> | 
+              <a href="/terms-of-service" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Användarvillkor</a> | 
+              <a href="mailto:support@bookr.se" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>support@bookr.se</a>
             </Box>
           </Container>
         </Box>
