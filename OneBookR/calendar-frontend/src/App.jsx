@@ -536,7 +536,7 @@ function App() {
               © {new Date().getFullYear()} BookR – Hitta lediga tider tillsammans | 
               <a href="/privacy-policy" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Integritetspolicy</a> | 
               <a href="/terms-of-service" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Användarvillkor</a> | 
-              <a href="mailto:support@bookr.se" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>support@bookr.se</a>
+              <a href="mailto:info@onebookr.se" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>support@onebookr.se</a>
             </Box>
           </Container>
         </Box>
