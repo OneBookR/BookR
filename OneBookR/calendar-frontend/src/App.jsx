@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Dashboard from './pages/Dashboard.jsx';
+import ShortcutDashboard from './pages/ShortcutDashboard.jsx';
 import Contact from './pages/Contact.jsx';
 import About from './pages/About.jsx';
 import Waitlist from './pages/Waitlist.jsx';
@@ -17,13 +18,19 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 
 function App() {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true); // NYTT
+  const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState('shortcut'); // 'shortcut' eller 'dashboard'
 
   // Spara URL-parametrar i localStorage om det finns group-parameter
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const groupId = urlParams.get('group');
     const inviteeId = urlParams.get('invitee');
+    
+    // Sätt currentView baserat på URL-parametrar
+    if (groupId) {
+      setCurrentView('dashboard');
+    }
     
     if (groupId && !user) {
       // Spara parametrarna i localStorage
@@ -546,11 +553,29 @@ function App() {
 
 
 
+  // Hantera navigation mellan vyer
+  const handleNavigateToMeeting = (type) => {
+    setCurrentView('dashboard');
+    // Sätt URL-parameter för att indikera mötestyp
+    const url = new URL(window.location);
+    url.searchParams.set('meetingType', type);
+    window.history.pushState({}, '', url);
+  };
+
+  // Kontrollera om vi ska visa dashboard direkt (t.ex. vid group-inbjudningar)
+  const urlParams = new URLSearchParams(window.location.search);
+  const groupId = urlParams.get('group');
+  const shouldShowDashboard = groupId || currentView === 'dashboard';
+
   return (
     <>
       {loginIndicator}
-      <Box sx={{ mt: 12 }} /> {/* Lägg till marginal under indikatorn */}
-      <Dashboard user={user} />
+      <Box sx={{ mt: 12 }} />
+      {shouldShowDashboard ? (
+        <Dashboard user={user} />
+      ) : (
+        <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
+      )}
     </>
   );
 }

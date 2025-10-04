@@ -1421,6 +1421,36 @@ app.post('/api/invitation/:invitationId/respond', async (req, res) => {
   }
 });
 
+// Hämta invites för användare (för ShortcutDashboard)
+app.get('/api/invites', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization header krävs' });
+  }
+  
+  // För nu returnerar vi mock-data
+  const mockInvites = [];
+  res.json({ invites: mockInvites });
+});
+
+// Svara på invite (för ShortcutDashboard)
+app.post('/api/invites/:inviteId/respond', async (req, res) => {
+  const { inviteId } = req.params;
+  const { response } = req.body;
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization header krävs' });
+  }
+  
+  if (!response || !['accept', 'decline'].includes(response)) {
+    return res.status(400).json({ error: 'Response måste vara accept eller decline' });
+  }
+  
+  // För nu returnerar vi bara success
+  res.json({ success: true });
+});
+
 // GDPR-endpoint för att radera användardata
 app.delete('/api/user/delete-data', async (req, res) => {
   const { email } = req.body;
