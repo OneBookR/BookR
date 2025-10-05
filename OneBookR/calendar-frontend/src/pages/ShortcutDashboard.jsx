@@ -67,6 +67,20 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     }
   };
 
+  const handleProposalResponse = (proposalId, response) => {
+    fetch(`https://www.onebookr.se/api/time-proposal/${proposalId}/respond`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response })
+    })
+    .then(res => {
+      if (res.ok) {
+        setTimeProposals(prev => prev.filter(proposal => proposal.id !== proposalId));
+      }
+    })
+    .catch(err => console.log('Failed to respond to proposal:', err));
+  };
+
   const formatDateTime = (dateTime) => {
     if (!dateTime) return '';
     const date = new Date(dateTime.dateTime || dateTime);
@@ -246,18 +260,16 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                     boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
                   }
                 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        Inbjudan från {invite.fromEmail}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        Kalenderjämförelse • {new Date(invite.createdAt).toLocaleDateString()}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Grupp: {invite.groupName || 'Namnlös grupp'}
-                      </Typography>
-                    </Box>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      Inbjudan från {invite.fromEmail}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      Kalenderjämförelse • {new Date(invite.createdAt).toLocaleDateString()}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: 13 }}>
+                      {invite.fromEmail}
+                    </Typography>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                       <Button 
                         size="small" 
@@ -339,24 +351,54 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                     boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
                   }
                 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                    <AccessTimeIcon sx={{ color: '#f57c00', mt: 0.5 }} />
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        {proposal.title || 'Tidsförslag'}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        {formatDateTime(proposal.startTime)} - {formatDateTime(proposal.endTime)}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Från: {proposal.fromEmail}
-                      </Typography>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      {proposal.title || 'Tidsförslag'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      {formatDateTime(proposal.startTime)} - {formatDateTime(proposal.endTime)}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: 13 }}>
+                      {proposal.fromEmail}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button 
+                        size="small" 
+                        variant="outlined" 
+                        startIcon={<CloseIcon />}
+                        onClick={() => handleProposalResponse(proposal.id, 'decline')}
+                        sx={{
+                          borderColor: '#f57c00',
+                          color: '#f57c00',
+                          borderRadius: 2,
+                          fontWeight: 600,
+                          '&:hover': {
+                            borderColor: '#ef6c00',
+                            color: '#ef6c00',
+                            bgcolor: 'rgba(245, 124, 0, 0.05)'
+                          }
+                        }}
+                      >
+                        Neka
+                      </Button>
+                      <Button 
+                        size="small" 
+                        variant="contained" 
+                        startIcon={<CheckIcon />}
+                        onClick={() => handleProposalResponse(proposal.id, 'accept')}
+                        sx={{
+                          background: 'linear-gradient(90deg, #f57c00 0%, #ff9800 100%)',
+                          color: 'white',
+                          borderRadius: 2,
+                          fontWeight: 600,
+                          '&:hover': {
+                            background: 'linear-gradient(90deg, #ef6c00 0%, #f57c00 100%)'
+                          }
+                        }}
+                      >
+                        Acceptera
+                      </Button>
                     </Box>
-                    <Chip 
-                      label="Nytt" 
-                      size="small" 
-                      sx={{ bgcolor: '#ff9800', color: 'white' }}
-                    />
                   </Box>
                 </Card>
               ))}
@@ -398,24 +440,34 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                     boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
                   }
                 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                    <EventIcon sx={{ color: '#1976d2', mt: 0.5 }} />
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        {meeting.summary || 'Untitled Meeting'}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        30 min • {formatDateTime(meeting.start)}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {meeting.organizer?.displayName || meeting.organizer?.email || 'Unknown organizer'}
-                      </Typography>
-                    </Box>
-                    <Chip 
-                      label="24 min" 
-                      size="small" 
-                      sx={{ bgcolor: '#fff3e0', color: '#e65100' }}
-                    />
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      {meeting.summary || 'Untitled Meeting'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      {formatDateTime(meeting.start)}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: 13 }}>
+                      {meeting.organizer?.displayName || meeting.organizer?.email || 'Unknown organizer'}
+                    </Typography>
+                    {(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri) && (
+                      <Button 
+                        size="small" 
+                        variant="contained" 
+                        onClick={() => window.open(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri, '_blank')}
+                        sx={{
+                          background: 'linear-gradient(90deg, #1976d2 0%, #1565c0 100%)',
+                          color: 'white',
+                          borderRadius: 2,
+                          fontWeight: 600,
+                          '&:hover': {
+                            background: 'linear-gradient(90deg, #1565c0 0%, #0d47a1 100%)'
+                          }
+                        }}
+                      >
+                        Gå med i mötet
+                      </Button>
+                    )}
                   </Box>
                 </Card>
               ))}
