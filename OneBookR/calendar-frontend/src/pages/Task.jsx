@@ -9,7 +9,12 @@ const Task = ({ user }) => {
   const [taskData, setTaskData] = useState({
     name: '',
     description: '',
-    estimatedHours: ''
+    estimatedHours: '',
+    workStartHour: '9',
+    workEndHour: '18',
+    minSessionHours: '1',
+    maxSessionHours: '4',
+    breakMinutes: '15'
   });
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [taskSlots, setTaskSlots] = useState([]);
@@ -68,7 +73,12 @@ const Task = ({ user }) => {
         body: JSON.stringify({
           token: user.accessToken,
           taskName: taskData.name,
-          estimatedHours: parseFloat(taskData.estimatedHours)
+          estimatedHours: parseFloat(taskData.estimatedHours),
+          workStartHour: parseInt(taskData.workStartHour),
+          workEndHour: parseInt(taskData.workEndHour),
+          minSessionHours: parseFloat(taskData.minSessionHours),
+          maxSessionHours: parseFloat(taskData.maxSessionHours),
+          breakMinutes: parseInt(taskData.breakMinutes)
         })
       });
 
@@ -133,6 +143,55 @@ const Task = ({ user }) => {
               margin="normal"
               required
               inputProps={{ min: 0.5, step: 0.5 }}
+            />
+            
+            <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+              <TextField
+                label="Arbetstid från"
+                type="number"
+                value={taskData.workStartHour}
+                onChange={(e) => setTaskData({...taskData, workStartHour: e.target.value})}
+                inputProps={{ min: 0, max: 23 }}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                label="Arbetstid till"
+                type="number"
+                value={taskData.workEndHour}
+                onChange={(e) => setTaskData({...taskData, workEndHour: e.target.value})}
+                inputProps={{ min: 0, max: 23 }}
+                sx={{ flex: 1 }}
+              />
+            </Box>
+            
+            <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+              <TextField
+                label="Min session (timmar)"
+                type="number"
+                value={taskData.minSessionHours}
+                onChange={(e) => setTaskData({...taskData, minSessionHours: e.target.value})}
+                inputProps={{ min: 0.5, step: 0.5 }}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                label="Max session (timmar)"
+                type="number"
+                value={taskData.maxSessionHours}
+                onChange={(e) => setTaskData({...taskData, maxSessionHours: e.target.value})}
+                inputProps={{ min: 0.5, step: 0.5 }}
+                sx={{ flex: 1 }}
+              />
+            </Box>
+            
+            <TextField
+              fullWidth
+              label="Rast mellan pass (minuter)"
+              type="number"
+              value={taskData.breakMinutes}
+              onChange={(e) => setTaskData({...taskData, breakMinutes: e.target.value})}
+              margin="normal"
+              inputProps={{ min: 0, step: 5 }}
+              helperText="Minuter vila mellan arbetspassen"
             />
             
             <Button

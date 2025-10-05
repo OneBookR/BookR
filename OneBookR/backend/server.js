@@ -1488,7 +1488,7 @@ app.post('/api/calendar/events', async (req, res) => {
 });
 
 app.post('/api/task/schedule', async (req, res) => {
-  const { token, taskName, estimatedHours } = req.body;
+  const { token, taskName, estimatedHours, workStartHour = 9, workEndHour = 18, minSessionHours = 1, maxSessionHours = 4, breakMinutes = 15 } = req.body;
   
   if (!token || !taskName || !estimatedHours) {
     return res.status(400).json({ error: 'Token, uppgiftsnamn och estimerad tid krävs' });
@@ -1507,7 +1507,7 @@ app.post('/api/task/schedule', async (req, res) => {
     })).sort((a, b) => a.start - b.start);
     
     // Hitta lediga slots för uppgiften
-    const taskSlots = findTaskSlots(busyTimes, estimatedHours, now, twoWeeksFromNow);
+    const taskSlots = findTaskSlots(busyTimes, estimatedHours, now, twoWeeksFromNow, workStartHour, workEndHour, minSessionHours, maxSessionHours, breakMinutes);
     
     res.json({ taskSlots });
   } catch (error) {
@@ -1517,14 +1517,12 @@ app.post('/api/task/schedule', async (req, res) => {
 });
 
 // Funktion för att hitta lediga slots för uppgifter
-function findTaskSlots(busyTimes, totalHours, startDate, endDate) {
+function findTaskSlots(busyTimes, totalHours, startDate, endDate, workStartHour = 9, workEndHour = 18, minSessionHours = 1, maxSessionHours = 4, breakMinutes = 15) {
   const slots = [];
-  const workStartHour = 9; // Arbetstid börjar 09:00
-  const workEndHour = 18;   // Arbetstid slutar 18:00
-  const maxSlotHours = 4;   // Max 4 timmar per slot
   
   let remainingHours = totalHours;
   const currentDate = new Date(startDate);
+  let lastSlotEndTime = null;
   
   while (remainingHours > 0 && currentDate < endDate) {
     // Hoppa över helger
@@ -1549,17 +1547,32 @@ function findTaskSlots(busyTimes, totalHours, startDate, endDate) {
       const slotDurationMs = freeSlot.end - freeSlot.start;
       const slotDurationHours = slotDurationMs / (1000 * 60 * 60);
       
-      if (slotDurationHours >= 0.5) { // Minst 30 min
-        const hoursToUse = Math.min(remainingHours, slotDurationHours, maxSlotHours);
-        const slotEndTime = freeSlot.start + (hoursToUse * 60 * 60 * 1000);
+      if (slotDurationHours >= minSessionHours) {
+        const hoursToUse = Math.min(remainingHours, slotDurationHours, maxSessionHours);
+        // Kontrollera om vi behöver rast från föregående session
+        let sessionStart = freeSlot.start;
+        if (lastSlotEndTime && sessionStart < lastSlotEndTime + (breakMinutes * 60 * 1000)) {
+          sessionStart = lastSlotEndTime + (breakMinutes * 60 * 1000);
+          // Kontrollera om det fortfarande finns tid efter rasten
+          if (sessionStart >= freeSlot.end) continue;
+          
+          const adjustedDurationMs = freeSlot.end - sessionStart;
+          const adjustedDurationHours = adjustedDurationMs / (1000 * 60 * 60);
+          if (adjustedDurationHours < minSessionHours) continue;
+          
+          hoursToUse = Math.min(remainingHours, adjustedDurationHours, maxSessionHours);
+        }
+        
+        const slotEndTime = sessionStart + (hoursToUse * 60 * 60 * 1000);
         
         slots.push({
-          start: new Date(freeSlot.start).toISOString(),
+          start: new Date(sessionStart).toISOString(),
           end: new Date(slotEndTime).toISOString(),
           duration: hoursToUse
         });
         
         remainingHours -= hoursToUse;
+        lastSlotEndTime = slotEndTime;
       }
     }
     
