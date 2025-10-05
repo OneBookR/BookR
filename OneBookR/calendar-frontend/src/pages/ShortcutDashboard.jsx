@@ -122,7 +122,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       <Grid container spacing={{ xs: 3, md: 4 }} sx={{ mb: 6, px: { xs: 1, sm: 0 } }}>
         <Grid item xs={12} md={4}>
           <Card sx={{ 
-            height: 140, 
+            height: 160, 
             cursor: 'pointer', 
             background: 'rgba(255,255,255,0.98)',
             borderRadius: 3,
@@ -135,18 +135,18 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             }
           }} 
                 onClick={() => window.location.href = '/compare'}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center' }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <PersonIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5 }}>1v1 Meeting</Typography>
-                <Typography variant="body2" sx={{ color: '#425466' }}>Jämför kalendrar och hitta ledig tid</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5, fontSize: 18 }}>1v1 Meeting</Typography>
+                <Typography variant="body2" sx={{ color: '#425466', fontSize: 14, lineHeight: 1.4 }}>Jämför kalendrar och hitta ledig tid</Typography>
               </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} md={4}>
           <Card sx={{ 
-            height: 140, 
+            height: 160, 
             cursor: 'pointer', 
             background: 'rgba(255,255,255,0.98)',
             borderRadius: 3,
@@ -159,18 +159,18 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             }
           }} 
                 onClick={() => window.location.href = '/compare'}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center' }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <GroupIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5 }}>Group Meeting</Typography>
-                <Typography variant="body2" sx={{ color: '#425466' }}>Bjud in flera och hitta gemensam tid</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5, fontSize: 18 }}>Group Meeting</Typography>
+                <Typography variant="body2" sx={{ color: '#425466', fontSize: 14, lineHeight: 1.4 }}>Bjud in flera och hitta gemensam tid</Typography>
               </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} md={4}>
           <Card sx={{ 
-            height: 140, 
+            height: 160, 
             cursor: 'pointer', 
             background: 'rgba(255,255,255,0.98)',
             borderRadius: 3,
@@ -183,11 +183,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             }
           }} 
                 onClick={() => onNavigateToMeeting('task')}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center' }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <TaskIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5 }}>Create Task</Typography>
-                <Typography variant="body2" sx={{ color: '#425466' }}>Schemalägg tid för uppgifter</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5, fontSize: 18 }}>Create Task</Typography>
+                <Typography variant="body2" sx={{ color: '#425466', fontSize: 14, lineHeight: 1.4 }}>Schemalägg tid för uppgifter</Typography>
               </Box>
             </CardContent>
           </Card>
@@ -206,14 +206,14 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           }}>Inbjudningar</Typography>
           {invites.length === 0 ? (
             <Card sx={{ 
-              p: 4, 
+              p: 3, 
               textAlign: 'center', 
+              background: 'rgba(255,255,255,0.98)',
               borderRadius: 3,
-              background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-              border: 'none',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+              boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+              border: '1.5px solid #e3e8ee'
             }}>
-              <Typography sx={{ color: '#666', fontWeight: 500 }}>Inga inbjudningar just nu</Typography>
+              <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga inbjudningar just nu</Typography>
             </Card>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -299,14 +299,14 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           }}>Kommande möten</Typography>
           {upcomingMeetings.length === 0 ? (
             <Card sx={{ 
-              p: 4, 
+              p: 3, 
               textAlign: 'center', 
+              background: 'rgba(255,255,255,0.98)',
               borderRadius: 3,
-              background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-              border: 'none',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+              boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+              border: '1.5px solid #e3e8ee'
             }}>
-              <Typography sx={{ color: '#666', fontWeight: 500 }}>Inga kommande möten</Typography>
+              <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga kommande möten</Typography>
             </Card>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
