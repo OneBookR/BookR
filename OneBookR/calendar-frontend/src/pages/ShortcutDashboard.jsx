@@ -61,7 +61,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     <>
       <InvitationSidebar user={user} />
       <Button
-        variant="contained"
+        variant="outlined"
         startIcon={<LogoutIcon />}
         onClick={() => window.location.href = 'https://www.onebookr.se/auth/logout'}
         sx={{
@@ -69,15 +69,14 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           top: 80,
           left: 20,
           zIndex: 1000,
-          background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
-          color: 'white',
-          borderRadius: 3,
-          boxShadow: '0 4px 15px rgba(255, 107, 107, 0.3)',
+          borderColor: '#635bff',
+          color: '#635bff',
+          borderRadius: 2,
           fontWeight: 600,
           '&:hover': {
-            background: 'linear-gradient(135deg, #ee5a24 0%, #ff6b6b 100%)',
-            transform: 'translateY(-2px)',
-            boxShadow: '0 6px 20px rgba(255, 107, 107, 0.4)'
+            borderColor: '#7a5af8',
+            color: '#7a5af8',
+            bgcolor: 'rgba(99,91,255,0.05)'
           }
         }}
       >
@@ -86,27 +85,33 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       <Container maxWidth="lg" sx={{ mt: 12, mb: 4, px: { xs: 2, sm: 3 } }}>
       {/* Clean Banner */}
       <Box sx={{
-        background: '#1976d2',
-        borderRadius: 2,
+        background: 'rgba(255,255,255,0.98)',
+        borderRadius: 3,
         p: 4,
         mb: 6,
-        color: 'white',
         textAlign: 'center',
-        boxShadow: '0 2px 8px rgba(25, 118, 210, 0.2)'
+        boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+        border: '1.5px solid #e3e8ee'
       }}>
         <Box sx={{ position: 'relative', zIndex: 1 }}>
           <Typography variant="h3" sx={{ 
-            fontWeight: 800, 
-            mb: 2, 
+            fontWeight: 700,
+            letterSpacing: -1.5,
+            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+            color: '#0a2540',
+            mb: 1,
             fontSize: { xs: 28, md: 36 },
-            textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            lineHeight: 1.08
           }}>
             BookR Dashboard
           </Typography>
           <Typography variant="h6" sx={{ 
-            opacity: 0.95, 
+            color: '#425466',
+            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
             fontWeight: 400,
-            fontSize: { xs: 16, md: 18 }
+            fontSize: { xs: 16, md: 18 },
+            lineHeight: 1.4,
+            letterSpacing: -0.5
           }}>
             Välj vad du vill göra - hitta lediga tider eller skapa uppgifter
           </Typography>
@@ -117,72 +122,72 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       <Grid container spacing={{ xs: 3, md: 4 }} sx={{ mb: 6, px: { xs: 1, sm: 0 } }}>
         <Grid item xs={12} md={4}>
           <Card sx={{ 
-            height: 120, 
+            height: 140, 
             cursor: 'pointer', 
-            bgcolor: '#1976d2',
-            color: 'white',
-            borderRadius: 2,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            transition: 'all 0.2s ease',
+            background: 'rgba(255,255,255,0.98)',
+            borderRadius: 3,
+            boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+            border: '1.5px solid #e3e8ee',
+            transition: 'all 0.3s ease',
             '&:hover': { 
-              transform: 'translateY(-2px)',
-              boxShadow: '0 4px 16px rgba(25, 118, 210, 0.3)'
+              transform: 'translateY(-4px)',
+              boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
                 onClick={() => window.location.href = '/compare'}>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
-              <PersonIcon sx={{ fontSize: 40 }} />
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center' }}>
+              <PersonIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>1v1 Meeting</Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Jämför kalendrar</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5 }}>1v1 Meeting</Typography>
+                <Typography variant="body2" sx={{ color: '#425466' }}>Jämför kalendrar och hitta ledig tid</Typography>
               </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} md={4}>
           <Card sx={{ 
-            height: 120, 
+            height: 140, 
             cursor: 'pointer', 
-            bgcolor: '#1976d2',
-            color: 'white',
-            borderRadius: 2,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            transition: 'all 0.2s ease',
+            background: 'rgba(255,255,255,0.98)',
+            borderRadius: 3,
+            boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+            border: '1.5px solid #e3e8ee',
+            transition: 'all 0.3s ease',
             '&:hover': { 
-              transform: 'translateY(-2px)',
-              boxShadow: '0 4px 16px rgba(25, 118, 210, 0.3)'
+              transform: 'translateY(-4px)',
+              boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
                 onClick={() => window.location.href = '/compare'}>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
-              <GroupIcon sx={{ fontSize: 40 }} />
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center' }}>
+              <GroupIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>Group Meeting</Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Bjud in flera</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5 }}>Group Meeting</Typography>
+                <Typography variant="body2" sx={{ color: '#425466' }}>Bjud in flera och hitta gemensam tid</Typography>
               </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} md={4}>
           <Card sx={{ 
-            height: 120, 
+            height: 140, 
             cursor: 'pointer', 
-            bgcolor: '#757575',
-            color: 'white',
-            borderRadius: 2,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            transition: 'all 0.2s ease',
+            background: 'rgba(255,255,255,0.98)',
+            borderRadius: 3,
+            boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+            border: '1.5px solid #e3e8ee',
+            transition: 'all 0.3s ease',
             '&:hover': { 
-              transform: 'translateY(-2px)',
-              boxShadow: '0 4px 16px rgba(117, 117, 117, 0.3)'
+              transform: 'translateY(-4px)',
+              boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
                 onClick={() => onNavigateToMeeting('task')}>
-            <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
-              <TaskIcon sx={{ fontSize: 40 }} />
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center' }}>
+              <TaskIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>Create Task</Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Schemalägg tid</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0a2540', mb: 0.5 }}>Create Task</Typography>
+                <Typography variant="body2" sx={{ color: '#425466' }}>Schemalägg tid för uppgifter</Typography>
               </Box>
             </CardContent>
           </Card>
@@ -193,15 +198,12 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       <Grid container spacing={{ xs: 3, md: 4 }} sx={{ px: { xs: 1, sm: 0 } }}>
         {/* Invites sektion */}
         <Grid item xs={12} md={6}>
-          <Box sx={{ 
-            bgcolor: '#f5f5f5',
-            borderRadius: 2,
-            p: 2,
-            mb: 2,
-            textAlign: 'center'
-          }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, color: '#333' }}>Inbjudningar</Typography>
-          </Box>
+          <Typography variant="h5" sx={{ 
+            mb: 3, 
+            fontWeight: 600,
+            color: '#0a2540',
+            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
+          }}>Inbjudningar</Typography>
           {invites.length === 0 ? (
             <Card sx={{ 
               p: 4, 
@@ -243,17 +245,18 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                     <Box sx={{ display: 'flex', gap: 1 }}>
                       <Button 
                         size="small" 
-                        variant="contained" 
+                        variant="outlined" 
                         startIcon={<CloseIcon />}
                         onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')}
                         sx={{
-                          background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
-                          color: 'white',
+                          borderColor: '#635bff',
+                          color: '#635bff',
                           borderRadius: 2,
                           fontWeight: 600,
                           '&:hover': {
-                            background: 'linear-gradient(135deg, #ee5a24 0%, #ff6b6b 100%)',
-                            transform: 'scale(1.05)'
+                            borderColor: '#7a5af8',
+                            color: '#7a5af8',
+                            bgcolor: 'rgba(99,91,255,0.05)'
                           }
                         }}
                       >
@@ -265,13 +268,14 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         startIcon={<CheckIcon />}
                         onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')}
                         sx={{
-                          background: 'linear-gradient(135deg, #51cf66 0%, #40c057 100%)',
+                          background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
                           color: 'white',
                           borderRadius: 2,
                           fontWeight: 600,
+                          boxShadow: '0 2px 16px 0 rgba(99,91,255,0.13)',
                           '&:hover': {
-                            background: 'linear-gradient(135deg, #40c057 0%, #51cf66 100%)',
-                            transform: 'scale(1.05)'
+                            background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                            boxShadow: '0 0 0 4px #e9e5ff, 0 8px 32px 0 rgba(99,91,255,0.18)'
                           }
                         }}
                       >
@@ -287,15 +291,12 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
         {/* Upcoming Meetings sektion */}
         <Grid item xs={12} md={6}>
-          <Box sx={{ 
-            bgcolor: '#f5f5f5',
-            borderRadius: 2,
-            p: 2,
-            mb: 2,
-            textAlign: 'center'
-          }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, color: '#333' }}>Kommande möten</Typography>
-          </Box>
+          <Typography variant="h5" sx={{ 
+            mb: 3, 
+            fontWeight: 600,
+            color: '#0a2540',
+            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
+          }}>Kommande möten</Typography>
           {upcomingMeetings.length === 0 ? (
             <Card sx={{ 
               p: 4, 
