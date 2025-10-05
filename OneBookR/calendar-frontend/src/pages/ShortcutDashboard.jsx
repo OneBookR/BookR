@@ -7,6 +7,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import EventIcon from '@mui/icons-material/Event';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import LogoutIcon from '@mui/icons-material/Logout';
+import TaskIcon from '@mui/icons-material/Task';
 import InvitationSidebar from './InvitationSidebar.jsx';
 
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
@@ -79,7 +80,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
       {/* Stora knappar för att skapa möten */}
       <Grid container spacing={3} sx={{ mb: 6 }}>
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={4}>
           <Card sx={{ height: 120, cursor: 'pointer', '&:hover': { boxShadow: 4 } }} 
                 onClick={() => onNavigateToMeeting('1v1')}>
             <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
@@ -91,7 +92,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={4}>
           <Card sx={{ height: 120, cursor: 'pointer', '&:hover': { boxShadow: 4 } }} 
                 onClick={() => onNavigateToMeeting('group')}>
             <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
@@ -99,6 +100,18 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>Group Meeting</Typography>
                 <Typography variant="body2" color="text.secondary">Create an invite to a 2+ meeting</Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <Card sx={{ height: 120, cursor: 'pointer', '&:hover': { boxShadow: 4 } }} 
+                onClick={() => onNavigateToMeeting('task')}>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
+              <TaskIcon sx={{ fontSize: 40, color: '#1976d2' }} />
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>Create Task</Typography>
+                <Typography variant="body2" color="text.secondary">Schedule time for a task</Typography>
               </Box>
             </CardContent>
           </Card>

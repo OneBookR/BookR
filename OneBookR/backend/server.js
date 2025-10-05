@@ -1467,3 +1467,133 @@ app.delete('/api/user/delete-data', async (req, res) => {
     res.status(500).json({ error: 'Kunde inte radera användardata' });
   }
 });
+
+// Task scheduling endpoints
+app.post('/api/calendar/events', async (req, res) => {
+  const { token, timeMin, timeMax } = req.body;
+  
+  try {
+    const { events } = await fetchCalendarEvents(token, timeMin, timeMax);
+    const formattedEvents = events.map(e => ({
+      title: e.summary || 'Upptagen',
+      start: e.start.dateTime || e.start.date,
+      end: e.end.dateTime || e.end.date
+    }));
+    
+    res.json({ events: formattedEvents });
+  } catch (error) {
+    console.error('Error fetching calendar events:', error);
+    res.status(500).json({ error: 'Kunde inte hämta kalenderhändelser' });
+  }
+});
+
+app.post('/api/task/schedule', async (req, res) => {
+  const { token, taskName, estimatedHours } = req.body;
+  
+  if (!token || !taskName || !estimatedHours) {
+    return res.status(400).json({ error: 'Token, uppgiftsnamn och estimerad tid krävs' });
+  }
+  
+  try {
+    const now = new Date();
+    const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    
+    const { events } = await fetchCalendarEvents(token, now.toISOString(), twoWeeksFromNow.toISOString());
+    
+    // Konvertera till upptagna tider
+    const busyTimes = events.map(e => ({
+      start: new Date(e.start.dateTime || e.start.date).getTime(),
+      end: new Date(e.end.dateTime || e.end.date).getTime()
+    })).sort((a, b) => a.start - b.start);
+    
+    // Hitta lediga slots för uppgiften
+    const taskSlots = findTaskSlots(busyTimes, estimatedHours, now, twoWeeksFromNow);
+    
+    res.json({ taskSlots });
+  } catch (error) {
+    console.error('Error scheduling task:', error);
+    res.status(500).json({ error: 'Kunde inte schemalägga uppgift' });
+  }
+});
+
+// Funktion för att hitta lediga slots för uppgifter
+function findTaskSlots(busyTimes, totalHours, startDate, endDate) {
+  const slots = [];
+  const workStartHour = 9; // Arbetstid börjar 09:00
+  const workEndHour = 18;   // Arbetstid slutar 18:00
+  const maxSlotHours = 4;   // Max 4 timmar per slot
+  
+  let remainingHours = totalHours;
+  const currentDate = new Date(startDate);
+  
+  while (remainingHours > 0 && currentDate < endDate) {
+    // Hoppa över helger
+    if (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      continue;
+    }
+    
+    // Skapa arbetstid för dagen
+    const dayStart = new Date(currentDate);
+    dayStart.setHours(workStartHour, 0, 0, 0);
+    const dayEnd = new Date(currentDate);
+    dayEnd.setHours(workEndHour, 0, 0, 0);
+    
+    // Hitta lediga perioder under dagen
+    const dayFreeSlots = findFreeSlotsInDay(busyTimes, dayStart, dayEnd);
+    
+    // Allokera tid från lediga slots
+    for (const freeSlot of dayFreeSlots) {
+      if (remainingHours <= 0) break;
+      
+      const slotDurationMs = freeSlot.end - freeSlot.start;
+      const slotDurationHours = slotDurationMs / (1000 * 60 * 60);
+      
+      if (slotDurationHours >= 0.5) { // Minst 30 min
+        const hoursToUse = Math.min(remainingHours, slotDurationHours, maxSlotHours);
+        const slotEndTime = freeSlot.start + (hoursToUse * 60 * 60 * 1000);
+        
+        slots.push({
+          start: new Date(freeSlot.start).toISOString(),
+          end: new Date(slotEndTime).toISOString(),
+          duration: hoursToUse
+        });
+        
+        remainingHours -= hoursToUse;
+      }
+    }
+    
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return slots;
+}
+
+function findFreeSlotsInDay(busyTimes, dayStart, dayEnd) {
+  const freeSlots = [];
+  const dayStartMs = dayStart.getTime();
+  const dayEndMs = dayEnd.getTime();
+  
+  // Filtrera upptagna tider som överlappar med dagen
+  const dayBusyTimes = busyTimes.filter(busy => 
+    busy.start < dayEndMs && busy.end > dayStartMs
+  ).map(busy => ({
+    start: Math.max(busy.start, dayStartMs),
+    end: Math.min(busy.end, dayEndMs)
+  }));
+  
+  let cursor = dayStartMs;
+  
+  for (const busy of dayBusyTimes) {
+    if (cursor < busy.start) {
+      freeSlots.push({ start: cursor, end: busy.start });
+    }
+    cursor = Math.max(cursor, busy.end);
+  }
+  
+  if (cursor < dayEndMs) {
+    freeSlots.push({ start: cursor, end: dayEndMs });
+  }
+  
+  return freeSlots;
+}

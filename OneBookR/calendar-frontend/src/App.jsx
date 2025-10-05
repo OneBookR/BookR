@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Dashboard from './pages/Dashboard.jsx';
 import ShortcutDashboard from './pages/ShortcutDashboard.jsx';
+import Task from './pages/Task.jsx';
 import Contact from './pages/Contact.jsx';
 import About from './pages/About.jsx';
 import Waitlist from './pages/Waitlist.jsx';

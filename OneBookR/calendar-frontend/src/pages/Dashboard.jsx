@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import InviteFriend from './InviteFriend';
 import CompareCalendar from './CompareCalendar';
+import Task from './Task';
+import ShortcutDashboard from './ShortcutDashboard';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 
 export default function Dashboard({ user }) {
+  const [currentView, setCurrentView] = useState('shortcut');
   const { theme } = useTheme();
   const [groupTokens, setGroupTokens] = useState([]);
   const [showCompare, setShowCompare] = useState(false);
@@ -18,6 +21,21 @@ export default function Dashboard({ user }) {
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
+  
+  const handleNavigateToMeeting = (type) => {
+    if (type === 'task') {
+      setCurrentView('task');
+    } else {
+      setCurrentView('dashboard');
+    }
+  };
+  
+  // Set initial view based on URL params
+  useEffect(() => {
+    if (groupId) {
+      setCurrentView('dashboard');
+    }
+  }, [groupId]);
  
   useEffect(() => {
     if (groupId) {
@@ -147,6 +165,15 @@ export default function Dashboard({ user }) {
         </Typography>
       </Container>
     );
+  }
+  
+  // Render different views based on currentView
+  if (currentView === 'shortcut') {
+    return <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />;
+  }
+  
+  if (currentView === 'task') {
+    return <Task user={user} />;
   }
 
 
