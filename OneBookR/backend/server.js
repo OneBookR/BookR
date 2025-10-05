@@ -1540,29 +1540,27 @@ function findTaskSlots(busyTimes, totalHours, startDate, endDate, workStartHour 
     // Hitta lediga perioder under dagen
     const dayFreeSlots = findFreeSlotsInDay(busyTimes, dayStart, dayEnd);
     
-    // Allokera tid från lediga slots
+    // Allokera tid från lediga slots - börja från början av varje ledig period
     for (const freeSlot of dayFreeSlots) {
       if (remainingHours <= 0) break;
       
-      const slotDurationMs = freeSlot.end - freeSlot.start;
-      const slotDurationHours = slotDurationMs / (1000 * 60 * 60);
+      let sessionStart = freeSlot.start;
       
-      if (slotDurationHours >= minSessionHours) {
-        const hoursToUse = Math.min(remainingHours, slotDurationHours, maxSessionHours);
-        // Kontrollera om vi behöver rast från föregående session
-        let sessionStart = freeSlot.start;
-        if (lastSlotEndTime && sessionStart < lastSlotEndTime + (breakMinutes * 60 * 1000)) {
-          sessionStart = lastSlotEndTime + (breakMinutes * 60 * 1000);
-          // Kontrollera om det fortfarande finns tid efter rasten
-          if (sessionStart >= freeSlot.end) continue;
-          
-          const adjustedDurationMs = freeSlot.end - sessionStart;
-          const adjustedDurationHours = adjustedDurationMs / (1000 * 60 * 60);
-          if (adjustedDurationHours < minSessionHours) continue;
-          
-          hoursToUse = Math.min(remainingHours, adjustedDurationHours, maxSessionHours);
-        }
-        
+      // Kontrollera om vi behöver rast från föregående session (samma dag)
+      if (lastSlotEndTime && 
+          new Date(lastSlotEndTime).toDateString() === new Date(sessionStart).toDateString() &&
+          sessionStart < lastSlotEndTime + (breakMinutes * 60 * 1000)) {
+        sessionStart = lastSlotEndTime + (breakMinutes * 60 * 1000);
+      }
+      
+      // Kontrollera om det fortfarande finns tid efter eventuell rast
+      if (sessionStart >= freeSlot.end) continue;
+      
+      const availableDurationMs = freeSlot.end - sessionStart;
+      const availableDurationHours = availableDurationMs / (1000 * 60 * 60);
+      
+      if (availableDurationHours >= minSessionHours) {
+        const hoursToUse = Math.min(remainingHours, availableDurationHours, maxSessionHours);
         const slotEndTime = sessionStart + (hoursToUse * 60 * 60 * 1000);
         
         slots.push({
