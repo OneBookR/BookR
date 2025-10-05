@@ -44,3 +44,38 @@
 .bounce-in {
   animation: bounceIn 0.6s ease-out;
 }
+
+/* Modern gradient animations */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes cardHover {
+  0% { transform: translateY(0) scale(1); }
+  100% { transform: translateY(-8px) scale(1.02); }
+}
+
+@keyframes pulseGlow {
+  0% { box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3); }
+  50% { box-shadow: 0 8px 40px rgba(102, 126, 234, 0.5); }
+  100% { box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3); }
+}
+
+.gradient-animation {
+  background-size: 200% 200%;
+  animation: gradientShift 3s ease infinite;
+}
+
+.card-hover-effect {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-hover-effect:hover {
+  animation: cardHover 0.3s ease forwards;
+}
+
+.pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}

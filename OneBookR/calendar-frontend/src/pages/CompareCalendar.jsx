@@ -945,13 +945,14 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       <AppBar
         position="fixed"
         color="default"
-        elevation={1}
+        elevation={0}
         sx={{
-          bgcolor: theme.colors.bg,
-          borderBottom: `1px solid ${theme.colors.border}`,
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          borderBottom: 'none',
           zIndex: 1201,
           top: '48px',
-          transition: 'all 0.3s ease'
+          transition: 'all 0.3s ease',
+          boxShadow: '0 4px 20px rgba(102, 126, 234, 0.3)'
         }}
       >
         <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 3 } }}>
@@ -960,31 +961,32 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
               <Box sx={{
                 fontWeight: 800,
                 fontSize: { xs: 20, sm: 28 },
-                color: theme.colors.primary,
+                color: 'white',
                 letterSpacing: 1,
                 fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
                 mr: { xs: 1, sm: 2 },
                 userSelect: 'none',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                textShadow: '0 2px 4px rgba(0,0,0,0.2)'
               }}
               onClick={() => window.location.href = '/'}>
                 BookR
               </Box>
-              <Typography variant="subtitle2" sx={{ color: '#888', fontWeight: 400, fontSize: { xs: 12, sm: 16 }, display: { xs: 'none', sm: 'block' } }}>
+              <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: { xs: 12, sm: 16 }, display: { xs: 'none', sm: 'block' } }}>
                 Kalenderjämförelse
               </Typography>
             </Box>
             <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 2 }}>
               <Button
                 color="inherit"
-                sx={{ fontWeight: 500, color: '#666' }}
+                sx={{ fontWeight: 500, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
                 onClick={() => window.location.href = '/about'}
               >
                 Om oss
               </Button>
               <Button
                 color="inherit"
-                sx={{ fontWeight: 500, color: '#666' }}
+                sx={{ fontWeight: 500, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
                 onClick={() => window.location.href = '/contact'}
               >
                 Kontakta oss
@@ -993,18 +995,21 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <LightModeIcon sx={{ fontSize: 20, color: theme.colors.textSecondary }} />
+              <LightModeIcon sx={{ fontSize: 20, color: 'rgba(255,255,255,0.7)' }} />
               <Switch 
                 checked={theme.isDark} 
                 onChange={toggleTheme}
                 size="small"
                 sx={{
                   '& .MuiSwitch-thumb': {
-                    bgcolor: theme.colors.primary
+                    bgcolor: 'white'
+                  },
+                  '& .MuiSwitch-track': {
+                    bgcolor: 'rgba(255,255,255,0.3)'
                   }
                 }}
               />
-              <DarkModeIcon sx={{ fontSize: 20, color: theme.colors.textSecondary }} />
+              <DarkModeIcon sx={{ fontSize: 20, color: 'rgba(255,255,255,0.7)' }} />
             </Box>
             {permission !== 'granted' && (
               <Button
@@ -1013,9 +1018,13 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                 onClick={requestPermission}
                 sx={{ 
                   fontWeight: 500, 
-                  color: theme.colors.warning,
+                  color: 'white',
                   borderRadius: 2,
-                  fontSize: 12
+                  fontSize: 12,
+                  bgcolor: 'rgba(255,255,255,0.2)',
+                  '&:hover': {
+                    bgcolor: 'rgba(255,255,255,0.3)'
+                  }
                 }}
               >
                 Aktivera notiser
@@ -1037,10 +1046,14 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
               }}
               sx={{ 
                 fontWeight: 500, 
-                color: isInstallable ? theme.colors.primary : theme.colors.textSecondary,
+                color: 'white',
                 borderRadius: 2,
                 fontSize: 12,
-                opacity: isInstallable ? 1 : 0.6
+                bgcolor: 'rgba(255,255,255,0.2)',
+                opacity: isInstallable ? 1 : 0.6,
+                '&:hover': {
+                  bgcolor: 'rgba(255,255,255,0.3)'
+                }
               }}
             >
               {isInstallable ? 'Installera app' : 'App (ej tillgänglig)'}
@@ -1053,7 +1066,14 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                 setShowTutorial(true);
                 setTutorialStep(0);
               }}
-              sx={{ fontWeight: 500, color: theme.colors.textSecondary, borderRadius: 2 }}
+              sx={{ 
+                fontWeight: 500, 
+                color: 'rgba(255,255,255,0.9)', 
+                borderRadius: 2,
+                '&:hover': {
+                  bgcolor: 'rgba(255,255,255,0.1)'
+                }
+              }}
             >
               Hjälp
             </Button>
@@ -1061,34 +1081,55 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
               <Box sx={{ display: 'flex', gap: 1 }}>
                 {groupId && (
                   <Button
-                    color="secondary"
-                    variant="outlined"
+                    variant="contained"
                     onClick={() => window.location.href = '/'}
-                    sx={{ fontWeight: 600, borderRadius: 2 }}
+                    sx={{ 
+                      fontWeight: 600, 
+                      borderRadius: 2,
+                      bgcolor: 'rgba(255,255,255,0.2)',
+                      color: 'white',
+                      '&:hover': {
+                        bgcolor: 'rgba(255,255,255,0.3)'
+                      }
+                    }}
                   >
                     Lämna grupp
                   </Button>
                 )}
                 <Button
-                  color="primary"
-                  variant="outlined"
+                  variant="contained"
                   startIcon={<LogoutIcon />}
                   onClick={() => {
                     localStorage.removeItem('auth_token');
                     handleLogout();
                   }}
-                  sx={{ fontWeight: 600, borderRadius: 2 }}
+                  sx={{ 
+                    fontWeight: 600, 
+                    borderRadius: 2,
+                    bgcolor: 'rgba(255,255,255,0.2)',
+                    color: 'white',
+                    '&:hover': {
+                      bgcolor: 'rgba(255,255,255,0.3)'
+                    }
+                  }}
                 >
                   Logga ut
                 </Button>
               </Box>
             ) : (
               <Button
-                color="primary"
                 variant="contained"
                 startIcon={<LoginIcon />}
                 onClick={handleLogin}
-                sx={{ fontWeight: 600, borderRadius: 2 }}
+                sx={{ 
+                  fontWeight: 600, 
+                  borderRadius: 2,
+                  bgcolor: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  '&:hover': {
+                    bgcolor: 'rgba(255,255,255,0.3)'
+                  }
+                }}
               >
                 Logga in
               </Button>
