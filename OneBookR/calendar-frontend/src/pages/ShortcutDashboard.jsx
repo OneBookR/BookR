@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, Box, Button, Card, CardContent, Grid, Chip } from '@mui/material';
+import { Container, Typography, Box, Button, Card, CardContent, Grid, Chip, IconButton, Badge, Paper, Snackbar, Alert } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import GroupIcon from '@mui/icons-material/Group';
 import CheckIcon from '@mui/icons-material/Check';
@@ -8,12 +8,17 @@ import EventIcon from '@mui/icons-material/Event';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import LogoutIcon from '@mui/icons-material/Logout';
 import TaskIcon from '@mui/icons-material/Task';
+import NotificationsIcon from '@mui/icons-material/Notifications';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import InvitationSidebar from './InvitationSidebar.jsx';
 
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [invites, setInvites] = useState([]);
   const [upcomingMeetings, setUpcomingMeetings] = useState([]);
   const [timeProposals, setTimeProposals] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState('invitations');
+  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
 
   useEffect(() => {
     if (!user?.email) return;
@@ -41,11 +46,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       .catch(err => console.log('Failed to fetch calendar events:', err));
     }
 
-    // Hämta tidsförslag
-    fetch(`https://www.onebookr.se/api/time-proposals/${encodeURIComponent(user.email)}`)
-    .then(res => res.json())
-    .then(data => setTimeProposals(data.proposals || []))
-    .catch(err => console.log('Failed to fetch time proposals:', err));
+    // Hämta tidsförslag (samma logik som CompareCalendar)
+    fetchTimeProposals();
   }, [user?.email]);
 
   const handleInviteResponse = (groupId, inviteeId, response) => {
@@ -74,18 +76,61 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     }
   };
 
-  const handleProposalResponse = (proposalId, response) => {
-    fetch(`https://www.onebookr.se/api/time-proposal/${proposalId}/respond`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ response })
-    })
-    .then(res => {
-      if (res.ok) {
-        setTimeProposals(prev => prev.filter(proposal => proposal.id !== proposalId));
+  const fetchTimeProposals = async () => {
+    try {
+      const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
+      if (!userEmail) return;
+      
+      const invitationsResponse = await fetch(`https://www.onebookr.se/api/invitations/${encodeURIComponent(userEmail)}`);
+      if (invitationsResponse.ok) {
+        const invitationsData = await invitationsResponse.json();
+        const allProposals = [];
+        
+        for (const invitation of invitationsData.invitations) {
+          if (invitation.accepted || invitation.responded) {
+            const suggestionsResponse = await fetch(`https://www.onebookr.se/api/group/${invitation.groupId}/suggestions`);
+            if (suggestionsResponse.ok) {
+              const suggestionsData = await suggestionsResponse.json();
+              const userSuggestions = suggestionsData.suggestions.filter(s => 
+                !s.votes[userEmail] && !s.finalized
+              );
+              allProposals.push(...userSuggestions.map(s => ({...s, groupId: invitation.groupId})));
+            }
+          }
+        }
+        
+        setTimeProposals(allProposals);
       }
-    })
-    .catch(err => console.log('Failed to respond to proposal:', err));
+    } catch (error) {
+      console.error('Fel vid hämtning av tidsförslag:', error);
+    }
+  };
+
+  const voteSuggestion = async (suggestionId, vote, targetGroupId) => {
+    try {
+      const response = await fetch(`https://www.onebookr.se/api/group/${targetGroupId}/suggestion/${suggestionId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email || user.emails?.[0]?.value || user.emails?.[0],
+          vote,
+        }),
+      });
+      if (response.ok) {
+        const voteText = vote === 'accepted' ? 'accepterat' : 'nekat';
+        setToast({ open: true, message: `Du har ${voteText} tidsförslaget!`, severity: 'success' });
+        fetchTimeProposals();
+      }
+    } catch (error) {
+      setToast({ open: true, message: 'Kunde inte registrera röst. Försök igen.', severity: 'error' });
+    }
+  };
+
+  const handleProposalResponse = (proposalId, response) => {
+    const proposal = timeProposals.find(p => p.id === proposalId);
+    if (proposal) {
+      voteSuggestion(proposalId, response, proposal.groupId);
+    }
   };
 
   const formatDateTime = (dateTime) => {
@@ -171,11 +216,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onNavigateToMeeting('1v1');
-                }}>
+                onClick={() => window.location.href = '/compare'}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <PersonIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
@@ -199,11 +240,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onNavigateToMeeting('group');
-                }}>
+                onClick={() => window.location.href = '/compare'}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <GroupIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
@@ -227,11 +264,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onNavigateToMeeting('task');
-                }}>
+                onClick={() => onNavigateToMeeting('task')}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <TaskIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
@@ -495,6 +528,234 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         </Grid>
       </Grid>
       </Container>
+
+      {/* Sidebar */}
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 112,
+          right: 0,
+          height: 'calc(100vh - 112px)',
+          width: sidebarOpen ? 400 : 60,
+          backgroundColor: '#fff',
+          boxShadow: '-2px 0 8px rgba(0,0,0,0.1)',
+          border: '1px solid #e0e3e7',
+          transition: 'all 0.3s ease',
+          zIndex: 1200,
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        {/* Sidebar toggle button */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: sidebarOpen ? 'space-between' : 'center',
+            p: sidebarOpen ? 2 : 1,
+            borderBottom: '1px solid #e0e3e7',
+            minHeight: 64
+          }}
+        >
+          {sidebarOpen && (
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1976d2' }}>
+              Notifikationer
+            </Typography>
+          )}
+          <IconButton
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            sx={{
+              color: '#666',
+              '&:hover': { bgcolor: '#f5f5f5' }
+            }}
+          >
+            {sidebarOpen ? (
+              <ChevronLeftIcon />
+            ) : (
+              <Badge 
+                badgeContent={invites.length + timeProposals.length} 
+                color="error"
+                sx={{
+                  '& .MuiBadge-badge': {
+                    fontSize: '10px',
+                    minWidth: '16px',
+                    height: '16px'
+                  }
+                }}
+              >
+                <NotificationsIcon sx={{ fontSize: 28 }} />
+              </Badge>
+            )}
+          </IconButton>
+        </Box>
+
+        {/* Sidebar content */}
+        {sidebarOpen && (
+          <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* Tabs */}
+            <Box sx={{ display: 'flex', borderBottom: '1px solid #e0e3e7' }}>
+              <Button
+                onClick={() => setSidebarTab('invitations')}
+                sx={{
+                  flex: 1,
+                  py: 2,
+                  borderRadius: 0,
+                  borderBottom: sidebarTab === 'invitations' ? '2px solid #1976d2' : 'none',
+                  color: sidebarTab === 'invitations' ? '#1976d2' : '#666',
+                  fontWeight: sidebarTab === 'invitations' ? 600 : 400,
+                  fontSize: 12
+                }}
+                startIcon={<GroupIcon />}
+              >
+                Inbjudningar
+              </Button>
+              <Button
+                onClick={() => setSidebarTab('proposals')}
+                sx={{
+                  flex: 1,
+                  py: 2,
+                  borderRadius: 0,
+                  borderBottom: sidebarTab === 'proposals' ? '2px solid #1976d2' : 'none',
+                  color: sidebarTab === 'proposals' ? '#1976d2' : '#666',
+                  fontWeight: sidebarTab === 'proposals' ? 600 : 400,
+                  fontSize: 12
+                }}
+                startIcon={<EventIcon />}
+              >
+                Tidsförslag
+              </Button>
+            </Box>
+
+            {/* Content */}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+              {sidebarTab === 'invitations' ? (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
+                    Inbjudningar till kalenderjämförelse
+                  </Typography>
+                  {invites.length === 0 ? (
+                    <Typography variant="body2" sx={{ color: '#999', textAlign: 'center', mt: 4 }}>
+                      Inga inbjudningar just nu
+                    </Typography>
+                  ) : (
+                    invites.map((invitation) => (
+                      <Paper
+                        key={invitation.id}
+                        sx={{
+                          p: 2,
+                          mb: 2,
+                          borderRadius: 2,
+                          border: '1px solid #e0e3e7',
+                          '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                          {invitation.fromEmail}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', fontWeight: 600 }}>
+                          {invitation.groupName}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
+                          Vill jämföra kalendrar med dig
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#999', fontSize: 11 }}>
+                          {new Date(invitation.createdAt).toLocaleDateString()}
+                        </Typography>
+                        <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                          <Button 
+                            size="small" 
+                            variant="contained" 
+                            sx={{ fontSize: 12 }}
+                            onClick={() => window.location.href = `/?group=${invitation.groupId}&invitee=${invitation.inviteeId}`}
+                          >
+                            Gå med
+                          </Button>
+                          <Button 
+                            size="small" 
+                            variant="outlined" 
+                            sx={{ fontSize: 12 }}
+                            onClick={() => handleInviteResponse(invitation.groupId, invitation.inviteeId, 'decline')}
+                          >
+                            Neka
+                          </Button>
+                        </Box>
+                      </Paper>
+                    ))
+                  )}
+                </Box>
+              ) : (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
+                    Tidsförslag du har fått
+                  </Typography>
+                  {timeProposals.length === 0 ? (
+                    <Typography variant="body2" sx={{ color: '#999', textAlign: 'center', mt: 4 }}>
+                      Inga tidsförslag just nu
+                    </Typography>
+                  ) : (
+                    timeProposals.map((proposal) => (
+                      <Paper
+                        key={proposal.id}
+                        sx={{
+                          p: 2,
+                          mb: 2,
+                          borderRadius: 2,
+                          border: '1px solid #e0e3e7',
+                          '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                          {proposal.title || 'Mötesförslag'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#666', display: 'block' }}>
+                          Från: {proposal.fromEmail}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block' }}>
+                          {new Date(proposal.start).toLocaleDateString()} {new Date(proposal.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+                        <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                          <Button 
+                            size="small" 
+                            variant="contained" 
+                            sx={{ fontSize: 12 }}
+                            onClick={() => handleProposalResponse(proposal.id, 'accepted')}
+                          >
+                            Acceptera
+                          </Button>
+                          <Button 
+                            size="small" 
+                            variant="outlined" 
+                            sx={{ fontSize: 12 }}
+                            onClick={() => handleProposalResponse(proposal.id, 'declined')}
+                          >
+                            Neka
+                          </Button>
+                        </Box>
+                      </Paper>
+                    ))
+                  )}
+                </Box>
+              )}
+            </Box>
+          </Box>
+        )}
+      </Box>
+
+      {/* Toast-meddelanden */}
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={4000}
+        onClose={() => setToast({ ...toast, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setToast({ ...toast, open: false })}
+          severity={toast.severity}
+          sx={{ width: '100%', borderRadius: 2 }}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
     </>
   );
 }
