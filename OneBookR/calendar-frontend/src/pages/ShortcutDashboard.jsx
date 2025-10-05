@@ -216,7 +216,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
-                onClick={() => window.location.href = '/compare'}>
+                onClick={() => onNavigateToMeeting('1v1')}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <PersonIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
@@ -240,7 +240,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
-                onClick={() => window.location.href = '/compare'}>
+                onClick={() => onNavigateToMeeting('group')}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <GroupIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
