@@ -113,38 +113,66 @@ const Task = ({ user, onBack }) => {
     <>
       <InvitationSidebar user={user} />
       
-      {/* Header with back button and logout */}
-      <Box sx={{ position: 'fixed', top: 80, left: 20, right: 20, zIndex: 1000, display: 'flex', justifyContent: 'space-between' }}>
-        <Button
-          variant="outlined"
-          startIcon={<ArrowBackIcon />}
-          onClick={() => window.location.reload()}
-          sx={{ bgcolor: 'white' }}
-        >
-          Tillbaka
-        </Button>
+      {/* BookR Banner with Navigation */}
+      <Box sx={{ 
+        position: 'fixed', 
+        top: 80, 
+        left: 0, 
+        right: 0, 
+        height: 60,
+        bgcolor: 'white', 
+        borderBottom: '1px solid #e0e3e7',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        px: 3
+      }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, color: '#635bff', mr: 4 }}>
+          BookR
+        </Typography>
+        
+        <Box sx={{ display: 'flex', gap: 3, flex: 1 }}>
+          <Button 
+            onClick={() => window.location.reload()}
+            sx={{ color: '#666', '&:hover': { color: '#635bff' } }}
+          >
+            Översikt
+          </Button>
+          <Button 
+            sx={{ color: '#666', '&:hover': { color: '#635bff' } }}
+          >
+            1v1 Meeting
+          </Button>
+          <Button 
+            sx={{ color: '#666', '&:hover': { color: '#635bff' } }}
+          >
+            Group Meeting
+          </Button>
+        </Box>
+        
         <Button
           variant="outlined"
           startIcon={<LogoutIcon />}
           onClick={() => window.location.href = 'https://www.onebookr.se/auth/logout'}
-          sx={{ bgcolor: 'white' }}
+          size="small"
         >
           Logga ut
         </Button>
       </Box>
 
-      <Box sx={{ display: 'flex', height: 'calc(100vh - 80px)', mt: 10 }}>
+      <Box sx={{ display: 'flex', height: 'calc(100vh - 140px)', mt: 17.5 }}>
         {/* Left sidebar for inputs */}
         <Box sx={{ 
-          width: 400, 
+          width: 380, 
           flexShrink: 0, 
-          bgcolor: '#f8f9fa', 
-          borderRight: '1px solid #e0e3e7',
-          overflow: 'auto'
+          bgcolor: '#fafbfc', 
+          borderRight: '1px solid #e8eaed',
+          overflow: 'auto',
+          boxShadow: '2px 0 8px rgba(60,64,67,.08)'
         }}>
           <Box sx={{ p: 3 }}>
-            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
-              Skapa uppgift
+            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1a73e8' }}>
+              📅 Skapa uppgift
             </Typography>
 
             <TextField
@@ -329,33 +357,43 @@ const Task = ({ user, onBack }) => {
         </Box>
         
         {/* Full-width calendar */}
-        <Box sx={{ flex: 1, p: 3, bgcolor: 'white' }}>
-          <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
-            Din kalender med föreslagna tider
-          </Typography>
+        <Box sx={{ flex: 1, bgcolor: '#f8f9fa', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ p: 3, bgcolor: 'white', borderBottom: '1px solid #e8eaed' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#202124' }}>
+              📅 Din kalender med föreslagna tider
+            </Typography>
+          </Box>
           
           <Box sx={{ 
-            height: 'calc(100vh - 200px)',
+            flex: 1,
+            p: 3,
             '& .rbc-calendar': {
-              borderRadius: 2,
+              backgroundColor: 'white',
+              borderRadius: 3,
               overflow: 'hidden',
-              border: '1px solid #e0e3e7'
+              border: '1px solid #e8eaed',
+              boxShadow: '0 1px 3px rgba(60,64,67,.08)'
             },
             '& .rbc-header': {
               backgroundColor: '#f8f9fa',
-              borderBottom: '1px solid #e0e3e7',
-              fontWeight: 600,
-              padding: '12px 8px'
+              borderBottom: '1px solid #e8eaed',
+              fontWeight: 500,
+              padding: '12px 8px',
+              color: '#5f6368'
             },
             '& .rbc-event': {
-              borderRadius: 1,
-              border: 'none'
+              borderRadius: 2,
+              border: 'none',
+              fontWeight: 500
             },
             '& .rbc-time-view': {
-              border: '1px solid #e0e3e7'
+              border: 'none'
             },
             '& .rbc-time-header': {
-              borderBottom: '1px solid #e0e3e7'
+              borderBottom: '1px solid #e8eaed'
+            },
+            '& .rbc-time-content': {
+              borderTop: 'none'
             }
           }}>
             <Calendar
