@@ -52,34 +52,25 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     if (response === 'accept') {
       window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
     } else {
-      // För decline, markera som responded i databasen
-      fetch(`https://www.onebookr.se/api/invitations/${inviteeId}/decline`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      .then(res => {
-        if (res.ok) {
+      // Använd samma API som CompareCalendar
+      const invitation = invites.find(inv => inv.inviteeId === inviteeId);
+      if (invitation) {
+        fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ response: 'decline' })
+        })
+        .then(res => {
+          if (res.ok) {
+            setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+          }
+        })
+        .catch(err => {
+          console.log('Failed to decline invite:', err);
+          // Ta bort lokalt som fallback
           setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
-        } else {
-          console.log('Failed to decline invite, trying alternative endpoint');
-          // Fallback: prova att uppdatera responded status direkt
-          return fetch(`https://www.onebookr.se/api/invitations/update`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ inviteeId, responded: true, response: 'decline' })
-          });
-        }
-      })
-      .then(res => {
-        if (res && res.ok) {
-          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
-        }
-      })
-      .catch(err => {
-        console.log('Failed to decline invite:', err);
-        // Som sista utväg, ta bara bort lokalt
-        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
-      });
+        });
+      }
     }
   };
 
