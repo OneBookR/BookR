@@ -52,18 +52,34 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     if (response === 'accept') {
       window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
     } else {
-      // För decline, uppdatera invitation som responded
-      fetch(`https://www.onebookr.se/api/invitation/${inviteeId}/respond`, {
+      // För decline, markera som responded i databasen
+      fetch(`https://www.onebookr.se/api/invitations/${inviteeId}/decline`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response: 'decline' })
+        headers: { 'Content-Type': 'application/json' }
       })
-.then(res => {
+      .then(res => {
         if (res.ok) {
+          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+        } else {
+          console.log('Failed to decline invite, trying alternative endpoint');
+          // Fallback: prova att uppdatera responded status direkt
+          return fetch(`https://www.onebookr.se/api/invitations/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inviteeId, responded: true, response: 'decline' })
+          });
+        }
+      })
+      .then(res => {
+        if (res && res.ok) {
           setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
         }
       })
-      .catch(err => console.log('Failed to decline invite:', err));
+      .catch(err => {
+        console.log('Failed to decline invite:', err);
+        // Som sista utväg, ta bara bort lokalt
+        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+      });
     }
   };
 
@@ -164,7 +180,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
-                onClick={() => onNavigateToMeeting('1v1')}>
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onNavigateToMeeting('1v1');
+                }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <PersonIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
@@ -188,7 +208,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
-                onClick={() => onNavigateToMeeting('group')}>
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onNavigateToMeeting('group');
+                }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <GroupIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
@@ -212,7 +236,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               boxShadow: '0 12px 50px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
             }
           }} 
-                onClick={() => onNavigateToMeeting('task')}>
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onNavigateToMeeting('task');
+                }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2, textAlign: 'center', p: 3 }}>
               <TaskIcon sx={{ fontSize: 48, color: '#635bff' }} />
               <Box>
