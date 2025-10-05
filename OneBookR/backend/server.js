@@ -1516,65 +1516,99 @@ app.post('/api/task/schedule', async (req, res) => {
   }
 });
 
-// Funktion för att hitta lediga slots för uppgifter
+// ASAP Task Scheduling - Aggressiv algoritm för snabbast möjliga slutförande
 function findTaskSlots(busyTimes, totalHours, startDate, endDate, workStartHour = 9, workEndHour = 18, minSessionHours = 1, maxSessionHours = 4, breakMinutes = 15) {
   const slots = [];
-  
   let remainingHours = totalHours;
-  const currentDate = new Date(startDate);
-  let lastSlotEndTime = null;
   
-  while (remainingHours > 0 && currentDate < endDate) {
+  // Samla ALLA lediga slots från alla dagar först
+  const allFreeSlots = [];
+  const currentDate = new Date(startDate);
+  
+  while (currentDate < endDate) {
     // Hoppa över helger
     if (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
       currentDate.setDate(currentDate.getDate() + 1);
       continue;
     }
     
-    // Skapa arbetstid för dagen
     const dayStart = new Date(currentDate);
     dayStart.setHours(workStartHour, 0, 0, 0);
     const dayEnd = new Date(currentDate);
     dayEnd.setHours(workEndHour, 0, 0, 0);
     
-    // Hitta lediga perioder under dagen
     const dayFreeSlots = findFreeSlotsInDay(busyTimes, dayStart, dayEnd);
     
-    // Allokera tid från lediga slots - börja från början av varje ledig period
-    for (const freeSlot of dayFreeSlots) {
-      if (remainingHours <= 0) break;
-      
-      let sessionStart = freeSlot.start;
-      
-      // Kontrollera om vi behöver rast från föregående session (samma dag)
-      if (lastSlotEndTime && 
-          new Date(lastSlotEndTime).toDateString() === new Date(sessionStart).toDateString() &&
-          sessionStart < lastSlotEndTime + (breakMinutes * 60 * 1000)) {
-        sessionStart = lastSlotEndTime + (breakMinutes * 60 * 1000);
-      }
-      
-      // Kontrollera om det fortfarande finns tid efter eventuell rast
-      if (sessionStart >= freeSlot.end) continue;
-      
-      const availableDurationMs = freeSlot.end - sessionStart;
-      const availableDurationHours = availableDurationMs / (1000 * 60 * 60);
-      
-      if (availableDurationHours >= minSessionHours) {
-        const hoursToUse = Math.min(remainingHours, availableDurationHours, maxSessionHours);
-        const slotEndTime = sessionStart + (hoursToUse * 60 * 60 * 1000);
-        
-        slots.push({
-          start: new Date(sessionStart).toISOString(),
-          end: new Date(slotEndTime).toISOString(),
-          duration: hoursToUse
+    // Lägg till alla lediga slots med datum-info
+    dayFreeSlots.forEach(slot => {
+      const durationHours = (slot.end - slot.start) / (1000 * 60 * 60);
+      if (durationHours >= minSessionHours) {
+        allFreeSlots.push({
+          start: slot.start,
+          end: slot.end,
+          duration: durationHours,
+          date: new Date(currentDate).toDateString()
         });
-        
-        remainingHours -= hoursToUse;
-        lastSlotEndTime = slotEndTime;
+      }
+    });
+    
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  // Sortera slots kronologiskt för ASAP-optimering
+  allFreeSlots.sort((a, b) => a.start - b.start);
+  
+  // AGGRESSIV PACKNING: Använd varje slot maximalt
+  let lastSlotEndTime = null;
+  
+  for (const freeSlot of allFreeSlots) {
+    if (remainingHours <= 0) break;
+    
+    let sessionStart = freeSlot.start;
+    
+    // Lägg till rast endast om föregående session var samma dag
+    if (lastSlotEndTime && freeSlot.date === new Date(lastSlotEndTime).toDateString()) {
+      const minStartWithBreak = lastSlotEndTime + (breakMinutes * 60 * 1000);
+      if (sessionStart < minStartWithBreak) {
+        sessionStart = minStartWithBreak;
       }
     }
     
-    currentDate.setDate(currentDate.getDate() + 1);
+    // Kontrollera om vi fortfarande har tid efter rast
+    if (sessionStart >= freeSlot.end) continue;
+    
+    const availableDurationMs = freeSlot.end - sessionStart;
+    const availableDurationHours = availableDurationMs / (1000 * 60 * 60);
+    
+    if (availableDurationHours >= minSessionHours) {
+      // MAXIMAL ANVÄNDNING: Ta så mycket tid som möjligt
+      const hoursToUse = Math.min(remainingHours, availableDurationHours, maxSessionHours);
+      const slotEndTime = sessionStart + (hoursToUse * 60 * 60 * 1000);
+      
+      slots.push({
+        start: new Date(sessionStart).toISOString(),
+        end: new Date(slotEndTime).toISOString(),
+        duration: hoursToUse
+      });
+      
+      remainingHours -= hoursToUse;
+      lastSlotEndTime = slotEndTime;
+      
+      // EXTRA AGGRESSIV: Om vi kan få in mer tid i samma slot, gör det
+      if (remainingHours > 0 && availableDurationHours > hoursToUse) {
+        const extraTime = Math.min(remainingHours, availableDurationHours - hoursToUse);
+        if (extraTime >= 0.5) { // Minst 30 min extra
+          const extraEndTime = slotEndTime + (extraTime * 60 * 60 * 1000);
+          if (extraEndTime <= freeSlot.end) {
+            // Uppdatera befintlig slot istället för att skapa ny
+            slots[slots.length - 1].end = new Date(extraEndTime).toISOString();
+            slots[slots.length - 1].duration += extraTime;
+            remainingHours -= extraTime;
+            lastSlotEndTime = extraEndTime;
+          }
+        }
+      }
+    }
   }
   
   return slots;
