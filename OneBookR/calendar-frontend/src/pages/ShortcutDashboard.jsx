@@ -47,7 +47,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     }
 
     // Hämta tidsförslag (samma logik som CompareCalendar)
-    fetchTimeProposals();
+    if (user?.email) {
+      fetchTimeProposals();
+    }
   }, [user?.email]);
 
   const handleInviteResponse = (groupId, inviteeId, response) => {
@@ -87,15 +89,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         const allProposals = [];
         
         for (const invitation of invitationsData.invitations) {
-          if (invitation.accepted || invitation.responded) {
-            const suggestionsResponse = await fetch(`https://www.onebookr.se/api/group/${invitation.groupId}/suggestions`);
-            if (suggestionsResponse.ok) {
-              const suggestionsData = await suggestionsResponse.json();
-              const userSuggestions = suggestionsData.suggestions.filter(s => 
-                !s.votes[userEmail] && !s.finalized
-              );
-              allProposals.push(...userSuggestions.map(s => ({...s, groupId: invitation.groupId})));
-            }
+          const suggestionsResponse = await fetch(`https://www.onebookr.se/api/group/${invitation.groupId}/suggestions`);
+          if (suggestionsResponse.ok) {
+            const suggestionsData = await suggestionsResponse.json();
+            const userSuggestions = suggestionsData.suggestions.filter(s => 
+              !s.votes[userEmail] && !s.finalized
+            );
+            allProposals.push(...userSuggestions.map(s => ({...s, groupId: invitation.groupId})));
           }
         }
         
@@ -141,7 +141,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
   return (
     <>
-      <InvitationSidebar user={user} />
+
       <Button
         variant="outlined"
         startIcon={<LogoutIcon />}
@@ -533,9 +533,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       <Box
         sx={{
           position: 'fixed',
-          top: 112,
+          top: 0,
           right: 0,
-          height: 'calc(100vh - 112px)',
+          height: '100vh',
           width: sidebarOpen ? 400 : 60,
           backgroundColor: '#fff',
           boxShadow: '-2px 0 8px rgba(0,0,0,0.1)',
