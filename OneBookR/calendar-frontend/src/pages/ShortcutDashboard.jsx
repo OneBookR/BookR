@@ -13,6 +13,7 @@ import InvitationSidebar from './InvitationSidebar.jsx';
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [invites, setInvites] = useState([]);
   const [upcomingMeetings, setUpcomingMeetings] = useState([]);
+  const [timeProposals, setTimeProposals] = useState([]);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -23,15 +24,28 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     .then(data => setInvites((data.invitations || []).filter(inv => !inv.responded)))
     .catch(err => console.log('Failed to fetch invites:', err));
 
-    // Hämta upcoming meetings från Google Calendar
+    // Hämta upcoming meetings från Google Calendar (endast möten med Google Meet länk)
     if (user.accessToken) {
-      fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=5&singleEvents=true&orderBy=startTime`, {
+      fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=10&singleEvents=true&orderBy=startTime`, {
         headers: { 'Authorization': `Bearer ${user.accessToken}` }
       })
       .then(res => res.json())
-      .then(data => setUpcomingMeetings(data.items || []))
+      .then(data => {
+        const meetings = (data.items || []).filter(event => 
+          event.hangoutLink || 
+          (event.conferenceData && event.conferenceData.entryPoints) ||
+          (event.location && event.location.includes('meet.google.com'))
+        );
+        setUpcomingMeetings(meetings);
+      })
       .catch(err => console.log('Failed to fetch calendar events:', err));
     }
+
+    // Hämta tidsförslag
+    fetch(`https://www.onebookr.se/api/time-proposals/${encodeURIComponent(user.email)}`)
+    .then(res => res.json())
+    .then(data => setTimeProposals(data.proposals || []))
+    .catch(err => console.log('Failed to fetch time proposals:', err));
   }, [user?.email]);
 
   const handleInviteResponse = (groupId, inviteeId, response) => {
@@ -44,8 +58,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ response: 'decline' })
       })
-      .then(() => {
-        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+.then(res => {
+        if (res.ok) {
+          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+        }
       })
       .catch(err => console.log('Failed to decline invite:', err));
     }
@@ -194,10 +210,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         </Grid>
       </Grid>
 
-      {/* Invites och Upcoming Meetings med förbättrad design */}
+      {/* Invites, Time Proposals och Upcoming Meetings med förbättrad design */}
       <Grid container spacing={{ xs: 3, md: 4 }} sx={{ px: { xs: 1, sm: 0 } }}>
         {/* Invites sektion */}
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={4}>
           <Typography variant="h5" sx={{ 
             mb: 3, 
             fontWeight: 600,
@@ -289,8 +305,67 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           )}
         </Grid>
 
+        {/* Time Proposals sektion */}
+        <Grid item xs={12} md={4}>
+          <Typography variant="h5" sx={{ 
+            mb: 3, 
+            fontWeight: 600,
+            color: '#0a2540',
+            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
+          }}>Tidsförslag</Typography>
+          {timeProposals.length === 0 ? (
+            <Card sx={{ 
+              p: 3, 
+              textAlign: 'center', 
+              background: 'rgba(255,255,255,0.98)',
+              borderRadius: 3,
+              boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+              border: '1.5px solid #e3e8ee'
+            }}>
+              <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga tidsförslag just nu</Typography>
+            </Card>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {timeProposals.map((proposal, index) => (
+                <Card key={index} sx={{ 
+                  p: 3, 
+                  borderRadius: 3,
+                  background: 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                  border: '1px solid rgba(255,193,7,0.2)',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
+                  }
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                    <AccessTimeIcon sx={{ color: '#f57c00', mt: 0.5 }} />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        {proposal.title || 'Tidsförslag'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        {formatDateTime(proposal.startTime)} - {formatDateTime(proposal.endTime)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Från: {proposal.fromEmail}
+                      </Typography>
+                    </Box>
+                    <Chip 
+                      label="Nytt" 
+                      size="small" 
+                      sx={{ bgcolor: '#ff9800', color: 'white' }}
+                    />
+                  </Box>
+                </Card>
+              ))}
+            </Box>
+          )}
+        </Grid>
+
         {/* Upcoming Meetings sektion */}
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={4}>
           <Typography variant="h5" sx={{ 
             mb: 3, 
             fontWeight: 600,
