@@ -107,6 +107,44 @@ const Task = ({ user, onBack }) => {
     }
   };
 
+  const addToGoogleCalendar = async () => {
+    if (taskSlots.length === 0) return;
+    
+    setLoading(true);
+    try {
+      for (const slot of taskSlots) {
+        const event = {
+          summary: slot.title,
+          description: taskData.description || `Arbete med uppgift: ${taskData.name}`,
+          start: {
+            dateTime: slot.start.toISOString(),
+            timeZone: 'Europe/Stockholm'
+          },
+          end: {
+            dateTime: slot.end.toISOString(),
+            timeZone: 'Europe/Stockholm'
+          }
+        };
+
+        await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${user.accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(event)
+        });
+      }
+      
+      setMessage(`${taskSlots.length} händelser har lagts till i din Google Kalender!`);
+      loadCalendarEvents(); // Uppdatera kalendern
+    } catch (error) {
+      setMessage('Fel vid tillägg i kalender: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const allEvents = [...calendarEvents, ...taskSlots];
 
   return (
@@ -334,6 +372,7 @@ const Task = ({ user, onBack }) => {
                 borderRadius: 2,
                 background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
                 fontWeight: 600,
+                mb: taskSlots.length > 0 ? 2 : 0,
                 '&:hover': {
                   background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
                 }
@@ -341,6 +380,29 @@ const Task = ({ user, onBack }) => {
             >
               {loading ? 'Söker tid...' : 'Hitta tid'}
             </Button>
+            
+            {taskSlots.length > 0 && (
+              <Button
+                variant="outlined"
+                fullWidth
+                onClick={addToGoogleCalendar}
+                disabled={loading}
+                sx={{ 
+                  py: 1.5,
+                  borderRadius: 2,
+                  borderColor: '#4caf50',
+                  color: '#4caf50',
+                  fontWeight: 600,
+                  '&:hover': {
+                    borderColor: '#45a049',
+                    color: '#45a049',
+                    bgcolor: 'rgba(76, 175, 80, 0.05)'
+                  }
+                }}
+              >
+                📅 Lägg till i Kalender
+              </Button>
+            )}
             
             {message && (
               <Alert 
