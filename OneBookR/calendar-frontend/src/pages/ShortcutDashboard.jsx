@@ -122,7 +122,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       <Grid container spacing={{ xs: 3, md: 4 }} sx={{ mb: 6, px: { xs: 1, sm: 0 } }}>
         <Grid item xs={12} md={4}>
           <Card sx={{ 
-            height: 160, 
+            height: 180, 
             cursor: 'pointer', 
             background: 'rgba(255,255,255,0.98)',
             borderRadius: 3,
