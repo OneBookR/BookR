@@ -585,11 +585,8 @@ function App() {
   // Kontrollera om vi ska visa dashboard direkt (t.ex. vid group-inbjudningar)
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
-  const shouldShowDashboard = groupId || currentView === 'dashboard';
-
-  // Kontrollera om vi ska visa task-vy
-  const urlParams = new URLSearchParams(window.location.search);
   const viewParam = urlParams.get('view');
+  const shouldShowDashboard = groupId || currentView === 'dashboard';
   const shouldShowTask = viewParam === 'task';
 
   return (

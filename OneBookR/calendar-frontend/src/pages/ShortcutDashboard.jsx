@@ -139,6 +139,24 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     return date.toLocaleDateString('sv-SE') + ' ' + date.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const getTimeUntilMeeting = (startTime) => {
+    if (!startTime) return '';
+    const now = new Date();
+    const meetingStart = new Date(startTime.dateTime || startTime);
+    const diffMs = now - meetingStart;
+    const diffMinutes = Math.round(diffMs / (1000 * 60));
+    
+    if (diffMinutes > 0) {
+      // Mötet har redan startat - visa hur många minuter man är sen
+      return `(-${diffMinutes} min)`;
+    } else if (diffMinutes === 0) {
+      return '(Nu)';
+    } else {
+      // Mötet har inte startat än - visa hur många minuter kvar
+      return `(${Math.abs(diffMinutes)} min)`;
+    }
+  };
+
   return (
     <>
 
@@ -280,251 +298,210 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       <Grid container spacing={{ xs: 3, md: 4 }} sx={{ px: { xs: 1, sm: 0 } }}>
         {/* Invites sektion */}
         <Grid item xs={12} md={4}>
-          <Typography variant="h5" sx={{ 
-            mb: 3, 
-            fontWeight: 600,
-            color: '#0a2540',
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
-          }}>Inbjudningar</Typography>
-          {invites.length === 0 ? (
-            <Card sx={{ 
-              p: 3, 
-              textAlign: 'center', 
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 3,
-              boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-              border: '1.5px solid #e3e8ee'
-            }}>
-              <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga inbjudningar just nu</Typography>
-            </Card>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {invites.map((invite, index) => (
-                <Card key={index} sx={{ 
-                  p: 3, 
-                  borderRadius: 3,
-                  background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
-                  }
-                }}>
-                  <Box>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                      Inbjudan från {invite.fromEmail}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      Kalenderjämförelse • {new Date(invite.createdAt).toLocaleDateString()}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: 13 }}>
-                      {invite.fromEmail}
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button 
-                        size="small" 
-                        variant="outlined" 
-                        startIcon={<CloseIcon />}
-                        onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')}
-                        sx={{
-                          borderColor: '#635bff',
-                          color: '#635bff',
-                          borderRadius: 2,
-                          fontWeight: 600,
-                          '&:hover': {
-                            borderColor: '#7a5af8',
-                            color: '#7a5af8',
-                            bgcolor: 'rgba(99,91,255,0.05)'
-                          }
-                        }}
-                      >
-                        Neka
-                      </Button>
-                      <Button 
-                        size="small" 
-                        variant="contained" 
-                        startIcon={<CheckIcon />}
-                        onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')}
-                        sx={{
-                          background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-                          color: 'white',
-                          borderRadius: 2,
-                          fontWeight: 600,
-                          boxShadow: '0 2px 16px 0 rgba(99,91,255,0.13)',
-                          '&:hover': {
-                            background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
-                            boxShadow: '0 0 0 4px #e9e5ff, 0 8px 32px 0 rgba(99,91,255,0.18)'
-                          }
-                        }}
-                      >
-                        Acceptera
-                      </Button>
-                    </Box>
-                  </Box>
-                </Card>
-              ))}
+          <Card sx={{ 
+            height: 450,
+            background: 'rgba(255,255,255,0.98)',
+            borderRadius: 3,
+            boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+            border: '1.5px solid #e3e8ee',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <Box sx={{ p: 3, borderBottom: '1px solid #e3e8ee' }}>
+              <Typography variant="h5" sx={{ 
+                fontWeight: 600,
+                color: '#0a2540',
+                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
+              }}>Inbjudningar</Typography>
             </Box>
-          )}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+              {invites.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga inbjudningar just nu</Typography>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {invites.map((invite, index) => (
+                    <Card key={index} sx={{ 
+                      p: 2, 
+                      borderRadius: 2,
+                      background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                      }
+                    }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                        {invite.fromEmail}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
+                        {new Date(invite.createdAt).toLocaleDateString()}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button 
+                          size="small" 
+                          variant="outlined" 
+                          onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')}
+                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                        >
+                          Neka
+                        </Button>
+                        <Button 
+                          size="small" 
+                          variant="contained" 
+                          onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')}
+                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                        >
+                          Acceptera
+                        </Button>
+                      </Box>
+                    </Card>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          </Card>
         </Grid>
 
         {/* Time Proposals sektion */}
         <Grid item xs={12} md={4}>
-          <Typography variant="h5" sx={{ 
-            mb: 3, 
-            fontWeight: 600,
-            color: '#0a2540',
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
-          }}>Tidsförslag</Typography>
-          {timeProposals.length === 0 ? (
-            <Card sx={{ 
-              p: 3, 
-              textAlign: 'center', 
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 3,
-              boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-              border: '1.5px solid #e3e8ee'
-            }}>
-              <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga tidsförslag just nu</Typography>
-            </Card>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {timeProposals.map((proposal, index) => (
-                <Card key={index} sx={{ 
-                  p: 3, 
-                  borderRadius: 3,
-                  background: 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-                  border: '1px solid rgba(255,193,7,0.2)',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
-                  }
-                }}>
-                  <Box>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                      {proposal.title || 'Tidsförslag'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      {formatDateTime(proposal.startTime)} - {formatDateTime(proposal.endTime)}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: 13 }}>
-                      {proposal.fromEmail}
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button 
-                        size="small" 
-                        variant="outlined" 
-                        startIcon={<CloseIcon />}
-                        onClick={() => handleProposalResponse(proposal.id, 'decline')}
-                        sx={{
-                          borderColor: '#f57c00',
-                          color: '#f57c00',
-                          borderRadius: 2,
-                          fontWeight: 600,
-                          '&:hover': {
-                            borderColor: '#ef6c00',
-                            color: '#ef6c00',
-                            bgcolor: 'rgba(245, 124, 0, 0.05)'
-                          }
-                        }}
-                      >
-                        Neka
-                      </Button>
-                      <Button 
-                        size="small" 
-                        variant="contained" 
-                        startIcon={<CheckIcon />}
-                        onClick={() => handleProposalResponse(proposal.id, 'accept')}
-                        sx={{
-                          background: 'linear-gradient(90deg, #f57c00 0%, #ff9800 100%)',
-                          color: 'white',
-                          borderRadius: 2,
-                          fontWeight: 600,
-                          '&:hover': {
-                            background: 'linear-gradient(90deg, #ef6c00 0%, #f57c00 100%)'
-                          }
-                        }}
-                      >
-                        Acceptera
-                      </Button>
-                    </Box>
-                  </Box>
-                </Card>
-              ))}
+          <Card sx={{ 
+            height: 450,
+            background: 'rgba(255,255,255,0.98)',
+            borderRadius: 3,
+            boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+            border: '1.5px solid #e3e8ee',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <Box sx={{ p: 3, borderBottom: '1px solid #e3e8ee' }}>
+              <Typography variant="h5" sx={{ 
+                fontWeight: 600,
+                color: '#0a2540',
+                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
+              }}>Tidsförslag</Typography>
             </Box>
-          )}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+              {timeProposals.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga tidsförslag just nu</Typography>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {timeProposals.map((proposal, index) => (
+                    <Card key={index} sx={{ 
+                      p: 2, 
+                      borderRadius: 2,
+                      background: 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                      border: '1px solid rgba(255,193,7,0.2)',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                      }
+                    }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                        {proposal.title || 'Tidsförslag'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
+                        {formatDateTime(proposal.startTime)}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
+                        {proposal.fromEmail}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button 
+                          size="small" 
+                          variant="outlined" 
+                          onClick={() => handleProposalResponse(proposal.id, 'decline')}
+                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                        >
+                          Neka
+                        </Button>
+                        <Button 
+                          size="small" 
+                          variant="contained" 
+                          onClick={() => handleProposalResponse(proposal.id, 'accept')}
+                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                        >
+                          Acceptera
+                        </Button>
+                      </Box>
+                    </Card>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          </Card>
         </Grid>
 
         {/* Upcoming Meetings sektion */}
         <Grid item xs={12} md={4}>
-          <Typography variant="h5" sx={{ 
-            mb: 3, 
-            fontWeight: 600,
-            color: '#0a2540',
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
-          }}>Kommande möten</Typography>
-          {upcomingMeetings.length === 0 ? (
-            <Card sx={{ 
-              p: 3, 
-              textAlign: 'center', 
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 3,
-              boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-              border: '1.5px solid #e3e8ee'
-            }}>
-              <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga kommande möten</Typography>
-            </Card>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {upcomingMeetings.slice(0, 3).map((meeting) => (
-                <Card key={meeting.id} sx={{ 
-                  p: 3, 
-                  borderRadius: 3,
-                  background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
-                  }
-                }}>
-                  <Box>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                      {meeting.summary || 'Untitled Meeting'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      {formatDateTime(meeting.start)}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: 13 }}>
-                      {meeting.organizer?.displayName || meeting.organizer?.email || 'Unknown organizer'}
-                    </Typography>
-                    {(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri) && (
-                      <Button 
-                        size="small" 
-                        variant="contained" 
-                        onClick={() => window.open(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri, '_blank')}
-                        sx={{
-                          background: 'linear-gradient(90deg, #1976d2 0%, #1565c0 100%)',
-                          color: 'white',
-                          borderRadius: 2,
-                          fontWeight: 600,
-                          '&:hover': {
-                            background: 'linear-gradient(90deg, #1565c0 0%, #0d47a1 100%)'
-                          }
-                        }}
-                      >
-                        Gå med i mötet
-                      </Button>
-                    )}
-                  </Box>
-                </Card>
-              ))}
+          <Card sx={{ 
+            height: 450,
+            background: 'rgba(255,255,255,0.98)',
+            borderRadius: 3,
+            boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+            border: '1.5px solid #e3e8ee',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <Box sx={{ p: 3, borderBottom: '1px solid #e3e8ee' }}>
+              <Typography variant="h5" sx={{ 
+                fontWeight: 600,
+                color: '#0a2540',
+                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
+              }}>Kommande möten</Typography>
             </Box>
-          )}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+              {upcomingMeetings.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga kommande möten</Typography>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {upcomingMeetings.slice(0, 5).map((meeting) => (
+                    <Card key={meeting.id} sx={{ 
+                      p: 2, 
+                      borderRadius: 2,
+                      background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                      }
+                    }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                        {meeting.summary || 'Untitled Meeting'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
+                        {formatDateTime(meeting.start)} {getTimeUntilMeeting(meeting.start)}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
+                        {meeting.organizer?.displayName || meeting.organizer?.email || 'Unknown organizer'}
+                      </Typography>
+                      {(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri) && (
+                        <Button 
+                          size="small" 
+                          variant="contained" 
+                          onClick={() => window.open(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri, '_blank')}
+                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                        >
+                          Gå med i mötet
+                        </Button>
+                      )}
+                    </Card>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          </Card>
         </Grid>
       </Grid>
       </Container>
