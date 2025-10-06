@@ -2262,284 +2262,122 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           />
         </Paper>
       </div>
-      {/* Sidebar */}
-      <Box
+      {/* Floating Notification Icon */}
+      <IconButton
+        onClick={() => setSidebarOpen(!sidebarOpen)}
         sx={{
           position: 'fixed',
-          top: 112,
-          right: 0,
-          height: 'calc(100vh - 112px)',
-          width: sidebarOpen ? (isMobile ? '100vw' : 480) : 60,
-          backgroundColor: theme.colors.bg,
-          boxShadow: theme.isDark ? '-2px 0 8px rgba(0,0,0,0.3)' : '-2px 0 8px rgba(0,0,0,0.1)',
-          border: `1px solid ${theme.colors.border}`,
-          transition: 'all 0.3s ease',
+          top: '50%',
+          right: 20,
+          transform: 'translateY(-50%)',
+          width: 60,
+          height: 60,
+          backgroundColor: '#635bff',
+          color: 'white',
+          boxShadow: '0 4px 20px rgba(99, 91, 255, 0.3)',
           zIndex: 1200,
-          display: 'flex',
-          flexDirection: 'column'
+          '&:hover': {
+            backgroundColor: '#7a5af8',
+            boxShadow: '0 6px 25px rgba(99, 91, 255, 0.4)',
+            transform: 'translateY(-50%) scale(1.1)'
+          },
+          transition: 'all 0.3s ease'
         }}
       >
-        {/* Sidebar toggle button */}
-        <Box
+        <Badge 
+          badgeContent={invitations.length + timeProposals.length} 
+          color="error"
           sx={{
-            display: 'flex',
-            flexDirection: sidebarOpen ? 'row' : 'column',
-            alignItems: 'center',
-            justifyContent: sidebarOpen ? 'space-between' : 'center',
-            p: sidebarOpen ? 2 : 1,
-            borderBottom: `1px solid ${theme.colors.border}`,
-            minHeight: sidebarOpen ? 64 : 'auto',
-            gap: sidebarOpen ? 0 : 1
+            '& .MuiBadge-badge': {
+              fontSize: '10px',
+              minWidth: '18px',
+              height: '18px',
+              top: -8,
+              right: -8
+            }
           }}
         >
-          {sidebarOpen && (
-            <Typography variant="h6" sx={{ fontWeight: 600, color: theme.colors.primary }}>
-              {sidebarMode === 'contacts' ? 'Kontakter' : 'Notifikationer'}
-            </Typography>
-          )}
-          {(!sidebarOpen || sidebarMode === 'notifications') && (
-            <IconButton
-              onClick={() => {
-                if (sidebarOpen && sidebarMode === 'notifications') {
-                  setSidebarOpen(false);
-                } else {
-                  setSidebarOpen(true);
-                  setSidebarMode('notifications');
-                }
-              }}
-              sx={{
-                color: theme.colors.textSecondary,
-                '&:hover': { bgcolor: theme.colors.surface }
-              }}
-            >
-              {sidebarOpen && sidebarMode === 'notifications' ? (
-                <ChevronLeftIcon />
-              ) : (
-                <Badge 
-                  badgeContent={invitations.length + timeProposals.length} 
-                  color="error"
-                  sx={{
-                    '& .MuiBadge-badge': {
-                      fontSize: '10px',
-                      minWidth: '16px',
-                      height: '16px',
-                      animation: invitations.length + timeProposals.length > 0 ? 'pulse 2s infinite' : 'none',
-                      '@keyframes pulse': {
-                        '0%': { transform: 'scale(1)' },
-                        '50%': { transform: 'scale(1.2)' },
-                        '100%': { transform: 'scale(1)' }
-                      }
-                    }
-                  }}
-                >
-                  <NotificationsIcon sx={{ fontSize: 28 }} />
-                </Badge>
-              )}
-            </IconButton>
-          )}
-          
-          {(!sidebarOpen || sidebarMode === 'contacts') && (
-            <IconButton
-              onClick={() => {
-                if (sidebarOpen && sidebarMode === 'contacts') {
-                  setSidebarOpen(false);
-                } else {
-                  setSidebarOpen(true);
-                  setSidebarMode('contacts');
-                }
-              }}
-              sx={{
-                color: theme.colors.textSecondary,
-                '&:hover': { bgcolor: theme.colors.surface }
-              }}
-            >
-              {sidebarOpen && sidebarMode === 'contacts' ? (
-                <ChevronLeftIcon />
-              ) : (
-                <ContactsIcon sx={{ fontSize: 24 }} />
-              )}
-            </IconButton>
-          )}
-        </Box>
+          <NotificationsIcon sx={{ fontSize: 28 }} />
+        </Badge>
+      </IconButton>
 
-        {/* Sidebar content */}
-        {sidebarOpen && (
-          <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {/* Tabs - bara för notifikationer */}
-            {sidebarMode === 'notifications' && (
-              <Box sx={{ display: 'flex', borderBottom: `1px solid ${theme.colors.border}` }}>
-                <Button
-                  onClick={() => setSidebarTab('invitations')}
-                  sx={{
-                    flex: 1,
-                    py: 2,
-                    px: 1,
-                    borderRadius: 0,
-                    borderBottom: sidebarTab === 'invitations' ? `2px solid ${theme.colors.primary}` : 'none',
-                    color: sidebarTab === 'invitations' ? theme.colors.primary : theme.colors.textSecondary,
-                    fontWeight: sidebarTab === 'invitations' ? 600 : 400,
-                    fontSize: 12
-                  }}
-                  startIcon={<GroupIcon />}
-                >
-                  Inbjudningar
-                </Button>
-                <Button
-                  onClick={() => setSidebarTab('proposals')}
-                  sx={{
-                    flex: 1,
-                    py: 2,
-                    px: 1,
-                    borderRadius: 0,
-                    borderBottom: sidebarTab === 'proposals' ? `2px solid ${theme.colors.primary}` : 'none',
-                    color: sidebarTab === 'proposals' ? theme.colors.primary : theme.colors.textSecondary,
-                    fontWeight: sidebarTab === 'proposals' ? 600 : 400,
-                    fontSize: 12
-                  }}
-                  startIcon={<EventIcon />}
-                >
-                  Tidsförslag
-                </Button>
-              </Box>
-            )}
+      {/* Sidebar Modal */}
+      {sidebarOpen && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 1300,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          onClick={() => setSidebarOpen(false)}
+        >
+          <Box
+            sx={{
+              width: 400,
+              maxHeight: '80vh',
+              backgroundColor: '#fff',
+              borderRadius: 3,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <Box sx={{ p: 3, borderBottom: '1px solid #e0e3e7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6" sx={{ fontWeight: 600, color: '#1976d2' }}>
+                Notifikationer
+              </Typography>
+              <IconButton onClick={() => setSidebarOpen(false)} size="small">
+                <ChevronLeftIcon />
+              </IconButton>
+            </Box>
+
+            {/* Tabs */}
+            <Box sx={{ display: 'flex', borderBottom: '1px solid #e0e3e7' }}>
+              <Button
+                onClick={() => setSidebarTab('invitations')}
+                sx={{
+                  flex: 1,
+                  py: 2,
+                  borderRadius: 0,
+                  borderBottom: sidebarTab === 'invitations' ? '2px solid #1976d2' : 'none',
+                  color: sidebarTab === 'invitations' ? '#1976d2' : '#666',
+                  fontWeight: sidebarTab === 'invitations' ? 600 : 400,
+                  fontSize: 12
+                }}
+                startIcon={<GroupIcon />}
+              >
+                Inbjudningar
+              </Button>
+              <Button
+                onClick={() => setSidebarTab('proposals')}
+                sx={{
+                  flex: 1,
+                  py: 2,
+                  borderRadius: 0,
+                  borderBottom: sidebarTab === 'proposals' ? '2px solid #1976d2' : 'none',
+                  color: sidebarTab === 'proposals' ? '#1976d2' : '#666',
+                  fontWeight: sidebarTab === 'proposals' ? 600 : 400,
+                  fontSize: 12
+                }}
+                startIcon={<EventIcon />}
+              >
+                Tidsförslag
+              </Button>
+            </Box>
 
             {/* Content */}
-            <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-              {sidebarMode === 'contacts' ? (
-                <Box>
-                  <Typography variant="subtitle2" sx={{ mb: 2, color: theme.colors.textSecondary }}>
-                    Mina kontakter
-                  </Typography>
-                  
-                  {/* Lägg till kontakt */}
-                  <Box sx={{ mb: 3, p: 2, bgcolor: theme.colors.surface, borderRadius: 2, border: `1px solid ${theme.colors.border}` }}>
-                    <Typography variant="body2" sx={{ mb: 2, fontWeight: 600, color: theme.colors.text }}>
-                      Lägg till kontakt
-                    </Typography>
-                    <TextField
-                      placeholder="E-post"
-                      value={newContactEmail}
-                      onChange={e => setNewContactEmail(e.target.value)}
-                      size="small"
-                      fullWidth
-                      sx={{ mb: 1 }}
-                    />
-                    <TextField
-                      placeholder="Namn (valfritt)"
-                      value={newContactName}
-                      onChange={e => setNewContactName(e.target.value)}
-                      size="small"
-                      fullWidth
-                      sx={{ mb: 2 }}
-                    />
-                    <Button 
-                      variant="contained" 
-                      size="small"
-                      fullWidth
-                      onClick={() => {
-                        if (addContact(newContactEmail, newContactName)) {
-                          setNewContactEmail('');
-                          setNewContactName('');
-                        }
-                      }}
-                      disabled={!newContactEmail.includes('@')}
-                    >
-                      Lägg till
-                    </Button>
-                  </Box>
-
-                  {/* Kontaktlista */}
-                  {contacts.length === 0 ? (
-                    <Typography sx={{ textAlign: 'center', color: theme.colors.textSecondary, py: 4, fontSize: 14 }}>
-                      Inga kontakter ännu
-                    </Typography>
-                  ) : (
-                    <>
-                      {selectedContacts.length > 0 && (
-                        <Button
-                          variant="contained"
-                          size="small"
-                          fullWidth
-                          sx={{ mb: 2 }}
-                          onClick={() => {
-                            const emails = selectedContacts.map(c => c.email);
-                            selectedContacts.forEach(c => incrementInviteCount(c.email));
-                            
-                            window.dispatchEvent(new CustomEvent('prefilledContacts', {
-                              detail: { emails, contacts: selectedContacts }
-                            }));
-                            
-                            setSelectedContacts([]);
-                            setToast({ 
-                              open: true, 
-                              message: `${emails.length} kontakter valda för inbjudan`, 
-                              severity: 'success' 
-                            });
-                          }}
-                        >
-                          Bjud in ({selectedContacts.length})
-                        </Button>
-                      )}
-                      
-                      {contacts.map(contact => (
-                        <Paper
-                          key={contact.id}
-                          sx={{
-                            p: 2,
-                            mb: 1,
-                            borderRadius: 2,
-                            border: selectedContacts.find(c => c.id === contact.id) 
-                              ? `2px solid ${theme.colors.primary}` 
-                              : `1px solid ${theme.colors.border}`,
-                            bgcolor: selectedContacts.find(c => c.id === contact.id) 
-                              ? theme.colors.primary + '15' 
-                              : theme.colors.surface,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            '&:hover': { 
-                              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                              transform: 'translateY(-1px)'
-                            }
-                          }}
-                          onClick={() => {
-                            setSelectedContacts(prev => 
-                              prev.find(c => c.id === contact.id)
-                                ? prev.filter(c => c.id !== contact.id)
-                                : [...prev, contact]
-                            );
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <Box sx={{ flex: 1 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: theme.colors.text }}>
-                                {contact.name}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: theme.colors.textSecondary }}>
-                                {contact.email}
-                              </Typography>
-                              {contact.inviteCount > 0 && (
-                                <Typography variant="caption" sx={{ display: 'block', color: theme.colors.primary, fontSize: 11 }}>
-                                  {contact.inviteCount} inbjudningar
-                                </Typography>
-                              )}
-                            </Box>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeContact(contact.id);
-                              }}
-                              sx={{ color: theme.colors.error }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        </Paper>
-                      ))}
-                    </>
-                  )}
-                </Box>
-              ) : sidebarTab === 'invitations' ? (
+            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+              {sidebarTab === 'invitations' ? (
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
                     Inbjudningar till kalenderjämförelse
@@ -2570,7 +2408,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                           Vill jämföra kalendrar med dig
                         </Typography>
                         <Typography variant="caption" sx={{ color: '#999', fontSize: 11 }}>
-                          {new Date(invitation.createdAt).toLocaleDateString()} {new Date(invitation.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(invitation.createdAt).toLocaleDateString()}
                         </Typography>
                         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                           <Button 
@@ -2593,7 +2431,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                                   body: JSON.stringify({ response: 'decline' })
                                 });
                                 if (res.ok) {
-                                  fetchInvitations(); // Uppdatera listan
+                                  fetchInvitations();
                                   setToast({ open: true, message: 'Inbjudan nekad', severity: 'info' });
                                 }
                               } catch (error) {
@@ -2635,9 +2473,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                         <Typography variant="caption" sx={{ color: '#666', display: 'block' }}>
                           Från: {proposal.fromEmail}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', fontWeight: 600 }}>
-                          {proposal.groupName}
-                        </Typography>
                         <Typography variant="caption" sx={{ color: '#1976d2', display: 'block' }}>
                           {new Date(proposal.start).toLocaleDateString()} {new Date(proposal.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Typography>
@@ -2672,8 +2507,8 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
               )}
             </Box>
           </Box>
-        )}
-      </Box>
+        </Box>
+      )}
 
       {/* Footer */}
       <Box sx={{

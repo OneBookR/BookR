@@ -3,13 +3,13 @@ import { Container, Typography, Box, Button, Card, CardContent, Grid, Chip, Icon
 import PersonIcon from '@mui/icons-material/Person';
 import GroupIcon from '@mui/icons-material/Group';
 import CheckIcon from '@mui/icons-material/Check';
-import CloseIcon from '@mui/icons-material/Close';
 import EventIcon from '@mui/icons-material/Event';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import LogoutIcon from '@mui/icons-material/Logout';
 import TaskIcon from '@mui/icons-material/Task';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import CloseIcon from '@mui/icons-material/Close';
 import InvitationSidebar from './InvitationSidebar.jsx';
 
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
@@ -485,69 +485,85 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       </Grid>
       </Container>
 
-      {/* Sidebar */}
-      <Box
+      {/* Floating Notification Icon */}
+      <IconButton
+        onClick={() => setSidebarOpen(!sidebarOpen)}
         sx={{
           position: 'fixed',
-          top: 112,
-          right: 0,
-          height: 'calc(100vh - 112px)',
-          width: sidebarOpen ? 400 : 60,
-          backgroundColor: '#fff',
-          boxShadow: '-2px 0 8px rgba(0,0,0,0.1)',
-          border: '1px solid #e0e3e7',
-          transition: 'all 0.3s ease',
+          top: '50%',
+          right: 20,
+          transform: 'translateY(-50%)',
+          width: 60,
+          height: 60,
+          backgroundColor: '#635bff',
+          color: 'white',
+          boxShadow: '0 4px 20px rgba(99, 91, 255, 0.3)',
           zIndex: 1200,
-          display: 'flex',
-          flexDirection: 'column'
+          '&:hover': {
+            backgroundColor: '#7a5af8',
+            boxShadow: '0 6px 25px rgba(99, 91, 255, 0.4)',
+            transform: 'translateY(-50%) scale(1.1)'
+          },
+          transition: 'all 0.3s ease'
         }}
       >
-        {/* Sidebar toggle button */}
-        <Box
+        <Badge 
+          badgeContent={invites.length + timeProposals.length} 
+          color="error"
           sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: sidebarOpen ? 'space-between' : 'center',
-            p: sidebarOpen ? 2 : 1,
-            borderBottom: '1px solid #e0e3e7',
-            minHeight: 64
+            '& .MuiBadge-badge': {
+              fontSize: '10px',
+              minWidth: '18px',
+              height: '18px',
+              top: -8,
+              right: -8
+            }
           }}
         >
-          {sidebarOpen && (
-            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1976d2' }}>
-              Notifikationer
-            </Typography>
-          )}
-          <IconButton
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            sx={{
-              color: '#666',
-              '&:hover': { bgcolor: '#f5f5f5' }
-            }}
-          >
-            {sidebarOpen ? (
-              <ChevronLeftIcon />
-            ) : (
-              <Badge 
-                badgeContent={invites.length + timeProposals.length} 
-                color="error"
-                sx={{
-                  '& .MuiBadge-badge': {
-                    fontSize: '10px',
-                    minWidth: '16px',
-                    height: '16px'
-                  }
-                }}
-              >
-                <NotificationsIcon sx={{ fontSize: 28 }} />
-              </Badge>
-            )}
-          </IconButton>
-        </Box>
+          <NotificationsIcon sx={{ fontSize: 28 }} />
+        </Badge>
+      </IconButton>
 
-        {/* Sidebar content */}
-        {sidebarOpen && (
-          <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* Sidebar Modal */}
+      {sidebarOpen && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 1300,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          onClick={() => setSidebarOpen(false)}
+        >
+          <Box
+            sx={{
+              width: 400,
+              maxHeight: '80vh',
+              backgroundColor: '#fff',
+              borderRadius: 3,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <Box sx={{ p: 3, borderBottom: '1px solid #e0e3e7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6" sx={{ fontWeight: 600, color: '#1976d2' }}>
+                Notifikationer
+              </Typography>
+              <IconButton onClick={() => setSidebarOpen(false)} size="small">
+                <CloseIcon />
+              </IconButton>
+            </Box>
+
             {/* Tabs */}
             <Box sx={{ display: 'flex', borderBottom: '1px solid #e0e3e7' }}>
               <Button
@@ -583,7 +599,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             </Box>
 
             {/* Content */}
-            <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
               {sidebarTab === 'invitations' ? (
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
@@ -694,8 +710,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               )}
             </Box>
           </Box>
-        )}
-      </Box>
+        </Box>
+      )}
 
       {/* Toast-meddelanden */}
       <Snackbar

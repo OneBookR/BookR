@@ -208,6 +208,9 @@ function App() {
   if (path === '/kontakt') {
     return <Kontakt />;
   }
+  if (path === '/om-oss') {
+    return <OmOss />;
+  }
   if (path === '/waitlist') {
     return <Waitlist />;
   }
@@ -586,7 +589,8 @@ function App() {
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const viewParam = urlParams.get('view');
-  const shouldShowDashboard = groupId || currentView === 'dashboard';
+  const meetingType = urlParams.get('meetingType');
+  const shouldShowDashboard = groupId || currentView === 'dashboard' || meetingType;
   const shouldShowTask = viewParam === 'task';
 
   return (
