@@ -7,23 +7,16 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 // Konfigurera moment för svensk tid (GMT+1)
 moment.locale('sv');
 import '../styles/theme.css';
-import { Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, DialogActions, Paper, AppBar, Toolbar, InputAdornment, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Fade, Tooltip, Badge, Skeleton, Switch, Slide, Zoom, Grow, IconButton } from '@mui/material';
+import { Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, DialogActions, Paper, InputAdornment, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Fade, Tooltip, Badge, Skeleton, Slide, Zoom, Grow, IconButton } from '@mui/material';
 import { TimeSlotSkeleton, SuggestionSkeleton } from '../components/LoadingSkeleton';
 import { useTheme } from '../hooks/useTheme';
 import { useNotifications } from '../hooks/useNotifications';
 import { usePWA } from '../hooks/usePWA';
 import { useContacts } from '../hooks/useContacts';
 import ContactBook from '../components/ContactBook';
-import DarkModeIcon from '@mui/icons-material/DarkMode';
-import LightModeIcon from '@mui/icons-material/LightMode';
-import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import GetAppIcon from '@mui/icons-material/GetApp';
 import ContactsIcon from '@mui/icons-material/Contacts';
 import DeleteIcon from '@mui/icons-material/Delete';
-import LogoutIcon from '@mui/icons-material/Logout';
-import LoginIcon from '@mui/icons-material/Login';
 import PlaceIcon from '@mui/icons-material/Place';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import EventIcon from '@mui/icons-material/Event';
 import GroupIcon from '@mui/icons-material/Group';
@@ -941,205 +934,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       minHeight: '100vh',
       padding: isMobile ? '10px' : '0'
     }}>
-      {/* Header placerad precis under inloggningsstripen */}
-      <AppBar
-        position="fixed"
-        color="default"
-        elevation={0}
-        sx={{
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          borderBottom: 'none',
-          zIndex: 1201,
-          top: '48px',
-          transition: 'all 0.3s ease',
-          boxShadow: '0 4px 20px rgba(102, 126, 234, 0.3)'
-        }}
-      >
-        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 3 } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 3 } }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{
-                fontWeight: 800,
-                fontSize: { xs: 20, sm: 28 },
-                color: 'white',
-                letterSpacing: 1,
-                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-                mr: { xs: 1, sm: 2 },
-                userSelect: 'none',
-                cursor: 'pointer',
-                textShadow: '0 2px 4px rgba(0,0,0,0.2)'
-              }}
-              onClick={() => window.location.href = '/'}>
-                BookR
-              </Box>
-              <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: { xs: 12, sm: 16 }, display: { xs: 'none', sm: 'block' } }}>
-                Kalenderjämförelse
-              </Typography>
-            </Box>
-            <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 2 }}>
-              <Button
-                color="inherit"
-                sx={{ fontWeight: 500, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
-                onClick={() => window.location.href = '/about'}
-              >
-                Om oss
-              </Button>
-              <Button
-                color="inherit"
-                sx={{ fontWeight: 500, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
-                onClick={() => window.location.href = '/contact'}
-              >
-                Kontakta oss
-              </Button>
-            </Box>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <LightModeIcon sx={{ fontSize: 20, color: 'rgba(255,255,255,0.7)' }} />
-              <Switch 
-                checked={theme.isDark} 
-                onChange={toggleTheme}
-                size="small"
-                sx={{
-                  '& .MuiSwitch-thumb': {
-                    bgcolor: 'white'
-                  },
-                  '& .MuiSwitch-track': {
-                    bgcolor: 'rgba(255,255,255,0.3)'
-                  }
-                }}
-              />
-              <DarkModeIcon sx={{ fontSize: 20, color: 'rgba(255,255,255,0.7)' }} />
-            </Box>
-            {permission !== 'granted' && (
-              <Button
-                size="small"
-                startIcon={<NotificationsActiveIcon />}
-                onClick={requestPermission}
-                sx={{ 
-                  fontWeight: 500, 
-                  color: 'white',
-                  borderRadius: 2,
-                  fontSize: 12,
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.3)'
-                  }
-                }}
-              >
-                Aktivera notiser
-              </Button>
-            )}
-            <Button
-              size="small"
-              startIcon={<GetAppIcon />}
-              onClick={() => {
-                if (isInstallable) {
-                  installApp();
-                } else {
-                  setToast({ 
-                    open: true, 
-                    message: 'PWA-installation stöds inte i denna browser eller är redan installerad', 
-                    severity: 'info' 
-                  });
-                }
-              }}
-              sx={{ 
-                fontWeight: 500, 
-                color: 'white',
-                borderRadius: 2,
-                fontSize: 12,
-                bgcolor: 'rgba(255,255,255,0.2)',
-                opacity: isInstallable ? 1 : 0.6,
-                '&:hover': {
-                  bgcolor: 'rgba(255,255,255,0.3)'
-                }
-              }}
-            >
-              {isInstallable ? 'Installera app' : 'App (ej tillgänglig)'}
-            </Button>
 
-            <Button
-              color="inherit"
-              startIcon={<HelpOutlineIcon />}
-              onClick={() => {
-                setShowTutorial(true);
-                setTutorialStep(0);
-              }}
-              sx={{ 
-                fontWeight: 500, 
-                color: 'rgba(255,255,255,0.9)', 
-                borderRadius: 2,
-                '&:hover': {
-                  bgcolor: 'rgba(255,255,255,0.1)'
-                }
-              }}
-            >
-              Hjälp
-            </Button>
-            {user ? (
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                {groupId && (
-                  <Button
-                    variant="contained"
-                    onClick={() => window.location.href = '/'}
-                    sx={{ 
-                      fontWeight: 600, 
-                      borderRadius: 2,
-                      bgcolor: 'rgba(255,255,255,0.2)',
-                      color: 'white',
-                      '&:hover': {
-                        bgcolor: 'rgba(255,255,255,0.3)'
-                      }
-                    }}
-                  >
-                    Lämna grupp
-                  </Button>
-                )}
-                <Button
-                  variant="contained"
-                  startIcon={<LogoutIcon />}
-                  onClick={() => {
-                    localStorage.removeItem('auth_token');
-                    handleLogout();
-                  }}
-                  sx={{ 
-                    fontWeight: 600, 
-                    borderRadius: 2,
-                    bgcolor: 'rgba(255,255,255,0.2)',
-                    color: 'white',
-                    '&:hover': {
-                      bgcolor: 'rgba(255,255,255,0.3)'
-                    }
-                  }}
-                >
-                  Logga ut
-                </Button>
-              </Box>
-            ) : (
-              <Button
-                variant="contained"
-                startIcon={<LoginIcon />}
-                onClick={handleLogin}
-                sx={{ 
-                  fontWeight: 600, 
-                  borderRadius: 2,
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  color: 'white',
-                  '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.3)'
-                  }
-                }}
-              >
-                Logga in
-              </Button>
-            )}
-          </Box>
-        </Toolbar>
-      </AppBar>
-
-      {/* Spacer för att innehållet inte ska hamna under headern och login-indikatorn */}
-      <Box sx={{ height: 30 }} />
 
       <Typography variant="h5" gutterBottom sx={{ 
         mb: 3,

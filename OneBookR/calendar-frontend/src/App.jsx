@@ -13,6 +13,7 @@ import BusinessAdmin from './pages/BusinessAdmin.jsx';
 import VenueAdmin from './pages/VenueAdmin.jsx';
 import VenueBooking from './pages/VenueBooking.jsx';
 import Footer from './components/Footer.jsx';
+import Header from './components/Header.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -566,11 +567,19 @@ function App() {
 
   // Hantera navigation mellan vyer
   const handleNavigateToMeeting = (type) => {
-    setCurrentView('dashboard');
-    // Sätt URL-parameter för att indikera mötestyp
-    const url = new URL(window.location);
-    url.searchParams.set('meetingType', type);
-    window.history.pushState({}, '', url);
+    if (type === 'task') {
+      // Navigera till task-vy
+      const url = new URL(window.location);
+      url.searchParams.set('view', 'task');
+      window.history.pushState({}, '', url);
+      setCurrentView('task');
+    } else {
+      setCurrentView('dashboard');
+      // Sätt URL-parameter för att indikera mötestyp
+      const url = new URL(window.location);
+      url.searchParams.set('meetingType', type);
+      window.history.pushState({}, '', url);
+    }
   };
 
   // Kontrollera om vi ska visa dashboard direkt (t.ex. vid group-inbjudningar)
@@ -578,11 +587,19 @@ function App() {
   const groupId = urlParams.get('group');
   const shouldShowDashboard = groupId || currentView === 'dashboard';
 
+  // Kontrollera om vi ska visa task-vy
+  const urlParams = new URLSearchParams(window.location.search);
+  const viewParam = urlParams.get('view');
+  const shouldShowTask = viewParam === 'task';
+
   return (
     <>
       {loginIndicator}
-      <Box sx={{ mt: 12, minHeight: 'calc(100vh - 200px)' }}>
-        {shouldShowDashboard ? (
+      <Header user={user} onNavigate={handleNavigateToMeeting} />
+      <Box sx={{ mt: 16, minHeight: 'calc(100vh - 200px)' }}>
+        {shouldShowTask ? (
+          <Task user={user} />
+        ) : shouldShowDashboard ? (
           <Dashboard user={user} />
         ) : (
           <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
