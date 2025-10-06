@@ -59,14 +59,29 @@ const Header = ({ user, onNavigate }) => {
             onClick={() => window.location.href = '/'}>
               BookR
             </Box>
-            <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: { xs: 12, sm: 16 }, display: { xs: 'none', sm: 'block' } }}>
-              Kalenderjämförelse
-            </Typography>
+
           </Box>
           
           {/* Navigation Menu */}
           {user && (
             <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
+              <Button
+                startIcon={<DashboardIcon />}
+                onClick={() => window.location.href = '/'}
+                sx={{ 
+                  color: 'rgba(255,255,255,0.9)', 
+                  fontWeight: 500,
+                  '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
+                }}
+              >
+                Dashboard
+              </Button>
+              <Box sx={{ 
+                width: '1px',
+                height: '24px',
+                bgcolor: 'rgba(255,255,255,0.3)',
+                mx: 1
+              }} />
               <Button
                 startIcon={<PersonIcon />}
                 onClick={() => window.location.href = '/?meetingType=1v1'}
@@ -88,17 +103,6 @@ const Header = ({ user, onNavigate }) => {
                 }}
               >
                 Group Meeting
-              </Button>
-              <Button
-                startIcon={<DashboardIcon />}
-                onClick={() => window.location.href = '/'}
-                sx={{ 
-                  color: 'rgba(255,255,255,0.9)', 
-                  fontWeight: 500,
-                  '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
-                }}
-              >
-                Dashboard
               </Button>
               <Button
                 startIcon={<TaskIcon />}
