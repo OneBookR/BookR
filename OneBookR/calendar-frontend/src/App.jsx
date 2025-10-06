@@ -4,12 +4,15 @@ import ShortcutDashboard from './pages/ShortcutDashboard.jsx';
 import Task from './pages/Task.jsx';
 import Contact from './pages/Contact.jsx';
 import About from './pages/About.jsx';
+import OmOss from './pages/OmOss.jsx';
+import Kontakt from './pages/Kontakt.jsx';
 import Waitlist from './pages/Waitlist.jsx';
 import WaitlistAdmin from './pages/WaitlistAdmin.jsx';
 import BusinessSignup from './pages/BusinessSignup.jsx';
 import BusinessAdmin from './pages/BusinessAdmin.jsx';
 import VenueAdmin from './pages/VenueAdmin.jsx';
 import VenueBooking from './pages/VenueBooking.jsx';
+import Footer from './components/Footer.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -197,6 +200,12 @@ function App() {
   }
   if (path === '/about') {
     return <About />;
+  }
+  if (path === '/om-oss') {
+    return <OmOss />;
+  }
+  if (path === '/kontakt') {
+    return <Kontakt />;
   }
   if (path === '/waitlist') {
     return <Waitlist />;
@@ -415,8 +424,8 @@ function App() {
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2, fontSize: 14 }}>
                 Genom att logga in godkänner du våra{' '}
-                <a href="/terms-of-service" style={{ color: '#1976d2' }}>användarvillkor</a> och{' '}
-                <a href="/privacy-policy" style={{ color: '#1976d2' }}>integritetspolicy</a>
+                <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Villkor och bestämmelser" style={{ color: '#1976d2' }}>användarvillkor</a> och{' '}
+                <a href="https://www.iubenda.com/privacy-policy/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Integritetspolicy" style={{ color: '#1976d2' }}>integritetspolicy</a>
               </Typography>
               <Button
                 variant="contained"
@@ -542,9 +551,10 @@ function App() {
               }}
             >
               © {new Date().getFullYear()} BookR – Hitta lediga tider tillsammans | 
-              <a href="/privacy-policy" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Integritetspolicy</a> | 
-              <a href="/terms-of-service" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Användarvillkor</a> | 
-              <a href="mailto:info@onebookr.se" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>support@onebookr.se</a>
+              <a href="https://www.iubenda.com/privacy-policy/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Integritetspolicy" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Integritetspolicy</a> | 
+              <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Villkor och bestämmelser" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Användarvillkor</a> | 
+              <a href="https://www.iubenda.com/privacy-policy/71871656/cookie-policy" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Cookiepolicy" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Cookiepolicy</a> | 
+              <a href="mailto:info@onebookr.se" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>info@onebookr.se</a>
             </Box>
           </Container>
         </Box>
@@ -571,12 +581,14 @@ function App() {
   return (
     <>
       {loginIndicator}
-      <Box sx={{ mt: 12 }} />
-      {shouldShowDashboard ? (
-        <Dashboard user={user} />
-      ) : (
-        <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
-      )}
+      <Box sx={{ mt: 12, minHeight: 'calc(100vh - 200px)' }}>
+        {shouldShowDashboard ? (
+          <Dashboard user={user} />
+        ) : (
+          <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
+        )}
+      </Box>
+      <Footer />
     </>
   );
 }
