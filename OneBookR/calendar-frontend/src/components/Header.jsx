@@ -76,12 +76,6 @@ const Header = ({ user, onNavigate }) => {
               >
                 Dashboard
               </Button>
-              <Box sx={{ 
-                width: '1px',
-                height: '24px',
-                bgcolor: 'rgba(255,255,255,0.3)',
-                mx: 1
-              }} />
               <Button
                 startIcon={<PersonIcon />}
                 onClick={() => window.location.href = '/?meetingType=1v1'}

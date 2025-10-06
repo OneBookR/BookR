@@ -296,11 +296,19 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         </Grid>
       </Box>
 
-      {/* Invites, Time Proposals och Upcoming Meetings med förbättrad design */}
-      <Box sx={{ px: { xs: 2, sm: 4, md: 6 } }}>
-        <Grid container spacing={{ xs: 4, md: 6 }} sx={{ justifyContent: 'center' }}>
+      {/* Översikt sektion */}
+      <Box sx={{ mb: 4, px: { xs: 2, sm: 4, md: 6 } }}>
+        <Typography variant="h4" sx={{ 
+          fontWeight: 600,
+          color: '#0a2540',
+          fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+          mb: 4,
+          textAlign: 'left'
+        }}>Översikt</Typography>
+        
+        <Grid container spacing={{ xs: 3, md: 4 }} sx={{ justifyContent: 'flex-start' }}>
           {/* Invites sektion */}
-          <Grid item xs={12} lg={4}>
+          <Grid item xs={12} md={4}>
             <Card sx={{ 
               height: 480,
               background: 'rgba(255,255,255,0.98)',
@@ -375,7 +383,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         </Grid>
 
         {/* Time Proposals sektion */}
-        <Grid item xs={12} lg={4}>
+        <Grid item xs={12} md={4}>
             <Card sx={{ 
               height: 480,
               background: 'rgba(255,255,255,0.98)',
@@ -454,7 +462,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         </Grid>
 
         {/* Upcoming Meetings sektion */}
-        <Grid item xs={12} lg={4}>
+        <Grid item xs={12} md={4}>
             <Card sx={{ 
               height: 480,
               background: 'rgba(255,255,255,0.98)',
