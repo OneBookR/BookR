@@ -374,8 +374,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           </Card>
         </Grid>
 
-          {/* Time Proposals sektion */}
-          <Grid item xs={12} lg={4}>
+        {/* Time Proposals sektion */}
+        <Grid item xs={12} lg={4}>
             <Card sx={{ 
               height: 480,
               background: 'rgba(255,255,255,0.98)',
@@ -453,8 +453,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           </Card>
         </Grid>
 
-          {/* Upcoming Meetings sektion */}
-          <Grid item xs={12} lg={4}>
+        {/* Upcoming Meetings sektion */}
+        <Grid item xs={12} lg={4}>
             <Card sx={{ 
               height: 480,
               background: 'rgba(255,255,255,0.98)',
@@ -536,6 +536,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             </Box>
           </Card>
         </Grid>
+      </Grid>
       </Box>
       </Container>
 
