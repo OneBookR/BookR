@@ -306,9 +306,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           textAlign: 'left'
         }}>Översikt</Typography>
         
-        <Grid container spacing={{ xs: 3, md: 4 }} sx={{ justifyContent: 'flex-start' }}>
+        <Grid container spacing={{ xs: 3, md: 3 }} sx={{ justifyContent: 'center' }}>
           {/* Invites sektion */}
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12} sm={6} md={4}>
             <Card sx={{ 
               height: 480,
               background: 'rgba(255,255,255,0.98)',
@@ -383,7 +383,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         </Grid>
 
         {/* Time Proposals sektion */}
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} sm={6} md={4}>
             <Card sx={{ 
               height: 480,
               background: 'rgba(255,255,255,0.98)',
@@ -462,7 +462,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         </Grid>
 
         {/* Upcoming Meetings sektion */}
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} sm={6} md={4}>
             <Card sx={{ 
               height: 480,
               background: 'rgba(255,255,255,0.98)',
