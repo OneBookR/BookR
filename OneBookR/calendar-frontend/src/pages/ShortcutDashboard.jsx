@@ -139,21 +139,42 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     return date.toLocaleDateString('sv-SE') + ' ' + date.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const formatProposalDateTime = (proposal) => {
+    if (!proposal) return '';
+    // Hantera olika format för tidsförslag
+    const startTime = proposal.startTime || proposal.start;
+    if (!startTime) return '';
+    const date = new Date(startTime);
+    return date.toLocaleDateString('sv-SE') + ' ' + date.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+  };
+
   const getTimeUntilMeeting = (startTime) => {
     if (!startTime) return '';
     const now = new Date();
     const meetingStart = new Date(startTime.dateTime || startTime);
-    const diffMs = now - meetingStart;
-    const diffMinutes = Math.round(diffMs / (1000 * 60));
+    const diffMs = meetingStart - now;
     
-    if (diffMinutes > 0) {
-      // Mötet har redan startat - visa hur många minuter man är sen
-      return `(-${diffMinutes} min)`;
-    } else if (diffMinutes === 0) {
-      return '(Nu)';
+    if (diffMs < 0) {
+      return 'Nu';
     } else {
-      // Mötet har inte startat än - visa hur många minuter kvar
-      return `(${Math.abs(diffMinutes)} min)`;
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffMinutes = Math.floor(diffMs / (1000 * 60));
+      
+      if (diffDays > 0) {
+        return `${diffDays} dag${diffDays > 1 ? 'ar' : ''}`;
+      } else if (diffHours > 0) {
+        const remainingMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        if (remainingMinutes > 0) {
+          return `${diffHours} h ${remainingMinutes} min`;
+        } else {
+          return `${diffHours} h`;
+        }
+      } else if (diffMinutes > 0) {
+        return `${diffMinutes} min`;
+      } else {
+        return 'Nu';
+      }
     }
   };
 
@@ -372,27 +393,28 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {timeProposals.map((proposal, index) => (
                     <Card key={index} sx={{ 
-                      p: 2, 
+                      p: 3, 
                       borderRadius: 2,
                       background: 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)',
                       boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                       border: '1px solid rgba(255,193,7,0.2)',
                       transition: 'all 0.3s ease',
+                      minHeight: 120,
                       '&:hover': {
                         transform: 'translateY(-1px)',
                         boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
                       }
                     }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2, fontSize: 16 }}>
                         {proposal.title || 'Tidsförslag'}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
-                        {formatDateTime(proposal.startTime)}
+                      <Typography variant="body2" sx={{ color: '#1976d2', display: 'block', mb: 1, fontWeight: 600, fontSize: 14 }}>
+                        📅 {formatProposalDateTime(proposal)}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
-                        {proposal.fromEmail}
+                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2, fontSize: 12 }}>
+                        Från: {proposal.fromEmail}
                       </Typography>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Box sx={{ display: 'flex', gap: 1, mt: 'auto' }}>
                         <Button 
                           size="small" 
                           variant="outlined" 
@@ -443,40 +465,54 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 </Box>
               ) : (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {upcomingMeetings.slice(0, 5).map((meeting) => (
-                    <Card key={meeting.id} sx={{ 
-                      p: 2, 
-                      borderRadius: 2,
-                      background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
-                      }
-                    }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                        {meeting.summary || 'Untitled Meeting'}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
-                        {formatDateTime(meeting.start)} {getTimeUntilMeeting(meeting.start)}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
-                        {meeting.organizer?.displayName || meeting.organizer?.email || 'Unknown organizer'}
-                      </Typography>
-                      {(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri) && (
-                        <Button 
-                          size="small" 
-                          variant="contained" 
-                          onClick={() => window.open(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri, '_blank')}
-                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
-                        >
-                          Gå med i mötet
-                        </Button>
-                      )}
-                    </Card>
-                  ))}
+                  {upcomingMeetings.slice(0, 5).map((meeting) => {
+                    const timeUntil = getTimeUntilMeeting(meeting.start);
+                    const isUrgent = timeUntil === 'Nu' || timeUntil.includes('min');
+                    
+                    return (
+                      <Card key={meeting.id} sx={{ 
+                        p: 2, 
+                        borderRadius: 2,
+                        background: isUrgent ? 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)' : 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                        border: isUrgent ? '1px solid #f44336' : '1px solid rgba(255,255,255,0.2)',
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                          transform: 'translateY(-1px)',
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                        }
+                      }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                          {meeting.summary || 'Untitled Meeting'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#1976d2', display: 'block', mb: 1, fontWeight: 600 }}>
+                          📅 {formatDateTime(meeting.start)}
+                        </Typography>
+                        <Typography variant="caption" sx={{ 
+                          color: isUrgent ? '#d32f2f' : '#4caf50', 
+                          display: 'block', 
+                          mb: 1, 
+                          fontWeight: 600,
+                          fontSize: 12
+                        }}>
+                          ⏰ {timeUntil}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2, fontSize: 11 }}>
+                          {meeting.organizer?.displayName || meeting.organizer?.email || 'Unknown organizer'}
+                        </Typography>
+                        {(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri) && (
+                          <Button 
+                            size="small" 
+                            variant="contained" 
+                            onClick={() => window.open(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri, '_blank')}
+                            sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                          >
+                            Gå med i mötet
+                          </Button>
+                        )}
+                      </Card>
+                    );
+                  })}
                 </Box>
               )}
             </Box>
@@ -679,11 +715,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
                           {proposal.title || 'Mötesförslag'}
                         </Typography>
+                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', fontWeight: 600, mb: 1 }}>
+                          📅 {formatProposalDateTime(proposal)}
+                        </Typography>
                         <Typography variant="caption" sx={{ color: '#666', display: 'block' }}>
                           Från: {proposal.fromEmail}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block' }}>
-                          {new Date(proposal.start).toLocaleDateString()} {new Date(proposal.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Typography>
                         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                           <Button 

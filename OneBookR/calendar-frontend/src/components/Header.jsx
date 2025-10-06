@@ -114,6 +114,15 @@ const Header = ({ user, onNavigate }) => {
             </Box>
           )}
           
+          {/* Separator */}
+          <Box sx={{ 
+            display: { xs: 'none', md: 'block' },
+            width: '1px',
+            height: '24px',
+            bgcolor: 'rgba(255,255,255,0.3)',
+            mx: 2
+          }} />
+          
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 2 }}>
             <Button
               color="inherit"
