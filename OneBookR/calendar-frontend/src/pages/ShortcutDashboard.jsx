@@ -160,29 +160,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   return (
     <>
 
-      <Button
-        variant="outlined"
-        startIcon={<LogoutIcon />}
-        onClick={() => window.location.href = 'https://www.onebookr.se/auth/logout'}
-        sx={{
-          position: 'fixed',
-          top: 80,
-          left: 20,
-          zIndex: 1000,
-          borderColor: '#635bff',
-          color: '#635bff',
-          borderRadius: 2,
-          fontWeight: 600,
-          '&:hover': {
-            borderColor: '#7a5af8',
-            color: '#7a5af8',
-            bgcolor: 'rgba(99,91,255,0.05)'
-          }
-        }}
-      >
-        Logga ut
-      </Button>
-      <Container maxWidth="lg" sx={{ mt: 12, mb: 4, px: { xs: 2, sm: 3 } }}>
+
+      <Container maxWidth="xl" sx={{ mt: 12, mb: 4, px: { xs: 2, sm: 3 } }}>
       {/* Clean Banner */}
       <Box sx={{
         background: 'rgba(255,255,255,0.98)',
@@ -510,9 +489,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       <Box
         sx={{
           position: 'fixed',
-          top: 0,
+          top: 112,
           right: 0,
-          height: '100vh',
+          height: 'calc(100vh - 112px)',
           width: sidebarOpen ? 400 : 60,
           backgroundColor: '#fff',
           boxShadow: '-2px 0 8px rgba(0,0,0,0.1)',

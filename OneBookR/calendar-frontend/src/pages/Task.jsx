@@ -151,54 +151,7 @@ const Task = ({ user, onBack }) => {
     <>
       <InvitationSidebar user={user} />
       
-      {/* BookR Banner with Navigation */}
-      <Box sx={{ 
-        position: 'fixed', 
-        top: 80, 
-        left: 0, 
-        right: 0, 
-        height: 60,
-        bgcolor: 'white', 
-        borderBottom: '1px solid #e0e3e7',
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        px: 3
-      }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, color: '#635bff', mr: 4 }}>
-          BookR
-        </Typography>
-        
-        <Box sx={{ display: 'flex', gap: 3, flex: 1 }}>
-          <Button 
-            onClick={() => window.location.reload()}
-            sx={{ color: '#666', '&:hover': { color: '#635bff' } }}
-          >
-            Översikt
-          </Button>
-          <Button 
-            sx={{ color: '#666', '&:hover': { color: '#635bff' } }}
-          >
-            1v1 Meeting
-          </Button>
-          <Button 
-            sx={{ color: '#666', '&:hover': { color: '#635bff' } }}
-          >
-            Group Meeting
-          </Button>
-        </Box>
-        
-        <Button
-          variant="outlined"
-          startIcon={<LogoutIcon />}
-          onClick={() => window.location.href = 'https://www.onebookr.se/auth/logout'}
-          size="small"
-        >
-          Logga ut
-        </Button>
-      </Box>
-
-      <Box sx={{ display: 'flex', height: 'calc(100vh - 140px)', mt: 17.5 }}>
+      <Box sx={{ display: 'flex', height: 'calc(100vh - 112px)', mt: 0 }}>
         {/* Left sidebar for inputs */}
         <Box sx={{ 
           width: 380, 

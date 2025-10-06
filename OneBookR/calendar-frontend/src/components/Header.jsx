@@ -69,7 +69,12 @@ const Header = ({ user, onNavigate }) => {
             <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
               <Button
                 startIcon={<PersonIcon />}
-                onClick={() => onNavigate && onNavigate('1v1')}
+                onClick={() => {
+                  const url = new URL(window.location);
+                  url.searchParams.set('meetingType', '1v1');
+                  url.searchParams.delete('view');
+                  window.location.href = url.toString();
+                }}
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
@@ -80,7 +85,12 @@ const Header = ({ user, onNavigate }) => {
               </Button>
               <Button
                 startIcon={<GroupIcon />}
-                onClick={() => onNavigate && onNavigate('group')}
+                onClick={() => {
+                  const url = new URL(window.location);
+                  url.searchParams.set('meetingType', 'group');
+                  url.searchParams.delete('view');
+                  window.location.href = url.toString();
+                }}
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
@@ -102,7 +112,12 @@ const Header = ({ user, onNavigate }) => {
               </Button>
               <Button
                 startIcon={<TaskIcon />}
-                onClick={() => onNavigate && onNavigate('task')}
+                onClick={() => {
+                  const url = new URL(window.location);
+                  url.searchParams.set('view', 'task');
+                  url.searchParams.delete('meetingType');
+                  window.location.href = url.toString();
+                }}
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
