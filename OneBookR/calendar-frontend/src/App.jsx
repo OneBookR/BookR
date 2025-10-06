@@ -424,8 +424,8 @@ function App() {
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2, fontSize: 14 }}>
                 Genom att logga in godkänner du våra{' '}
-                <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Villkor och bestämmelser" style={{ color: '#1976d2' }}>användarvillkor</a> och{' '}
-                <a href="https://www.iubenda.com/privacy-policy/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Integritetspolicy" style={{ color: '#1976d2' }}>integritetspolicy</a>
+                <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2' }}>användarvillkor</a> och{' '}
+                <a href="https://www.iubenda.com/privacy-policy/71871656" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2' }}>integritetspolicy</a>
               </Typography>
               <Button
                 variant="contained"
@@ -551,9 +551,9 @@ function App() {
               }}
             >
               © {new Date().getFullYear()} BookR – Hitta lediga tider tillsammans | 
-              <a href="https://www.iubenda.com/privacy-policy/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Integritetspolicy" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Integritetspolicy</a> | 
-              <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Villkor och bestämmelser" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Användarvillkor</a> | 
-              <a href="https://www.iubenda.com/privacy-policy/71871656/cookie-policy" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Cookiepolicy" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Cookiepolicy</a> | 
+              <a href="https://www.iubenda.com/privacy-policy/71871656" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Integritetspolicy</a> | 
+              <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Användarvillkor</a> | 
+              <a href="https://www.iubenda.com/privacy-policy/71871656/cookie-policy" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>Cookiepolicy</a> | 
               <a href="mailto:info@onebookr.se" style={{ color: '#1976d2', textDecoration: 'none', margin: '0 8px' }}>info@onebookr.se</a>
             </Box>
           </Container>

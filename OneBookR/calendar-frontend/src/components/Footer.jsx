@@ -28,9 +28,9 @@ const Footer = () => {
               Policyer
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <a href="https://www.iubenda.com/privacy-policy/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Integritetspolicy" style={{ color: '#475569', textDecoration: 'none', fontSize: '14px' }}>Integritetspolicy</a>
-              <a href="https://www.iubenda.com/privacy-policy/71871656/cookie-policy" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Cookiepolicy" style={{ color: '#475569', textDecoration: 'none', fontSize: '14px' }}>Cookiepolicy</a>
-              <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" className="iubenda-white no-brand iubenda-noiframe iubenda-embed iub-legal-only iubenda-noiframe" title="Villkor och bestämmelser" style={{ color: '#475569', textDecoration: 'none', fontSize: '14px' }}>Villkor och bestämmelser</a>
+              <a href="https://www.iubenda.com/privacy-policy/71871656" target="_blank" rel="noopener noreferrer" style={{ color: '#475569', textDecoration: 'none', fontSize: '14px' }}>Integritetspolicy</a>
+              <a href="https://www.iubenda.com/privacy-policy/71871656/cookie-policy" target="_blank" rel="noopener noreferrer" style={{ color: '#475569', textDecoration: 'none', fontSize: '14px' }}>Cookiepolicy</a>
+              <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" target="_blank" rel="noopener noreferrer" style={{ color: '#475569', textDecoration: 'none', fontSize: '14px' }}>Villkor och bestämmelser</a>
             </Box>
           </Grid>
           
