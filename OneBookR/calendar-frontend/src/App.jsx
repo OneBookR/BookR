@@ -601,7 +601,7 @@ function App() {
         {shouldShowTask ? (
           <Task user={user} />
         ) : shouldShowDashboard ? (
-          <Dashboard user={user} />
+          <Dashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
         ) : (
           <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
         )}

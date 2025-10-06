@@ -6,7 +6,7 @@ import ShortcutDashboard from './ShortcutDashboard';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 
-export default function Dashboard({ user }) {
+export default function Dashboard({ user, onNavigateToMeeting }) {
   const [currentView, setCurrentView] = useState('shortcut');
   const { theme } = useTheme();
   const [groupTokens, setGroupTokens] = useState([]);
@@ -22,13 +22,13 @@ export default function Dashboard({ user }) {
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
   
-  const handleNavigateToMeeting = (type) => {
+  const handleNavigateToMeeting = onNavigateToMeeting || ((type) => {
     if (type === 'task') {
       setCurrentView('task');
-    } else {
+    } else if (type === '1v1' || type === 'group') {
       setCurrentView('dashboard');
     }
-  };
+  });
   
   // Set initial view based on URL params
   useEffect(() => {
