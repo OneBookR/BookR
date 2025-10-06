@@ -32,7 +32,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   
   // Set initial view based on URL params
   useEffect(() => {
-    if (groupId) {
+    const meetingType = urlParams.get('meetingType');
+    if (groupId || meetingType) {
       setCurrentView('dashboard');
     }
   }, [groupId]);
