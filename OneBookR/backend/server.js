@@ -28,6 +28,13 @@ console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist
 // Maintenance mode middleware
 app.use((req, res, next) => {
   if (MAINTENANCE_MODE) {
+    // Admin bypass med secret key
+    console.log('Maintenance check:', { admin: req.query.admin, bypass: process.env.ADMIN_BYPASS_KEY });
+    if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024') {
+      console.log('Admin bypass activated!');
+      return next();
+    }
+    
     const allowedPaths = [
       '/waitlist',
       '/admin/waitlist', 
