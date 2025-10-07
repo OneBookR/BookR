@@ -549,6 +549,27 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       </Box>
       </Container>
 
+      {/* Footer */}
+      <Box
+        component="footer"
+        sx={{
+          width: '100%',
+          bgcolor: '#f8fafc',
+          borderTop: '1px solid #e2e8f0',
+          mt: 8,
+          py: 4
+        }}
+      >
+        <Container maxWidth="lg">
+          <Typography variant="body2" sx={{ 
+            textAlign: 'center',
+            color: '#64748b' 
+          }}>
+            © 2024 BookR. Alla rättigheter förbehållna.
+          </Typography>
+        </Container>
+      </Box>
+
       {/* Floating Notification Icon */}
       <IconButton
         onClick={() => setSidebarOpen(!sidebarOpen)}

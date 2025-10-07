@@ -514,13 +514,13 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
                 date: '10/01',
                 title: 'Grupp events',
                 description: 'Dela task i grupp och grupp planera',
-                status: 'completed'
+                status: 'soon'
               },
               {
                 date: '10/01', 
                 title: 'Task',
                 description: 'Automatisk tidsplanering',
-                status: 'soon'
+                status: 'completed'
               },
               {
                 date: '09/12',
