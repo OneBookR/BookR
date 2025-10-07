@@ -511,25 +511,25 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
             {/* Timeline Items */}
             {[
               {
-                date: '',
+                date: '15/10',
                 title: 'Grupp events',
                 description: 'Dela arbetsuppgifter i grupp som interagerar med kalendern',
                 status: 'soon'
               },
               {
-                date: '10/01', 
+                date: '1/10', 
                 title: 'Task',
                 description: 'Automatisk tidsplanering i kalendern',
                 status: 'completed'
               },
               {
-                date: '08/21',
+                date: '21/8',
                 title: 'Kalenderjämföraren',
                 description: 'Kalenderjämförelse med flera kalendrar samtidigt',
                 status: 'completed'
               },
               {
-                date: '08/10',
+                date: '10/8',
                 title: 'Kalenderjämföaren',
                 description: 'Jämföra flera kalendrar med varandra samtidigt och hitta lediga tider tillsammans',
                 status: 'completed'
