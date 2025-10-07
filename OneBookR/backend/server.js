@@ -25,6 +25,33 @@ const PORT = process.env.PORT || 3000;
 const MAINTENANCE_MODE = process.env.MAINTENANCE_MODE === 'true';
 console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist)' : 'OFF (full app available)');
 
+// Maintenance mode middleware
+app.use((req, res, next) => {
+  if (MAINTENANCE_MODE) {
+    // Admin bypass med secret key
+    if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024') {
+      return next();
+    }
+    
+    const allowedPaths = [
+      '/waitlist',
+      '/admin/waitlist', 
+      '/api/waitlist',
+      '/api/waitlist/count',
+      '/api/waitlist/admin',
+      '/api/waitlist/share'
+    ];
+    
+    if (req.path.includes('.') || allowedPaths.some(path => req.path.startsWith(path))) {
+      return next();
+    }
+    
+    return res.redirect('/waitlist');
+  }
+  
+  next();
+});
+
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
 
@@ -63,39 +90,6 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
-
-// Maintenance mode middleware (efter session setup)
-app.use((req, res, next) => {
-  if (MAINTENANCE_MODE) {
-    // Admin bypass med secret key - spara i session
-    if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024') {
-      req.session.adminBypass = true;
-      console.log('Admin bypass activated and saved to session!');
-    }
-    
-    // Kolla om admin bypass är aktivt i sessionen
-    if (req.session.adminBypass) {
-      return next();
-    }
-    
-    const allowedPaths = [
-      '/waitlist',
-      '/admin/waitlist', 
-      '/api/waitlist',
-      '/api/waitlist/count',
-      '/api/waitlist/admin',
-      '/api/waitlist/share'
-    ];
-    
-    if (req.path.includes('.') || allowedPaths.some(path => req.path.startsWith(path))) {
-      return next();
-    }
-    
-    return res.redirect('/waitlist');
-  }
-  
-  next();
-});
 
 // Google OAuth-strategi
 passport.use(new GoogleStrategy({
