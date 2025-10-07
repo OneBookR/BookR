@@ -483,6 +483,145 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
         </Container>
       </Box>
 
+      {/* Timeline Section */}
+      <Box sx={{ bgcolor: '#f8fafc', py: 10 }}>
+        <Container maxWidth="lg">
+          <Typography variant="h3" sx={{
+            textAlign: 'center',
+            mb: 8,
+            fontSize: { xs: '2.2rem', md: '2.8rem' },
+            fontWeight: 700,
+            color: '#0a2540'
+          }}>
+            Vår utvecklingsplan
+          </Typography>
+          
+          <Box sx={{ position: 'relative', maxWidth: 800, mx: 'auto' }}>
+            {/* Timeline Line */}
+            <Box sx={{
+              position: 'absolute',
+              left: '50%',
+              top: 0,
+              bottom: 0,
+              width: 2,
+              bgcolor: '#e3e8ee',
+              transform: 'translateX(-50%)'
+            }} />
+            
+            {/* Timeline Items */}
+            {[
+              {
+                date: '10/01',
+                title: 'Grupp events',
+                description: 'Dela task i grupp och grupp planera',
+                status: 'completed'
+              },
+              {
+                date: '10/01', 
+                title: 'Task',
+                description: 'Automatisk tidsplanering',
+                status: 'soon'
+              },
+              {
+                date: '09/12',
+                title: 'Kalenderjämföraren',
+                description: 'Jämföra flera kalendrar med varandra samtidigt',
+                status: 'completed'
+              },
+              {
+                date: '08/10',
+                title: 'Kalenderjämföraren',
+                description: 'Jämföra kalendrar 1v1 med varandra',
+                status: 'completed'
+              }
+            ].map((item, index) => (
+              <Box key={index} sx={{
+                display: 'flex',
+                alignItems: 'center',
+                mb: 6,
+                position: 'relative'
+              }}>
+                {/* Timeline Dot */}
+                <Box sx={{
+                  position: 'absolute',
+                  left: '50%',
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  bgcolor: item.status === 'completed' ? '#4caf50' : '#ff9800',
+                  transform: 'translateX(-50%)',
+                  zIndex: 2,
+                  border: '3px solid #fff',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                }} />
+                
+                {/* Content */}
+                <Box sx={{
+                  width: '45%',
+                  ml: index % 2 === 0 ? 0 : 'auto',
+                  mr: index % 2 === 0 ? 'auto' : 0,
+                  textAlign: index % 2 === 0 ? 'right' : 'left',
+                  pr: index % 2 === 0 ? 4 : 0,
+                  pl: index % 2 === 0 ? 0 : 4
+                }}>
+                  <Typography variant="caption" sx={{
+                    color: '#666',
+                    fontWeight: 600,
+                    fontSize: '0.9rem',
+                    display: 'block',
+                    mb: 1
+                  }}>
+                    {item.date}
+                  </Typography>
+                  
+                  <Paper sx={{
+                    p: 3,
+                    borderRadius: 3,
+                    bgcolor: '#fff',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                    border: '1px solid #e3e8ee',
+                    position: 'relative'
+                  }}>
+                    {item.status === 'soon' && (
+                      <Box sx={{
+                        position: 'absolute',
+                        top: -8,
+                        right: -8,
+                        bgcolor: '#ff9800',
+                        color: '#fff',
+                        px: 2,
+                        py: 0.5,
+                        borderRadius: 2,
+                        fontSize: '0.75rem',
+                        fontWeight: 600
+                      }}>
+                        SOON
+                      </Box>
+                    )}
+                    
+                    <Typography variant="h6" sx={{
+                      fontWeight: 600,
+                      color: '#0a2540',
+                      mb: 1,
+                      fontSize: '1.1rem'
+                    }}>
+                      {item.title}
+                    </Typography>
+                    
+                    <Typography variant="body2" sx={{
+                      color: '#666',
+                      lineHeight: 1.5
+                    }}>
+                      {item.description}
+                    </Typography>
+                  </Paper>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        </Container>
+      </Box>
+
       {/* Key Benefits */}
       <Container maxWidth="md" sx={{ py: 10 }}>
         <Typography variant="h3" sx={{
