@@ -28,10 +28,14 @@ console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist
 // Maintenance mode middleware
 app.use((req, res, next) => {
   if (MAINTENANCE_MODE) {
-    // Admin bypass med secret key
-    console.log('Maintenance check:', { admin: req.query.admin, bypass: process.env.ADMIN_BYPASS_KEY });
+    // Admin bypass med secret key - spara i session
     if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024') {
-      console.log('Admin bypass activated!');
+      req.session.adminBypass = true;
+      console.log('Admin bypass activated and saved to session!');
+    }
+    
+    // Kolla om admin bypass är aktivt i sessionen
+    if (req.session.adminBypass) {
       return next();
     }
     
