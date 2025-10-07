@@ -519,19 +519,25 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
               {
                 date: '1/10', 
                 title: 'Task',
-                description: 'Automatisk tidsplanering i kalendern',
+                description: 'Automatisk tidsplanering och event placering i kalendern',
                 status: 'completed'
               },
               {
                 date: '21/8',
-                title: 'Kalenderjämföraren',
-                description: 'Kalenderjämförelse med flera kalendrar samtidigt',
+                title: 'Kalenderjämförare',
+                description: 'Kalenderjämförelse med hur många kalendrar som helst samtidigt',
+                status: 'completed'
+              },
+              {
+                date: '11/8',
+                title: 'Google Meet Integration',
+                description: 'Google Meet-länk skapas automatiskt när möten bokas i kalendern',
                 status: 'completed'
               },
               {
                 date: '10/8',
-                title: 'Kalenderjämföaren',
-                description: 'Jämföra flera kalendrar med varandra samtidigt och hitta lediga tider tillsammans',
+                title: 'Kalenderjämförare',
+                description: 'Jämföra kalendrar med varandra samtidigt och hitta lediga tider tillsammans 1v1',
                 status: 'completed'
               }
             ].map((item, index) => (
