@@ -606,7 +606,7 @@ function App() {
           <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
         )}
       </Box>
-      <Footer />
+      {!shouldShowTask && <Footer />}
     </>
   );
 }
