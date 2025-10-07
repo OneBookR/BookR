@@ -21,6 +21,32 @@ app.use(express.json());
 app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
 
+// Maintenance mode
+const MAINTENANCE_MODE = process.env.MAINTENANCE_MODE === 'true';
+console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist)' : 'OFF (full app available)');
+
+// Maintenance mode middleware
+app.use((req, res, next) => {
+  if (MAINTENANCE_MODE) {
+    const allowedPaths = [
+      '/waitlist',
+      '/admin/waitlist', 
+      '/api/waitlist',
+      '/api/waitlist/count',
+      '/api/waitlist/admin',
+      '/api/waitlist/share'
+    ];
+    
+    if (req.path.includes('.') || allowedPaths.some(path => req.path.startsWith(path))) {
+      return next();
+    }
+    
+    return res.redirect('/waitlist');
+  }
+  
+  next();
+});
+
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
 
