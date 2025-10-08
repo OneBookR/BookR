@@ -118,19 +118,7 @@ const Header = ({ user, onNavigate }) => {
               >
                 Task
               </Button>
-              <Button
-                startIcon={<ChevronLeftIcon />}
-                onClick={() => window.location.href = '/'}
-                sx={{ 
-                  color: 'rgba(255,255,255,0.9)', 
-                  fontWeight: 500,
-                  fontSize: { xs: 10, sm: 12, md: 14 },
-                  px: { xs: 1, sm: 1.5, md: 2 },
-                  '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
-                }}
-              >
-                Lämna grupp
-              </Button>
+
             </Box>
           )}
           
@@ -239,22 +227,50 @@ const Header = ({ user, onNavigate }) => {
           </Button>
           
           {user ? (
-            <Button
-              variant="contained"
-              startIcon={<LogoutIcon />}
-              onClick={handleLogout}
-              sx={{ 
-                fontWeight: 600, 
-                borderRadius: 2,
-                bgcolor: 'rgba(255,255,255,0.2)',
-                color: 'white',
-                '&:hover': {
-                  bgcolor: 'rgba(255,255,255,0.3)'
-                }
-              }}
-            >
-              Logga ut
-            </Button>
+            <>
+              <Button
+                variant="outlined"
+                startIcon={<ChevronLeftIcon />}
+                onClick={() => {
+                  const leftMeeting = {
+                    id: Date.now(),
+                    groupName: 'Kalenderjämförelse',
+                    members: ['Du', 'Annan användare'],
+                    leftAt: new Date().toISOString()
+                  };
+                  localStorage.setItem('leftMeetings', JSON.stringify([...JSON.parse(localStorage.getItem('leftMeetings') || '[]'), leftMeeting]));
+                  window.location.href = '/';
+                }}
+                sx={{ 
+                  fontWeight: 600, 
+                  borderRadius: 2,
+                  borderColor: 'rgba(255,255,255,0.3)',
+                  color: 'white',
+                  '&:hover': {
+                    bgcolor: 'rgba(255,255,255,0.1)',
+                    borderColor: 'rgba(255,255,255,0.5)'
+                  }
+                }}
+              >
+                Lämna grupp
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<LogoutIcon />}
+                onClick={handleLogout}
+                sx={{ 
+                  fontWeight: 600, 
+                  borderRadius: 2,
+                  bgcolor: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  '&:hover': {
+                    bgcolor: 'rgba(255,255,255,0.3)'
+                  }
+                }}
+              >
+                Logga ut
+              </Button>
+            </>
           ) : (
             <Button
               variant="contained"

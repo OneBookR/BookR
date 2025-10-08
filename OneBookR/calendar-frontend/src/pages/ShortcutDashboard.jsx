@@ -19,6 +19,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState('invitations');
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
+  const [leftMeetings, setLeftMeetings] = useState([]);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -50,6 +51,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     if (user?.email) {
       fetchTimeProposals();
     }
+    
+    // Hämta lämnade möten från localStorage
+    const savedLeftMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
+    setLeftMeetings(savedLeftMeetings);
   }, [user?.email]);
 
   const handleInviteResponse = (groupId, inviteeId, response) => {
@@ -129,7 +134,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const handleProposalResponse = (proposalId, response) => {
     const proposal = timeProposals.find(p => p.id === proposalId);
     if (proposal) {
-      voteSuggestion(proposalId, response, proposal.groupId);
+      const vote = response === 'accept' ? 'accepted' : 'declined';
+      voteSuggestion(proposalId, vote, proposal.groupId);
     }
   };
 
@@ -559,9 +565,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         
         {/* Öppna möten sektion - under de andra tre */}
         <Grid container spacing={{ xs: 3, md: 3 }} sx={{ justifyContent: 'flex-start', mt: 4 }}>
-          <Grid item xs={12} sm={12} md={8}>
+          <Grid item xs={12} sm={12} md={4}>
             <Card sx={{ 
-              height: 200,
+              height: 480,
+              width: 400,
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
               boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
@@ -582,10 +589,61 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               }}>Öppna möten</Typography>
             </Box>
             <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-              <Box sx={{ textAlign: 'center', py: 2 }}>
-                <Typography sx={{ color: '#425466', fontWeight: 400, mb: 2 }}>Inga öppna möten just nu</Typography>
-                <Typography variant="caption" sx={{ color: '#666' }}>När du lämnar ett möte kommer det att visas här</Typography>
-              </Box>
+              {leftMeetings.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography sx={{ color: '#425466', fontWeight: 400, mb: 2 }}>Inga öppna möten just nu</Typography>
+                  <Typography variant="caption" sx={{ color: '#666' }}>När du lämnar ett möte kommer det att visas här</Typography>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {leftMeetings.map((meeting) => (
+                    <Card key={meeting.id} sx={{ 
+                      p: 2, 
+                      borderRadius: 2,
+                      background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                      border: '1px solid rgba(33,150,243,0.2)',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                      }
+                    }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                        {meeting.groupName}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
+                        Medlemmar: {meeting.members.join(', ')}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 2, fontSize: 11 }}>
+                        Lämnade: {new Date(meeting.leftAt).toLocaleString()}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button 
+                          size="small" 
+                          variant="contained" 
+                          onClick={() => window.location.href = '/?meetingType=group'}
+                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                        >
+                          Gå in i mötet
+                        </Button>
+                        <Button 
+                          size="small" 
+                          variant="outlined" 
+                          onClick={() => {
+                            const updatedMeetings = leftMeetings.filter(m => m.id !== meeting.id);
+                            setLeftMeetings(updatedMeetings);
+                            localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
+                          }}
+                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                        >
+                          Stäng möte
+                        </Button>
+                      </Box>
+                    </Card>
+                  ))}
+                </Box>
+              )}
             </Box>
           </Card>
           </Grid>
