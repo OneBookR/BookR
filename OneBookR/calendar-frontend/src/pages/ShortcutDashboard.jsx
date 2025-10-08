@@ -57,52 +57,96 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     setLeftMeetings(savedLeftMeetings);
   }, [user?.email]);
 
-  const handleInviteResponse = (groupId, inviteeId, response) => {
+  const handleInviteResponse = async (groupId, inviteeId, response) => {
+    const invitation = invites.find(inv => inv.inviteeId === inviteeId);
+    if (!invitation) return;
+
     if (response === 'accept') {
-      // Ta bort inbjudan från listan när användaren går med
+      // Markera som svarad innan redirect
+      try {
+        await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ response: 'accept' })
+        });
+      } catch (err) {
+        console.log('Failed to mark invitation as responded:', err);
+      }
+      
+      // Skapa öppet möte med gruppnamn
+      const openMeeting = {
+        id: groupId,
+        groupName: invitation.groupName || 'Kalenderjämförelse',
+        members: [invitation.fromEmail, user.email || user.emails?.[0]?.value || user.emails?.[0]],
+        leftAt: new Date().toISOString()
+      };
+      const existingMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
+      const updatedMeetings = existingMeetings.filter(m => m.id !== groupId);
+      updatedMeetings.push(openMeeting);
+      localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
+      setLeftMeetings(updatedMeetings);
+      
       setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
       window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
     } else if (response === 'accept_passive') {
       // Acceptera utan att gå in i kalenderjämföraren
-      fetch(`https://www.onebookr.se/api/group/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          groupId,
-          token: user.accessToken,
-          invitee: inviteeId,
-          email: user.email || user.emails?.[0]?.value || user.emails?.[0]
-        })
-      })
-      .then(res => {
-        if (res.ok) {
+      try {
+        const joinRes = await fetch(`https://www.onebookr.se/api/group/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            groupId,
+            token: user.accessToken,
+            invitee: inviteeId,
+            email: user.email || user.emails?.[0]?.value || user.emails?.[0]
+          })
+        });
+        
+        if (joinRes.ok) {
+          // Markera inbjudan som svarad
+          await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ response: 'accept' })
+          });
+          
+          // Skapa öppet möte med gruppnamn
+          const openMeeting = {
+            id: groupId,
+            groupName: invitation.groupName || 'Kalenderjämförelse',
+            members: [invitation.fromEmail, user.email || user.emails?.[0]?.value || user.emails?.[0]],
+            leftAt: new Date().toISOString()
+          };
+          const existingMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
+          const updatedMeetings = existingMeetings.filter(m => m.id !== groupId);
+          updatedMeetings.push(openMeeting);
+          localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
+          setLeftMeetings(updatedMeetings);
+          
           setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
           setToast({ open: true, message: 'Du har gett tillgång till din kalender!', severity: 'success' });
+        } else {
+          setToast({ open: true, message: 'Kunde inte acceptera inbjudan.', severity: 'error' });
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.log('Failed to join group passively:', err);
         setToast({ open: true, message: 'Kunde inte acceptera inbjudan.', severity: 'error' });
-      });
+      }
     } else {
-      // Använd samma API som CompareCalendar
-      const invitation = invites.find(inv => inv.inviteeId === inviteeId);
-      if (invitation) {
-        fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+      // Neka inbjudan
+      try {
+        await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ response: 'decline' })
-        })
-        .then(res => {
-          if (res.ok) {
-            setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
-          }
-        })
-        .catch(err => {
-          console.log('Failed to decline invite:', err);
-          // Ta bort lokalt som fallback
-          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
         });
+        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+        setToast({ open: true, message: 'Inbjudan nekad.', severity: 'info' });
+      } catch (err) {
+        console.log('Failed to decline invite:', err);
+        // Ta bort lokalt som fallback
+        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+        setToast({ open: true, message: 'Inbjudan nekad.', severity: 'info' });
       }
     }
   };
@@ -466,13 +510,12 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {timeProposals.map((proposal, index) => (
                     <Card key={index} sx={{ 
-                      p: 3, 
+                      p: 2, 
                       borderRadius: 2,
                       background: '#f8f9fa',
                       boxShadow: 'none',
                       border: '1px solid #dee2e6',
                       transition: 'all 0.3s ease',
-                      minHeight: 120,
                       '&:hover': {
                         transform: 'translateY(-1px)',
                         boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
@@ -552,9 +595,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                       <Card key={meeting.id} sx={{ 
                         p: 2, 
                         borderRadius: 2,
-                        background: isUrgent ? '#ffebee' : '#f8f9fa',
+                        background: '#f8f9fa',
                         boxShadow: 'none',
-                        border: isUrgent ? '1px solid #f44336' : '1px solid #dee2e6',
+                        border: '1px solid #dee2e6',
                         transition: 'all 0.3s ease',
                         '&:hover': {
                           transform: 'translateY(-1px)',
@@ -645,7 +688,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                       }
                     }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                        {meeting.groupName}
+                        {meeting.groupName || 'Kalenderjämförelse'}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
                         Medlemmar: {meeting.members.join(', ')}
@@ -657,7 +700,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         <Button 
                           size="small" 
                           variant="contained" 
-                          onClick={() => window.location.href = '/?meetingType=group'}
+                          onClick={() => window.location.href = `/?group=${meeting.id}`}
                           sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
                         >
                           Gå in i mötet

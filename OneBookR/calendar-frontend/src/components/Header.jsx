@@ -231,22 +231,48 @@ const Header = ({ user, onNavigate }) => {
               <Button
                 variant="outlined"
                 startIcon={<ChevronLeftIcon />}
-                onClick={() => {
+                onClick={async () => {
                   // Hämta aktuell gruppinformation från URL eller session
                   const urlParams = new URLSearchParams(window.location.search);
                   const groupId = urlParams.get('group');
                   
-                  // Försök hämta gruppmedlemmar från sessionStorage eller använd fallback
-                  const groupMembers = JSON.parse(sessionStorage.getItem('currentGroupMembers') || '[]');
-                  const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || 'Du';
+                  if (groupId) {
+                    try {
+                      // Hämta gruppinformation från backend
+                      const groupResponse = await fetch(`https://www.onebookr.se/api/group/${groupId}/status`);
+                      const groupData = await groupResponse.json();
+                      
+                      const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || 'Du';
+                      
+                      const leftMeeting = {
+                        id: groupId,
+                        groupName: groupData.groupName || sessionStorage.getItem('currentGroupName') || 'Kalenderjämförelse',
+                        members: groupData.joined || JSON.parse(sessionStorage.getItem('currentGroupMembers') || '[]'),
+                        leftAt: new Date().toISOString()
+                      };
+                      
+                      // Uppdatera localStorage med det nya öppna mötet
+                      const existingMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
+                      const updatedMeetings = existingMeetings.filter(m => m.id !== groupId);
+                      updatedMeetings.push(leftMeeting);
+                      localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
+                    } catch (err) {
+                      console.log('Failed to fetch group info, using fallback:', err);
+                      // Fallback om API-anrop misslyckas
+                      const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || 'Du';
+                      const leftMeeting = {
+                        id: groupId,
+                        groupName: sessionStorage.getItem('currentGroupName') || 'Kalenderjämförelse',
+                        members: JSON.parse(sessionStorage.getItem('currentGroupMembers') || '[]'),
+                        leftAt: new Date().toISOString()
+                      };
+                      const existingMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
+                      const updatedMeetings = existingMeetings.filter(m => m.id !== groupId);
+                      updatedMeetings.push(leftMeeting);
+                      localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
+                    }
+                  }
                   
-                  const leftMeeting = {
-                    id: Date.now(),
-                    groupName: sessionStorage.getItem('currentGroupName') || 'Kalenderjämförelse',
-                    members: groupMembers.length > 0 ? groupMembers : [userEmail, 'Okänd användare'],
-                    leftAt: new Date().toISOString()
-                  };
-                  localStorage.setItem('leftMeetings', JSON.stringify([...JSON.parse(localStorage.getItem('leftMeetings') || '[]'), leftMeeting]));
                   window.location.href = '/';
                 }}
                 sx={{ 
