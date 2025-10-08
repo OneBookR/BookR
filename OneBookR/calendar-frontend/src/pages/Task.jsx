@@ -496,13 +496,13 @@ const Task = ({ user, onBack }) => {
             '& .rbc-event:hover': {
               backgroundColor: '#bbdefb !important'
             },
-            '& .rbc-event[data-task="true"]': {
+            '& .task-event': {
               backgroundColor: '#c8e6c9 !important',
               color: '#2e7d32 !important',
               border: '2px solid #4caf50 !important',
               fontWeight: '600 !important'
             },
-            '& .rbc-event[data-task="true"]:hover': {
+            '& .task-event:hover': {
               backgroundColor: '#a5d6a7 !important'
             },
             '& .rbc-time-content': {
@@ -537,27 +537,27 @@ const Task = ({ user, onBack }) => {
               eventPropGetter={(event) => {
                 if (event.resource === 'task') {
                   return {
+                    className: 'task-event',
                     style: {
-                      backgroundColor: '#c8e6c9',
-                      color: '#2e7d32',
-                      border: '2px solid #4caf50',
-                      borderRadius: '4px',
-                      fontWeight: '600',
-                      fontSize: '12px',
-                      padding: '2px 4px'
-                    },
-                    className: 'task-event'
+                      backgroundColor: '#c8e6c9 !important',
+                      color: '#2e7d32 !important',
+                      border: '2px solid #4caf50 !important',
+                      borderRadius: '4px !important',
+                      fontWeight: '600 !important',
+                      fontSize: '12px !important',
+                      padding: '2px 4px !important'
+                    }
                   };
                 }
                 return {
                   style: {
-                    backgroundColor: '#ffcdd2',
-                    color: '#d32f2f',
-                    border: '1px solid #f44336',
-                    borderRadius: '4px',
-                    fontWeight: '500',
-                    fontSize: '12px',
-                    padding: '2px 4px'
+                    backgroundColor: '#ffcdd2 !important',
+                    color: '#d32f2f !important',
+                    border: '1px solid #f44336 !important',
+                    borderRadius: '4px !important',
+                    fontWeight: '500 !important',
+                    fontSize: '12px !important',
+                    padding: '2px 4px !important'
                   }
                 };
               }}
