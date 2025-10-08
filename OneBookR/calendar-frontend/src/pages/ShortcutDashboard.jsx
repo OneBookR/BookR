@@ -312,7 +312,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           <Grid item xs={12} sm={6} md={4}>
             <Card sx={{ 
               height: 480,
-              width: 700,
+              width: 500,
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
               boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
@@ -388,7 +388,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         <Grid item xs={12} sm={6} md={4}>
             <Card sx={{ 
               height: 480,
-              width: 700,
+              width: 500,
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
               boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
@@ -468,7 +468,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         <Grid item xs={12} sm={6} md={4}>
             <Card sx={{ 
               height: 480,
-              width: 700,
+              width: 500,
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
               boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
