@@ -59,6 +59,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
   const handleInviteResponse = (groupId, inviteeId, response) => {
     if (response === 'accept') {
+      // Ta bort inbjudan från listan när användaren går med
+      setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
       window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
     } else if (response === 'accept_passive') {
       // Acceptera utan att gå in i kalenderjämföraren
@@ -389,7 +391,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                       }
                     }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                        {invite.fromEmail}
+                        {invite.groupName || 'Kalenderjämförelse'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', mb: 1, fontWeight: 600 }}>
+                        Från: {invite.fromEmail}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
                         {new Date(invite.createdAt).toLocaleDateString()}
