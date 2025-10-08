@@ -158,7 +158,7 @@ const Task = ({ user, onBack }) => {
         p: 4,
         mb: 6,
         mt: 12,
-        mx: 3,
+        mx: { xs: 2, sm: 3 },
         textAlign: 'center',
         boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
         border: '1.5px solid #e3e8ee'
