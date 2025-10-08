@@ -219,7 +219,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       </Box>
 
       {/* Moderna action cards med bredare layout */}
-      <Box sx={{ mb: 8, px: { xs: 1, sm: 2, md: 3 } }}>
+      <Box sx={{ mb: 8, px: { xs: 2, sm: 3 } }}>
         <Grid container spacing={{ xs: 3, md: 3 }} sx={{ justifyContent: 'flex-start' }}>
           <Grid item xs={12} sm={6} lg={4}>
             <Card sx={{ 
@@ -306,7 +306,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       </Box>
 
       {/* Översikt sektion */}
-      <Box sx={{ mb: 4, px: { xs: 1, sm: 2, md: 3 } }}>
+      <Box sx={{ mb: 4, px: { xs: 2, sm: 3 } }}>
         <Typography variant="h4" sx={{ 
           fontWeight: 600,
           color: '#0a2540',
