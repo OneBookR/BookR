@@ -223,7 +223,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         <Grid container spacing={{ xs: 4, md: 6 }} sx={{ justifyContent: 'center' }}>
           <Grid item xs={12} sm={6} lg={4}>
             <Card sx={{ 
-              height: 220, 
+              height: 100, 
+              width: 300,
               cursor: 'pointer', 
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
@@ -247,8 +248,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           </Grid>
           <Grid item xs={12} sm={6} lg={4}>
             <Card sx={{ 
-              height: 170, 
-              width: 220,
+              height: 100, 
+              width: 300,
               cursor: 'pointer', 
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
@@ -272,7 +273,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           </Grid>
           <Grid item xs={12} sm={6} lg={4}>
             <Card sx={{ 
-              height: 220, 
+              height: 100, 
+              width: 300,
               cursor: 'pointer', 
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
