@@ -385,33 +385,101 @@ const Task = ({ user, onBack }) => {
           <Box sx={{ 
             flex: 1,
             p: 3,
-            '& .rbc-calendar': {
-              backgroundColor: 'white',
-              borderRadius: 3,
-              overflow: 'hidden',
-              border: '1px solid #e8eaed',
-              boxShadow: '0 1px 3px rgba(60,64,67,.08)'
+            '& .rbc-calendar, .rbc-time-view, .rbc-agenda-view, .rbc-month-view': {
+              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
+              background: '#f7f9fb',
+              borderRadius: '10px',
+              border: '1px solid #e0e3e7',
+              boxShadow: '0 2px 8px 0 rgba(60,64,67,.06)',
+              color: '#000'
+            },
+            '& .rbc-toolbar': {
+              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
+              background: '#f1f3f6',
+              borderBottom: '1px solid #e0e3e7',
+              borderRadius: '10px 10px 0 0',
+              padding: '10px 16px',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              alignItems: 'center',
+              color: '#000'
+            },
+            '& .rbc-toolbar .rbc-toolbar-label': {
+              marginRight: '16px',
+              fontSize: '1.05rem',
+              fontWeight: 400,
+              color: '#1976d2',
+              letterSpacing: '-0.5px',
+              padding: '0 8px'
+            },
+            '& .rbc-btn-group button': {
+              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
+              fontSize: '1.01rem',
+              borderRadius: '999px !important',
+              border: 'none !important',
+              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%) !important',
+              color: '#fff !important',
+              marginRight: '8px !important',
+              marginBottom: '2px !important',
+              padding: '7px 18px !important',
+              fontWeight: '600 !important',
+              boxShadow: '0 2px 8px 0 rgba(99,91,255,0.13) !important',
+              transition: 'background 0.2s, box-shadow 0.2s, transform 0.1s !important',
+              outline: 'none !important',
+              borderWidth: '0 !important'
+            },
+            '& .rbc-btn-group button:hover': {
+              background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%) !important',
+              color: '#fff !important',
+              boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18) !important',
+              transform: 'scale(1.03) !important'
             },
             '& .rbc-header': {
-              backgroundColor: '#f8f9fa',
-              borderBottom: '1px solid #e8eaed',
-              fontWeight: 500,
-              padding: '12px 8px',
-              color: '#5f6368'
+              background: '#f1f3f6',
+              color: '#000',
+              fontWeight: 400,
+              fontSize: '0.98rem',
+              borderBottom: '1px solid #e0e3e7',
+              padding: '7px 0'
+            },
+            '& .rbc-today': {
+              background: '#fffde7 !important',
+              borderBottom: '2px solid #1976d2'
             },
             '& .rbc-event': {
-              borderRadius: 2,
-              border: 'none',
-              fontWeight: 500
+              backgroundColor: '#e3f2fd !important',
+              color: '#1976d2 !important',
+              border: '1px solid #1976d2 !important',
+              borderRadius: '4px !important',
+              fontSize: '12px !important',
+              fontWeight: '500 !important',
+              padding: '2px 4px !important'
             },
-            '& .rbc-time-view': {
-              border: 'none'
-            },
-            '& .rbc-time-header': {
-              borderBottom: '1px solid #e8eaed'
+            '& .rbc-event:hover': {
+              backgroundColor: '#bbdefb !important'
             },
             '& .rbc-time-content': {
-              borderTop: 'none'
+              background: '#f7f9fb',
+              borderRadius: '0 0 10px 10px'
+            },
+            '& .rbc-time-header-content': {
+              background: '#f1f3f6'
+            },
+            '& .rbc-time-slot': {
+              minHeight: '28px',
+              position: 'relative',
+              borderColor: '#e0e3e7'
+            },
+            '& .rbc-time-gutter, .rbc-time-header-gutter': {
+              background: '#f1f3f6',
+              color: '#000'
+            },
+            '& .rbc-timeslot-group': {
+              borderBottom: '1px solid #e0e3e7'
+            },
+            '& .rbc-day-slot .rbc-time-slot': {
+              borderTop: '1px solid #e0e3e7'
             }
           }}>
             <Calendar
