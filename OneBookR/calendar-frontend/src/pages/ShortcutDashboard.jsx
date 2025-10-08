@@ -220,7 +220,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
       {/* Moderna action cards med bredare layout */}
       <Box sx={{ mb: 8, px: { xs: 2, sm: 4, md: 6 } }}>
-        <Grid container spacing={{ xs: 4, md: 6 }} sx={{ justifyContent: 'center' }}>
+        <Grid container spacing={{ xs: 4, md: 6 }} sx={{ justifyContent: 'flex-start' }}>
           <Grid item xs={12} sm={6} lg={4}>
             <Card sx={{ 
               height: 100, 
@@ -237,11 +237,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               }
             }} 
                   onClick={() => onNavigateToMeeting('1v1')}>
-              <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 3, textAlign: 'center', p: 4 }}>
-                <PersonIcon sx={{ fontSize: 56, color: '#635bff' }} />
+              <CardContent sx={{ display: 'flex', alignItems: 'center', height: '100%', gap: 2, p: 3 }}>
+                <PersonIcon sx={{ fontSize: 40, color: '#635bff', flexShrink: 0 }} />
                 <Box>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#0a2540', mb: 1, fontSize: 20 }}>1v1 Meeting</Typography>
-                  <Typography variant="body1" sx={{ color: '#425466', fontSize: 15, lineHeight: 1.5, maxWidth: 200 }}>Jämför kalendrar och hitta ledig tid</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.5, fontSize: 18 }}>1v1 Meeting</Typography>
+                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 13, lineHeight: 1.4 }}>Jämför kalendrar och hitta ledig tid</Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -262,11 +262,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               }
             }} 
                   onClick={() => onNavigateToMeeting('group')}>
-              <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 3, textAlign: 'center', p: 4 }}>
-                <GroupIcon sx={{ fontSize: 56, color: '#635bff' }} />
+              <CardContent sx={{ display: 'flex', alignItems: 'center', height: '100%', gap: 2, p: 3 }}>
+                <GroupIcon sx={{ fontSize: 40, color: '#635bff', flexShrink: 0 }} />
                 <Box>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#0a2540', mb: 1, fontSize: 20 }}>Group Meeting</Typography>
-                  <Typography variant="body1" sx={{ color: '#425466', fontSize: 15, lineHeight: 1.5, maxWidth: 200 }}>Bjud in flera och hitta gemensam tid</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.5, fontSize: 18 }}>Group Meeting</Typography>
+                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 13, lineHeight: 1.4 }}>Bjud in flera och hitta gemensam tid</Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -287,11 +287,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               }
             }} 
                   onClick={() => onNavigateToMeeting('task')}>
-              <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 3, textAlign: 'center', p: 4 }}>
-                <TaskIcon sx={{ fontSize: 56, color: '#635bff' }} />
+              <CardContent sx={{ display: 'flex', alignItems: 'center', height: '100%', gap: 2, p: 3 }}>
+                <TaskIcon sx={{ fontSize: 40, color: '#635bff', flexShrink: 0 }} />
                 <Box>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#0a2540', mb: 1, fontSize: 20 }}>Create Task</Typography>
-                  <Typography variant="body1" sx={{ color: '#425466', fontSize: 15, lineHeight: 1.5, maxWidth: 200 }}>Schemalägg tid för uppgifter</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.5, fontSize: 18 }}>Create Task</Typography>
+                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 13, lineHeight: 1.4 }}>Schemalägg tid för uppgifter</Typography>
                 </Box>
               </CardContent>
             </Card>
