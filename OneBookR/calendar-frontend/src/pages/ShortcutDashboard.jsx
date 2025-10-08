@@ -220,10 +220,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
       {/* Moderna action cards med bredare layout */}
       <Box sx={{ mb: 8, px: { xs: 1, sm: 2, md: 3 } }}>
-        <Grid container spacing={{ xs: 4, md: 6 }} sx={{ justifyContent: 'flex-start' }}>
+        <Grid container spacing={{ xs: 3, md: 3 }} sx={{ justifyContent: 'flex-start' }}>
           <Grid item xs={12} sm={6} lg={4}>
             <Card sx={{ 
-              height: 100, 
+              height: 85, 
               width: 300,
               cursor: 'pointer', 
               background: 'rgba(255,255,255,0.98)',
@@ -250,7 +250,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           </Grid>
           <Grid item xs={12} sm={6} lg={4}>
             <Card sx={{ 
-              height: 100, 
+              height: 85, 
               width: 300,
               cursor: 'pointer', 
               background: 'rgba(255,255,255,0.98)',
@@ -277,7 +277,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           </Grid>
           <Grid item xs={12} sm={6} lg={4}>
             <Card sx={{ 
-              height: 100, 
+              height: 85, 
               width: 300,
               cursor: 'pointer', 
               background: 'rgba(255,255,255,0.98)',
