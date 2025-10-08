@@ -490,10 +490,13 @@ const Task = ({ user, onBack }) => {
               style={{ height: '100%' }}
               eventPropGetter={(event) => ({
                 style: {
-                  backgroundColor: event.resource === 'task' ? '#4caf50' : '#f44336',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px'
+                  backgroundColor: event.resource === 'task' ? '#4caf50 !important' : '#f44336 !important',
+                  color: 'white !important',
+                  border: event.resource === 'task' ? '1px solid #4caf50 !important' : '1px solid #f44336 !important',
+                  borderRadius: '4px !important',
+                  fontWeight: '500 !important',
+                  fontSize: '12px !important',
+                  padding: '2px 4px !important'
                 }
               })}
               views={['month', 'week', 'day']}
