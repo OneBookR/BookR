@@ -158,11 +158,10 @@ const Task = ({ user, onBack }) => {
           flexShrink: 0, 
           bgcolor: '#fafbfc', 
           borderRight: '1px solid #e8eaed',
-          display: 'flex',
-          flexDirection: 'column',
+          overflow: 'auto',
           boxShadow: '2px 0 8px rgba(60,64,67,.08)'
         }}>
-          <Box sx={{ p: 3, flex: 1, overflow: 'auto' }}>
+          <Box sx={{ p: 3, overflow: 'auto' }}>
             <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1a73e8' }}>
               📅 Skapa uppgift
             </Typography>
@@ -316,12 +315,6 @@ const Task = ({ user, onBack }) => {
               }}
             />
             
-
-            
-          </Box>
-          
-          {/* Fast knappar i botten */}
-          <Box sx={{ p: 3, borderTop: '1px solid #e8eaed', bgcolor: 'white' }}>
             <Button
               variant="contained"
               fullWidth
@@ -375,6 +368,9 @@ const Task = ({ user, onBack }) => {
                 {message}
               </Alert>
             )}
+            
+
+            
           </Box>
         </Box>
         
