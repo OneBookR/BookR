@@ -47,7 +47,7 @@ const Header = ({ user, onNavigate }) => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box sx={{
               fontWeight: 800,
-              fontSize: { xs: 20, sm: 28 },
+              fontSize: { xs: 18, sm: 24 },
               color: 'white',
               letterSpacing: 1,
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
@@ -71,6 +71,7 @@ const Header = ({ user, onNavigate }) => {
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
+                  fontSize: { xs: 12, sm: 14 },
                   '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                 }}
               >
@@ -82,6 +83,7 @@ const Header = ({ user, onNavigate }) => {
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
+                  fontSize: { xs: 12, sm: 14 },
                   '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                 }}
               >
@@ -93,6 +95,7 @@ const Header = ({ user, onNavigate }) => {
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
+                  fontSize: { xs: 12, sm: 14 },
                   '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                 }}
               >
@@ -104,6 +107,7 @@ const Header = ({ user, onNavigate }) => {
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
+                  fontSize: { xs: 12, sm: 14 },
                   '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                 }}
               >
@@ -124,14 +128,14 @@ const Header = ({ user, onNavigate }) => {
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 2 }}>
             <Button
               color="inherit"
-              sx={{ fontWeight: 500, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+              sx={{ fontWeight: 500, fontSize: { xs: 12, sm: 14 }, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
               onClick={() => window.location.href = '/om-oss'}
             >
               Om oss
             </Button>
             <Button
               color="inherit"
-              sx={{ fontWeight: 500, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+              sx={{ fontWeight: 500, fontSize: { xs: 12, sm: 14 }, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
               onClick={() => window.location.href = '/kontakt'}
             >
               Kontakta oss
