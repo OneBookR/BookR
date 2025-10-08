@@ -28,9 +28,10 @@ console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist
 // Maintenance mode middleware
 app.use((req, res, next) => {
   if (MAINTENANCE_MODE) {
-    // Admin bypass med secret key
-    if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024') {
+    // Admin bypass med secret key eller session
+    if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024' || req.session.adminBypass) {
       console.log('Admin bypass activated for:', req.ip);
+      req.session.adminBypass = true; // Spara i session
       return next();
     }
     
@@ -122,6 +123,11 @@ app.get('/auth/google', (req, res, next) => {
   const state = req.query.state;
   if (state) {
     req.session.oauthState = state;
+  }
+  
+  // Bevara admin bypass genom OAuth
+  if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024') {
+    req.session.adminBypass = true;
   }
   
   passport.authenticate('google', {
