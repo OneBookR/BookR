@@ -42,16 +42,16 @@ const Header = ({ user, onNavigate }) => {
         boxShadow: '0 4px 20px rgba(102, 126, 234, 0.3)'
       }}
     >
-      <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 3 } }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 3 } }}>
+      <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', minHeight: { xs: 48, sm: 56, md: 64 }, px: { xs: 1, sm: 2, md: 3 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.5, sm: 1.5, md: 3 } }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box sx={{
               fontWeight: 800,
-              fontSize: { xs: 18, sm: 24 },
+              fontSize: { xs: 16, sm: 20, md: 24 },
               color: 'white',
-              letterSpacing: 1,
+              letterSpacing: { xs: 0.5, sm: 1 },
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-              mr: { xs: 1, sm: 2 },
+              mr: { xs: 0.5, sm: 1, md: 2 },
               userSelect: 'none',
               cursor: 'pointer',
               textShadow: '0 2px 4px rgba(0,0,0,0.2)'
@@ -64,14 +64,15 @@ const Header = ({ user, onNavigate }) => {
           
           {/* Navigation Menu */}
           {user && (
-            <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
+            <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: { xs: 0.5, sm: 0.8, md: 1 } }}>
               <Button
                 startIcon={<DashboardIcon />}
                 onClick={() => window.location.href = '/'}
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
-                  fontSize: { xs: 12, sm: 14 },
+                  fontSize: { xs: 10, sm: 12, md: 14 },
+                  px: { xs: 1, sm: 1.5, md: 2 },
                   '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                 }}
               >
@@ -83,7 +84,8 @@ const Header = ({ user, onNavigate }) => {
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
-                  fontSize: { xs: 12, sm: 14 },
+                  fontSize: { xs: 10, sm: 12, md: 14 },
+                  px: { xs: 1, sm: 1.5, md: 2 },
                   '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                 }}
               >
@@ -95,7 +97,8 @@ const Header = ({ user, onNavigate }) => {
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
-                  fontSize: { xs: 12, sm: 14 },
+                  fontSize: { xs: 10, sm: 12, md: 14 },
+                  px: { xs: 1, sm: 1.5, md: 2 },
                   '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                 }}
               >
@@ -107,7 +110,8 @@ const Header = ({ user, onNavigate }) => {
                 sx={{ 
                   color: 'rgba(255,255,255,0.9)', 
                   fontWeight: 500,
-                  fontSize: { xs: 12, sm: 14 },
+                  fontSize: { xs: 10, sm: 12, md: 14 },
+                  px: { xs: 1, sm: 1.5, md: 2 },
                   '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                 }}
               >
@@ -125,7 +129,7 @@ const Header = ({ user, onNavigate }) => {
             mx: 2
           }} />
           
-          <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 2 }}>
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: { xs: 1, md: 2 } }}>
             <Button
               color="inherit"
               sx={{ fontWeight: 500, fontSize: { xs: 12, sm: 14 }, color: 'rgba(255,255,255,0.9)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
@@ -143,7 +147,7 @@ const Header = ({ user, onNavigate }) => {
           </Box>
         </Box>
         
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.5, sm: 0.8, md: 1 } }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <LightModeIcon sx={{ fontSize: 20, color: 'rgba(255,255,255,0.7)' }} />
             <Switch 
