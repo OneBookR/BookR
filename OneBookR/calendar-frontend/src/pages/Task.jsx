@@ -35,7 +35,7 @@ const Task = ({ user, onBack }) => {
       const now = new Date();
       const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
       
-      const response = await fetch('/api/calendar/events', {
+      const response = await fetch('https://www.onebookr.se/api/calendar/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -70,7 +70,7 @@ const Task = ({ user, onBack }) => {
     setMessage('');
 
     try {
-      const response = await fetch('/api/task/schedule', {
+      const response = await fetch('https://www.onebookr.se/api/task/schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -158,10 +158,11 @@ const Task = ({ user, onBack }) => {
           flexShrink: 0, 
           bgcolor: '#fafbfc', 
           borderRight: '1px solid #e8eaed',
-          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
           boxShadow: '2px 0 8px rgba(60,64,67,.08)'
         }}>
-          <Box sx={{ p: 3 }}>
+          <Box sx={{ p: 3, flex: 1, overflow: 'auto' }}>
             <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1a73e8' }}>
               📅 Skapa uppgift
             </Typography>
@@ -315,6 +316,12 @@ const Task = ({ user, onBack }) => {
               }}
             />
             
+
+            
+          </Box>
+          
+          {/* Fast knappar i botten */}
+          <Box sx={{ p: 3, borderTop: '1px solid #e8eaed', bgcolor: 'white' }}>
             <Button
               variant="contained"
               fullWidth
@@ -346,6 +353,7 @@ const Task = ({ user, onBack }) => {
                   borderColor: '#4caf50',
                   color: '#4caf50',
                   fontWeight: 600,
+                  mb: 2,
                   '&:hover': {
                     borderColor: '#45a049',
                     color: '#45a049',
@@ -361,7 +369,6 @@ const Task = ({ user, onBack }) => {
               <Alert 
                 severity={message.includes('Fel') ? 'error' : 'success'} 
                 sx={{ 
-                  mt: 2,
                   borderRadius: 2
                 }}
               >

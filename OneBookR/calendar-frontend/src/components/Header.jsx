@@ -232,10 +232,18 @@ const Header = ({ user, onNavigate }) => {
                 variant="outlined"
                 startIcon={<ChevronLeftIcon />}
                 onClick={() => {
+                  // Hämta aktuell gruppinformation från URL eller session
+                  const urlParams = new URLSearchParams(window.location.search);
+                  const groupId = urlParams.get('group');
+                  
+                  // Försök hämta gruppmedlemmar från sessionStorage eller använd fallback
+                  const groupMembers = JSON.parse(sessionStorage.getItem('currentGroupMembers') || '[]');
+                  const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || 'Du';
+                  
                   const leftMeeting = {
                     id: Date.now(),
-                    groupName: 'Kalenderjämförelse',
-                    members: ['Du', 'Annan användare'],
+                    groupName: sessionStorage.getItem('currentGroupName') || 'Kalenderjämförelse',
+                    members: groupMembers.length > 0 ? groupMembers : [userEmail, 'Okänd användare'],
                     leftAt: new Date().toISOString()
                   };
                   localStorage.setItem('leftMeetings', JSON.stringify([...JSON.parse(localStorage.getItem('leftMeetings') || '[]'), leftMeeting]));

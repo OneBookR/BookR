@@ -60,6 +60,28 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const handleInviteResponse = (groupId, inviteeId, response) => {
     if (response === 'accept') {
       window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
+    } else if (response === 'accept_passive') {
+      // Acceptera utan att gå in i kalenderjämföraren
+      fetch(`https://www.onebookr.se/api/group/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupId,
+          token: user.accessToken,
+          invitee: inviteeId,
+          email: user.email || user.emails?.[0]?.value || user.emails?.[0]
+        })
+      })
+      .then(res => {
+        if (res.ok) {
+          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+          setToast({ open: true, message: 'Du har gett tillgång till din kalender!', severity: 'success' });
+        }
+      })
+      .catch(err => {
+        console.log('Failed to join group passively:', err);
+        setToast({ open: true, message: 'Kunde inte acceptera inbjudan.', severity: 'error' });
+      });
     } else {
       // Använd samma API som CompareCalendar
       const invitation = invites.find(inv => inv.inviteeId === inviteeId);
@@ -372,22 +394,30 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                       <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
                         {new Date(invite.createdAt).toLocaleDateString()}
                       </Typography>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         <Button 
                           size="small" 
                           variant="outlined" 
                           onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')}
-                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                          sx={{ fontSize: 10, py: 0.5, px: 1 }}
                         >
                           Neka
                         </Button>
                         <Button 
                           size="small" 
+                          variant="outlined" 
+                          onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept_passive')}
+                          sx={{ fontSize: 10, py: 0.5, px: 1, bgcolor: 'rgba(25,118,210,0.1)' }}
+                        >
+                          Ge tillgång
+                        </Button>
+                        <Button 
+                          size="small" 
                           variant="contained" 
                           onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')}
-                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
+                          sx={{ fontSize: 10, py: 0.5, px: 1 }}
                         >
-                          Acceptera
+                          Gå med
                         </Button>
                       </Box>
                     </Card>
