@@ -929,6 +929,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
 
   return (
     <>
+    <div style={{ 
+      marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
+      transition: 'margin-right 0.3s ease',
+      minHeight: '100vh',
+      padding: isMobile ? '10px' : '0'
+    }}>
       {/* Clean Banner */}
       <Box sx={{
         background: 'rgba(255,255,255,0.98)',
@@ -936,7 +942,9 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         p: 4,
         mb: 6,
         mt: 12,
-        mx: { xs: 2, sm: 3 },
+        mx: 'auto',
+        width: 1500,
+        maxWidth: '95vw',
         textAlign: 'center',
         boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
         border: '1.5px solid #e3e8ee'
@@ -965,13 +973,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           </Typography>
         </Box>
       </Box>
-      
-    <div style={{ 
-      marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
-      transition: 'margin-right 0.3s ease',
-      minHeight: '100vh',
-      padding: isMobile ? '10px' : '0'
-    }}>
 
       <Slide direction="up" in={true} timeout={800}>
         <Box
