@@ -320,7 +320,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           <Grid item xs={12} sm={12} md={4}>
             <Card sx={{ 
               height: 480,
-              width: 500,
+              width: 400,
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
               boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
@@ -396,7 +396,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         <Grid item xs={12} sm={6} md={4}>
             <Card sx={{ 
               height: 480,
-              width: 500,
+              width: 400,
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
               boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
@@ -476,7 +476,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         <Grid item xs={12} sm={6} md={4}>
             <Card sx={{ 
               height: 480,
-              width: 500,
+              width: 400,
               background: 'rgba(255,255,255,0.98)',
               borderRadius: 4,
               boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
@@ -555,6 +555,40 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               )}
             </Box>
           </Card>
+        </Grid>
+        
+        {/* Öppna möten sektion - under de andra tre */}
+        <Grid container spacing={{ xs: 3, md: 3 }} sx={{ justifyContent: 'flex-start', mt: 4 }}>
+          <Grid item xs={12} sm={12} md={8}>
+            <Card sx={{ 
+              height: 200,
+              background: 'rgba(255,255,255,0.98)',
+              borderRadius: 4,
+              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
+              border: '1.5px solid #e3e8ee',
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 16px 56px 0 rgba(99,91,255,0.15), 0 4px 16px 0 rgba(60,64,67,.1)'
+              }
+            }}>
+            <Box sx={{ p: 3, borderBottom: '1px solid #e3e8ee' }}>
+              <Typography variant="h5" sx={{ 
+                fontWeight: 600,
+                color: '#0a2540',
+                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
+              }}>Öppna möten</Typography>
+            </Box>
+            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+              <Box sx={{ textAlign: 'center', py: 2 }}>
+                <Typography sx={{ color: '#425466', fontWeight: 400, mb: 2 }}>Inga öppna möten just nu</Typography>
+                <Typography variant="caption" sx={{ color: '#666' }}>När du lämnar ett möte kommer det att visas här</Typography>
+              </Box>
+            </Box>
+          </Card>
+          </Grid>
         </Grid>
       </Grid>
       </Box>

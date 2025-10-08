@@ -11,6 +11,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import GroupIcon from '@mui/icons-material/Group';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import TaskIcon from '@mui/icons-material/Task';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import { useTheme } from '../hooks/useTheme';
 import { useNotifications } from '../hooks/useNotifications';
 import { usePWA } from '../hooks/usePWA';
@@ -116,6 +117,19 @@ const Header = ({ user, onNavigate }) => {
                 }}
               >
                 Task
+              </Button>
+              <Button
+                startIcon={<ChevronLeftIcon />}
+                onClick={() => window.location.href = '/'}
+                sx={{ 
+                  color: 'rgba(255,255,255,0.9)', 
+                  fontWeight: 500,
+                  fontSize: { xs: 10, sm: 12, md: 14 },
+                  px: { xs: 1, sm: 1.5, md: 2 },
+                  '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
+                }}
+              >
+                Lämna grupp
               </Button>
             </Box>
           )}
