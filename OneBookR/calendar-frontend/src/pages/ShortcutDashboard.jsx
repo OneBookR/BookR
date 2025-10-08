@@ -381,13 +381,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                     <Card key={index} sx={{ 
                       p: 2, 
                       borderRadius: 2,
-                      background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: '#f8f9fa',
+                      boxShadow: 'none',
+                      border: '1px solid #dee2e6',
                       transition: 'all 0.3s ease',
                       '&:hover': {
                         transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
                       }
                     }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
@@ -468,14 +468,14 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                     <Card key={index} sx={{ 
                       p: 3, 
                       borderRadius: 2,
-                      background: 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                      border: '1px solid rgba(255,193,7,0.2)',
+                      background: '#f8f9fa',
+                      boxShadow: 'none',
+                      border: '1px solid #dee2e6',
                       transition: 'all 0.3s ease',
                       minHeight: 120,
                       '&:hover': {
                         transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
                       }
                     }}>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2, fontSize: 16 }}>
@@ -552,13 +552,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                       <Card key={meeting.id} sx={{ 
                         p: 2, 
                         borderRadius: 2,
-                        background: isUrgent ? 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)' : 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                        border: isUrgent ? '1px solid #f44336' : '1px solid rgba(255,255,255,0.2)',
+                        background: isUrgent ? '#ffebee' : '#f8f9fa',
+                        boxShadow: 'none',
+                        border: isUrgent ? '1px solid #f44336' : '1px solid #dee2e6',
                         transition: 'all 0.3s ease',
                         '&:hover': {
                           transform: 'translateY(-1px)',
-                          boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
                         }
                       }}>
                         <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
@@ -635,13 +635,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                     <Card key={meeting.id} sx={{ 
                       p: 2, 
                       borderRadius: 2,
-                      background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                      border: '1px solid rgba(33,150,243,0.2)',
+                      background: '#f8f9fa',
+                      boxShadow: 'none',
+                      border: '1px solid #dee2e6',
                       transition: 'all 0.3s ease',
                       '&:hover': {
                         transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
                       }
                     }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
