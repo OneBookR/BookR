@@ -30,6 +30,7 @@ app.use((req, res, next) => {
   if (MAINTENANCE_MODE) {
     // Admin bypass med secret key
     if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024') {
+      console.log('Admin bypass activated for:', req.ip);
       return next();
     }
     
