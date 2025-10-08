@@ -1,7 +1,5 @@
 import React from 'react';
-import { AppBar, Toolbar, Box, Typography, Button, Switch, IconButton } from '@mui/material';
-import DarkModeIcon from '@mui/icons-material/DarkMode';
-import LightModeIcon from '@mui/icons-material/LightMode';
+import { AppBar, Toolbar, Box, Typography, Button, IconButton } from '@mui/material';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import GetAppIcon from '@mui/icons-material/GetApp';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -12,12 +10,10 @@ import GroupIcon from '@mui/icons-material/Group';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import TaskIcon from '@mui/icons-material/Task';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import { useTheme } from '../hooks/useTheme';
 import { useNotifications } from '../hooks/useNotifications';
 import { usePWA } from '../hooks/usePWA';
 
 const Header = ({ user, onNavigate }) => {
-  const { theme, toggleTheme } = useTheme();
   const { permission, requestPermission } = useNotifications();
   const { isInstallable, installApp } = usePWA();
 
@@ -150,24 +146,6 @@ const Header = ({ user, onNavigate }) => {
         </Box>
         
         <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.5, sm: 0.8, md: 1 } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <LightModeIcon sx={{ fontSize: 20, color: 'rgba(255,255,255,0.7)' }} />
-            <Switch 
-              checked={theme.isDark} 
-              onChange={toggleTheme}
-              size="small"
-              sx={{
-                '& .MuiSwitch-thumb': {
-                  bgcolor: 'white'
-                },
-                '& .MuiSwitch-track': {
-                  bgcolor: 'rgba(255,255,255,0.3)'
-                }
-              }}
-            />
-            <DarkModeIcon sx={{ fontSize: 20, color: 'rgba(255,255,255,0.7)' }} />
-          </Box>
-          
           {permission !== 'granted' && (
             <Button
               size="small"
