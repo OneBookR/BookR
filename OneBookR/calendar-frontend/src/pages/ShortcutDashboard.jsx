@@ -237,13 +237,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               }
             }} 
                   onClick={() => onNavigateToMeeting('1v1')}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 50, height: 80 }}>
-                  <PersonIcon sx={{ fontSize: 32, color: '#635bff' }} />
+              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
+                  <PersonIcon sx={{ fontSize: 36, color: '#635bff' }} />
                 </Box>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 80 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.2, fontSize: 15, lineHeight: 1.1 }}>1v1 Meeting</Typography>
-                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 11, lineHeight: 1.2 }}>Jämför kalendrar och hitta ledig tid</Typography>
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>1v1 Meeting</Typography>
+                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Jämför kalendrar och hitta ledig tid</Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -264,13 +264,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               }
             }} 
                   onClick={() => onNavigateToMeeting('group')}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 1.0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 50, height: 80 }}>
-                  <GroupIcon sx={{ fontSize: 32, color: '#635bff' }} />
+              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
+                  <GroupIcon sx={{ fontSize: 36, color: '#635bff' }} />
                 </Box>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 80 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.2, fontSize: 15, lineHeight: 1.1 }}>Group Meeting</Typography>
-                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 11, lineHeight: 1.2 }}>Bjud in flera och hitta gemensam tid</Typography>
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>Group Meeting</Typography>
+                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Bjud in flera och hitta gemensam tid</Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -291,13 +291,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               }
             }} 
                   onClick={() => onNavigateToMeeting('task')}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 1.0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 50, height: 80 }}>
-                  <TaskIcon sx={{ fontSize: 32, color: '#635bff' }} />
+              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
+                  <TaskIcon sx={{ fontSize: 36, color: '#635bff' }} />
                 </Box>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 80 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.2, fontSize: 15, lineHeight: 1.1 }}>Create Task</Typography>
-                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 11, lineHeight: 1.2 }}>Schemalägg tid för uppgifter</Typography>
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>Create Task</Typography>
+                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Schemalägg tid för uppgifter</Typography>
                 </Box>
               </CardContent>
             </Card>
