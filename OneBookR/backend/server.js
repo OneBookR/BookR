@@ -25,35 +25,6 @@ const PORT = process.env.PORT || 3000;
 const MAINTENANCE_MODE = process.env.MAINTENANCE_MODE === 'true';
 console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist)' : 'OFF (full app available)');
 
-// Maintenance mode middleware
-app.use((req, res, next) => {
-  if (MAINTENANCE_MODE) {
-    // Admin bypass med secret key eller session
-    if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024' || req.session.adminBypass) {
-      console.log('Admin bypass activated for:', req.ip);
-      req.session.adminBypass = true; // Spara i session
-      return next();
-    }
-    
-    const allowedPaths = [
-      '/waitlist',
-      '/admin/waitlist', 
-      '/api/waitlist',
-      '/api/waitlist/count',
-      '/api/waitlist/admin',
-      '/api/waitlist/share'
-    ];
-    
-    if (req.path.includes('.') || allowedPaths.some(path => req.path.startsWith(path))) {
-      return next();
-    }
-    
-    return res.redirect('/waitlist');
-  }
-  
-  next();
-});
-
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
 
@@ -92,6 +63,35 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Maintenance mode middleware (efter session setup)
+app.use((req, res, next) => {
+  if (MAINTENANCE_MODE) {
+    // Admin bypass med secret key eller session
+    if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024' || req.session.adminBypass) {
+      console.log('Admin bypass activated for:', req.ip);
+      req.session.adminBypass = true; // Spara i session
+      return next();
+    }
+    
+    const allowedPaths = [
+      '/waitlist',
+      '/admin/waitlist', 
+      '/api/waitlist',
+      '/api/waitlist/count',
+      '/api/waitlist/admin',
+      '/api/waitlist/share'
+    ];
+    
+    if (req.path.includes('.') || allowedPaths.some(path => req.path.startsWith(path))) {
+      return next();
+    }
+    
+    return res.redirect('/waitlist');
+  }
+  
+  next();
+});
 
 // Google OAuth-strategi
 passport.use(new GoogleStrategy({
