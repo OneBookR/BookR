@@ -64,13 +64,11 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Maintenance mode middleware (efter session setup)
+// Maintenance mode middleware
 app.use((req, res, next) => {
   if (MAINTENANCE_MODE) {
-    // Admin bypass med secret key eller session
-    if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024' || req.session.adminBypass) {
-      console.log('Admin bypass activated for:', req.ip);
-      req.session.adminBypass = true; // Spara i session
+    // Admin bypass via session
+    if (req.session.adminAccess) {
       return next();
     }
     
@@ -80,7 +78,8 @@ app.use((req, res, next) => {
       '/api/waitlist',
       '/api/waitlist/count',
       '/api/waitlist/admin',
-      '/api/waitlist/share'
+      '/api/waitlist/share',
+      '/api/admin/login'
     ];
     
     if (req.path.includes('.') || allowedPaths.some(path => req.path.startsWith(path))) {
@@ -125,10 +124,7 @@ app.get('/auth/google', (req, res, next) => {
     req.session.oauthState = state;
   }
   
-  // Bevara admin bypass genom OAuth
-  if (req.query.admin === process.env.ADMIN_BYPASS_KEY || req.query.admin === 'bookr-dev-2024') {
-    req.session.adminBypass = true;
-  }
+
   
   passport.authenticate('google', {
     scope: [
@@ -1129,6 +1125,17 @@ app.get('/api/invitations/:email', async (req, res) => {
   } catch (error) {
     console.error('Error fetching invitations:', error);
     res.status(500).json({ error: 'Kunde inte hämta inbjudningar' });
+  }
+});
+
+// Admin login endpoint
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password === process.env.ADMIN_KEY) {
+    req.session.adminAccess = true;
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ error: 'Fel lösenord' });
   }
 });
 

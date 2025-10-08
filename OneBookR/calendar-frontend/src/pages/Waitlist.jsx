@@ -483,6 +483,35 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
         </Container>
       </Box>
 
+      {/* Dold admin-knapp */}
+      <Box sx={{
+        position: 'fixed',
+        bottom: 10,
+        right: 10,
+        width: 20,
+        height: 20,
+        cursor: 'pointer',
+        opacity: 0.1,
+        '&:hover': { opacity: 0.3 }
+      }} onClick={() => {
+        const password = prompt('Admin lösenord:');
+        if (password) {
+          fetch('/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+          }).then(res => res.json()).then(data => {
+            if (data.success) {
+              window.location.href = '/dashboard';
+            } else {
+              alert('Fel lösenord');
+            }
+          });
+        }
+      }}>
+        ⚙️
+      </Box>
+
       {/* Timeline Section */}
       <Box sx={{ bgcolor: '#f8fafc', py: 10 }}>
         <Container maxWidth="lg">
