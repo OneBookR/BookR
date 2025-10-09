@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Typography, TextField, Button, Paper, Grid, Alert, Container } from '@mui/material';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
-import InvitationSidebar from './InvitationSidebar.jsx';
+
 import LogoutIcon from '@mui/icons-material/Logout';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
@@ -149,8 +149,6 @@ const Task = ({ user, onBack }) => {
 
   return (
     <>
-      <InvitationSidebar user={user} />
-      
       {/* Clean Banner */}
       <Box sx={{
         background: 'rgba(255,255,255,0.98)',
