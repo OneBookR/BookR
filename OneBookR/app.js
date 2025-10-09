@@ -30,27 +30,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(passport.initialize());
 
-// Middleware: radera sessionscookie och logga ut användaren vid varje request
-app.use((req, res, next) => {
-    // Radera session-cookien om den finns
-    if (req.session) {
-        req.session.destroy(() => {});
-    }
-    // Passport: logga ut om inloggad
-    if (req.logout && req.isAuthenticated && req.isAuthenticated()) {
-        req.logout(err => {
-            if (err) { return next(err); }
-            // Radera eventuella cookies
-            res.clearCookie('connect.sid');
-            return res.redirect('/login');
-        });
-    } else {
-        // Radera eventuella cookies
-        res.clearCookie('connect.sid');
-        next();
-    }
-});
-
 passport.use(new LocalStrategy(
   function(username, password, done) {
     User.findOne({ username: username }, function (err, user) {
