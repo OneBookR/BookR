@@ -349,13 +349,37 @@ function App() {
               py: 0,
             }}
           >
+            {/* BookR Logo */}
+            <Box sx={{
+              textAlign: 'center',
+              mb: 4,
+              mt: 10
+            }}>
+              <Typography sx={{
+                fontWeight: 800,
+                fontSize: { xs: 24, sm: 28, md: 32 },
+                color: '#635bff',
+                letterSpacing: 0.5,
+                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+                textShadow: '0 2px 4px rgba(99,91,255,0.2)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  transform: 'scale(1.05)',
+                  textShadow: '0 4px 8px rgba(99,91,255,0.3)'
+                }
+              }}
+              onClick={() => window.location.href = '/'}>
+                BookR
+              </Typography>
+            </Box>
+            
             <Paper
               elevation={0}
               sx={{
                 p: { xs: 4, sm: 7, md: 9 },
                 borderRadius: 8,
                 mb: 5,
-                mt: 10,
                 maxWidth: 540,
                 width: '100%',
                 mx: 'auto',
@@ -494,11 +518,7 @@ function App() {
               </Button>
 
             </Paper>
-            <Box sx={{ textAlign: 'center', mt: 3 }}>
-              <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
-                Är du företagare? Få din egen bokningslänk för kunder
-              </Typography>
-            </Box>
+
             <Box sx={{ maxWidth: 700, width: '100%', mx: 'auto', textAlign: 'center', mb: 4 }}>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 Din kalenderdata används endast för att hitta gemensamma lediga tider och delas aldrig vidare.
