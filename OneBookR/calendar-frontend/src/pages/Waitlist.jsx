@@ -148,16 +148,21 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
         {/* BookR Logo */}
         <Box sx={{
           textAlign: 'center',
-          mb: 6
+          mb: 4
         }}>
           <Typography sx={{
             fontWeight: 800,
-            fontSize: { xs: 40, sm: 48, md: 56 },
+            fontSize: { xs: 32, sm: 36, md: 42 },
             color: '#635bff',
-            letterSpacing: 1,
+            letterSpacing: 0.5,
             fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
             textShadow: '0 2px 4px rgba(99,91,255,0.2)',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              transform: 'scale(1.05)',
+              textShadow: '0 4px 8px rgba(99,91,255,0.3)'
+            }
           }}
           onClick={() => window.location.href = '/'}>
             BookR
