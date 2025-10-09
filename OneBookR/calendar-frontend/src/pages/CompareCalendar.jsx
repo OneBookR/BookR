@@ -7,7 +7,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 // Konfigurera moment för svensk tid (GMT+1)
 moment.locale('sv');
 import '../styles/theme.css';
-import { Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, DialogActions, Paper, InputAdornment, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Fade, Tooltip, Badge, Skeleton, Slide, Zoom, Grow, IconButton, Container } from '@mui/material';
+import { Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, DialogActions, Paper, InputAdornment, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Fade, Tooltip, Badge, Skeleton, Slide, Zoom, Grow, IconButton } from '@mui/material';
 import { TimeSlotSkeleton, SuggestionSkeleton } from '../components/LoadingSkeleton';
 import { useTheme } from '../hooks/useTheme';
 import { useNotifications } from '../hooks/useNotifications';
@@ -938,42 +938,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       minHeight: '100vh',
       padding: isMobile ? '10px' : '0'
     }}>
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3 } }}>
-        {/* Clean Banner */}
-        <Box sx={{
-          background: 'rgba(255,255,255,0.98)',
-          borderRadius: 3,
-          p: 4,
-          mb: 6,
-          textAlign: 'center',
-          boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-          border: '1.5px solid #e3e8ee'
-        }}>
-          <Box sx={{ position: 'relative', zIndex: 1 }}>
-            <Typography variant="h3" sx={{ 
-              fontWeight: 700,
-              letterSpacing: -1.5,
-              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-              color: '#0a2540',
-              mb: 1,
-              fontSize: { xs: 28, md: 36 },
-              lineHeight: 1.08
-            }}>
-              Kalenderjämförelse
-            </Typography>
-            <Typography variant="h6" sx={{ 
-              color: '#425466',
-              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-              fontWeight: 400,
-              fontSize: { xs: 16, md: 18 },
-              lineHeight: 1.4,
-              letterSpacing: -0.5
-            }}>
-              Jämför kalendrar och hitta gemensamma lediga tider för möten
-            </Typography>
-          </Box>
-        </Box>
-      </Container>
 
 
       <Slide direction="up" in={true} timeout={800}>

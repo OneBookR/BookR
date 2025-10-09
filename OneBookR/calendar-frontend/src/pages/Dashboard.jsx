@@ -187,22 +187,18 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   return (
     <>
-      {/* Clean Banner - Full Width at Top */}
       {((!groupId || groupStatus.allJoined) && !waitingForOthers) && (
-        <Box sx={{
-          background: 'rgba(255,255,255,0.98)',
-          p: 4,
-          mb: 6,
-          width: '100vw',
-          position: 'relative',
-          left: '50%',
-          right: '50%',
-          marginLeft: '-50vw',
-          marginRight: '-50vw',
-          textAlign: 'center',
-          boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-          borderBottom: '1.5px solid #e3e8ee'
-        }}>
+        <Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3 } }}>
+          {/* Clean Banner */}
+          <Box sx={{
+            background: 'rgba(255,255,255,0.98)',
+            borderRadius: 3,
+            p: 4,
+            mb: 6,
+            textAlign: 'center',
+            boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+            border: '1.5px solid #e3e8ee'
+          }}>
           <Box sx={{ position: 'relative', zIndex: 1 }}>
             <Typography variant="h3" sx={{ 
               fontWeight: 700,
@@ -227,6 +223,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
             </Typography>
           </Box>
         </Box>
+        </Container>
       )}
       
       <Container maxWidth="md" sx={{ mt: 2 }}>
