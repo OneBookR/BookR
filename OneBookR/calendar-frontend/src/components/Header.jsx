@@ -146,48 +146,6 @@ const Header = ({ user, onNavigate }) => {
         </Box>
         
         <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.5, sm: 0.8, md: 1 } }}>
-          {permission !== 'granted' && (
-            <Button
-              size="small"
-              startIcon={<NotificationsActiveIcon />}
-              onClick={requestPermission}
-              sx={{ 
-                fontWeight: 500, 
-                color: 'white',
-                borderRadius: 2,
-                fontSize: 12,
-                bgcolor: 'rgba(255,255,255,0.2)',
-                '&:hover': {
-                  bgcolor: 'rgba(255,255,255,0.3)'
-                }
-              }}
-            >
-              Aktivera notiser
-            </Button>
-          )}
-          
-          <Button
-            size="small"
-            startIcon={<GetAppIcon />}
-            onClick={() => {
-              if (isInstallable) {
-                installApp();
-              }
-            }}
-            sx={{ 
-              fontWeight: 500, 
-              color: 'white',
-              borderRadius: 2,
-              fontSize: 12,
-              bgcolor: 'rgba(255,255,255,0.2)',
-              opacity: isInstallable ? 1 : 0.6,
-              '&:hover': {
-                bgcolor: 'rgba(255,255,255,0.3)'
-              }
-            }}
-          >
-            {isInstallable ? 'Installera app' : 'App (ej tillgänglig)'}
-          </Button>
 
           <Button
             color="inherit"
