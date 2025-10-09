@@ -7,7 +7,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 // Konfigurera moment för svensk tid (GMT+1)
 moment.locale('sv');
 import '../styles/theme.css';
-import { Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, DialogActions, Paper, InputAdornment, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Fade, Tooltip, Badge, Skeleton, Slide, Zoom, Grow, IconButton } from '@mui/material';
+import { Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, DialogActions, Paper, InputAdornment, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Fade, Tooltip, Badge, Skeleton, Slide, Zoom, Grow, IconButton, Container } from '@mui/material';
 import { TimeSlotSkeleton, SuggestionSkeleton } from '../components/LoadingSkeleton';
 import { useTheme } from '../hooks/useTheme';
 import { useNotifications } from '../hooks/useNotifications';
@@ -21,6 +21,8 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import EventIcon from '@mui/icons-material/Event';
 import GroupIcon from '@mui/icons-material/Group';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import { API_BASE_URL } from '../config';
 
 // --- NYTT: Modernare typsnitt och färger, minimalistiskt ---
@@ -74,6 +76,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [undoAction, setUndoAction] = useState(null);
   const [successAnimation, setSuccessAnimation] = useState(null);
+  const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
 
@@ -935,6 +938,42 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       minHeight: '100vh',
       padding: isMobile ? '10px' : '0'
     }}>
+      <Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3 } }}>
+        {/* Clean Banner */}
+        <Box sx={{
+          background: 'rgba(255,255,255,0.98)',
+          borderRadius: 3,
+          p: 4,
+          mb: 6,
+          textAlign: 'center',
+          boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+          border: '1.5px solid #e3e8ee'
+        }}>
+          <Box sx={{ position: 'relative', zIndex: 1 }}>
+            <Typography variant="h3" sx={{ 
+              fontWeight: 700,
+              letterSpacing: -1.5,
+              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+              color: '#0a2540',
+              mb: 1,
+              fontSize: { xs: 28, md: 36 },
+              lineHeight: 1.08
+            }}>
+              Kalenderjämförelse
+            </Typography>
+            <Typography variant="h6" sx={{ 
+              color: '#425466',
+              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+              fontWeight: 400,
+              fontSize: { xs: 16, md: 18 },
+              lineHeight: 1.4,
+              letterSpacing: -0.5
+            }}>
+              Jämför kalendrar och hitta gemensamma lediga tider för möten
+            </Typography>
+          </Box>
+        </Box>
+      </Container>
 
 
       <Slide direction="up" in={true} timeout={800}>
@@ -945,8 +984,8 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
             boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
             border: `1px solid ${theme.colors.border}`,
             p: { xs: 2.5, sm: 3.5 },
-            mb: 10,
-            maxWidth: 660,
+            mb: 15,
+            maxWidth: 800,
             mx: 0,
             transition: 'all 0.3s ease'
           }}
@@ -958,7 +997,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
             flexDirection: 'column',
             gap: 2,
             mb: 0,
-            maxWidth: 400,
+            maxWidth: 600,
           }}
         >
           <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 2, mb: 2 }} data-tutorial="date-inputs">
@@ -2206,14 +2245,34 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         ))}
       </Box>
 
-      <div style={{ height: '500px', marginTop: '20px', marginBottom: 100, width: '100%', overflowX: 'auto' }} data-tutorial="calendar">
+      <div style={{ height: '500px', marginTop: '20px', marginBottom: 100, width: '100%', overflowX: 'auto', position: 'relative' }} data-tutorial="calendar">
         <Paper elevation={1} sx={{
           borderRadius: 2,
           overflow: 'hidden',
           border: `1px solid ${calendarBorder}`,
           background: calendarBg,
-          minWidth: { xs: '320px', md: 'auto' }
+          minWidth: { xs: '320px', md: 'auto' },
+          position: 'relative'
         }}>
+          <IconButton
+            onClick={() => setIsCalendarFullscreen(!isCalendarFullscreen)}
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              zIndex: 1000,
+              backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              backdropFilter: 'blur(4px)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 255, 255, 1)',
+                transform: 'scale(1.1)'
+              },
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <FullscreenIcon />
+          </IconButton>
           <Calendar
             localizer={localizer}
             events={availability.map((slot, index) => ({
@@ -2255,6 +2314,97 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           />
         </Paper>
       </div>
+
+      {isCalendarFullscreen && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: '#fff',
+            zIndex: 9999,
+            display: 'flex',
+            flexDirection: 'column',
+            p: 2
+          }}
+        >
+          <Box sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 2,
+            pb: 2,
+            borderBottom: '1px solid #e0e3e7'
+          }}>
+            <Typography variant="h5" sx={{ fontWeight: 600, color: '#1976d2' }}>
+              Kalender - Fullskärm
+            </Typography>
+            <IconButton
+              onClick={() => setIsCalendarFullscreen(false)}
+              sx={{
+                backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                color: '#d32f2f',
+                '&:hover': {
+                  backgroundColor: 'rgba(244, 67, 54, 0.2)',
+                  transform: 'scale(1.1)'
+                }
+              }}
+            >
+              <FullscreenExitIcon />
+            </IconButton>
+          </Box>
+          <Box sx={{ flex: 1, overflow: 'hidden' }}>
+            <Paper elevation={1} sx={{
+              height: '100%',
+              borderRadius: 2,
+              overflow: 'hidden',
+              border: `1px solid ${calendarBorder}`,
+              background: calendarBg
+            }}>
+              <Calendar
+                localizer={localizer}
+                events={availability.map((slot, index) => ({
+                  id: `slot-${index}`,
+                  title: 'Ledig tid',
+                  start: new Date(slot.start),
+                  end: new Date(slot.end),
+                  resource: {
+                    color: '#e3f2fd',
+                    textColor: '#1976d2'
+                  }
+                }))}
+                startAccessor="start"
+                endAccessor="end"
+                style={{ height: '100%', background: 'transparent', border: 'none' }}
+                selectable={!!groupId}
+                scrollToTime={(() => {
+                  const scrollTime = new Date();
+                  scrollTime.setHours(8, 0, 0, 0);
+                  return scrollTime;
+                })()}
+                onSelectSlot={groupId ? handleCalendarSelectSlot : undefined}
+                onSelectEvent={groupId ? handleCalendarSelectEvent : undefined}
+                eventPropGetter={(event) => ({
+                  style: {
+                    backgroundColor: event.resource?.color || '#e3f2fd',
+                    color: event.resource?.textColor || '#1976d2'
+                  }
+                })}
+                popup={false}
+                longPressThreshold={1}
+                selectAllow={() => true}
+                views={['month', 'week', 'work_week', 'day', 'agenda']}
+                view={calendarView}
+                onView={setCalendarView}
+                date={calendarDate}
+                onNavigate={setCalendarDate}
+              />
+            </Paper>
+          </Box>
+        </Box>
+      )}
       {/* Floating Notification Icon */}
       <IconButton
         onClick={() => setSidebarOpen(!sidebarOpen)}
