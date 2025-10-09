@@ -229,8 +229,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         </Box>
       )}
       
-      <Container maxWidth="md" sx={{ mt: 10 }}>
-          <Typography variant="h5" gutterBottom sx={{ mt: 20 }}>
+      <Container maxWidth="md" sx={{ mt: 2 }}>
+          <Typography variant="h5" gutterBottom sx={{ mt: 4 }}>
             Hej {(() => {
               try {
                 return user.displayName ? decodeURIComponent(escape(user.displayName)) : user.email;
