@@ -145,6 +145,25 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
     <Box sx={{ minHeight: '100vh', bgcolor: '#f8fafc' }}>
       {/* Hero Section */}
       <Container maxWidth="lg" sx={{ pt: 12, pb: 8 }}>
+        {/* BookR Logo */}
+        <Box sx={{
+          textAlign: 'center',
+          mb: 6
+        }}>
+          <Typography sx={{
+            fontWeight: 800,
+            fontSize: { xs: 40, sm: 48, md: 56 },
+            color: '#635bff',
+            letterSpacing: 1,
+            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+            textShadow: '0 2px 4px rgba(99,91,255,0.2)',
+            cursor: 'pointer'
+          }}
+          onClick={() => window.location.href = '/'}>
+            BookR
+          </Typography>
+        </Box>
+        
         <Box sx={{ textAlign: 'center', mb: 8 }}>
           <Typography variant="h1" sx={{
             fontSize: { xs: '2.8rem', md: '4rem' },
