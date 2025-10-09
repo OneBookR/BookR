@@ -144,62 +144,40 @@ const [referrer, setReferrer] = useState(urlParams.get('referrer') || null);
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#f8fafc' }}>
       {/* Hero Section */}
-      <Container maxWidth="xl" sx={{ pt: 8, pb: 8, px: { xs: 2, sm: 3 } }}>
-        {/* BookR Banner */}
+      <Container maxWidth="lg" sx={{ pt: 8, pb: 8 }}>
+        {/* BookR Logo */}
         <Box sx={{
-          background: 'rgba(255,255,255,0.98)',
-          borderRadius: 3,
-          p: 4,
-          mb: 6,
           textAlign: 'center',
-          boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-          border: '1.5px solid #e3e8ee',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          '&:hover': {
-            transform: 'translateY(-2px)',
-            boxShadow: '0 12px 48px 0 rgba(99,91,255,0.15), 0 2px 8px 0 rgba(60,64,67,.08)'
-          }
-        }}
-        onClick={() => window.location.href = '/'}>
-          <Box sx={{ position: 'relative', zIndex: 1 }}>
-            <Typography variant="h3" sx={{ 
-              fontWeight: 800,
-              letterSpacing: 0.5,
-              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-              color: '#635bff',
-              mb: 1,
-              fontSize: { xs: 32, sm: 36, md: 42 },
-              lineHeight: 1.08,
-              textShadow: '0 2px 4px rgba(99,91,255,0.2)'
-            }}>
-              BookR
-            </Typography>
-            <Typography variant="h6" sx={{ 
-              color: '#425466',
-              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-              fontWeight: 400,
-              fontSize: { xs: 14, md: 16 },
-              lineHeight: 1.4,
-              letterSpacing: -0.5
-            }}>
-              Planera smartare. Hitta gemensamma tider – på sekunder.
-            </Typography>
-          </Box>
+          mb: 4
+        }}>
+          <Typography sx={{
+            fontWeight: 800,
+            fontSize: { xs: 24, sm: 28, md: 32 },
+            color: '#635bff',
+            letterSpacing: 0.5,
+            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+            textShadow: '0 2px 4px rgba(99,91,255,0.2)',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              transform: 'scale(1.05)',
+              textShadow: '0 4px 8px rgba(99,91,255,0.3)'
+            }
+          }}
+          onClick={() => window.location.href = '/'}>
+            BookR
+          </Typography>
         </Box>
-      </Container>
-      
-      <Container maxWidth="lg" sx={{ pb: 8 }}>
         <Box sx={{ textAlign: 'center', mb: 8 }}>
           <Typography variant="h1" sx={{
-            fontSize: { xs: '2.4rem', md: '3.2rem' },
+            fontSize: { xs: '2.8rem', md: '4rem' },
             fontWeight: 700,
             color: '#0a2540',
             mb: 3,
             lineHeight: 1.1,
             fontFamily: "'Inter', 'Segoe UI', 'Roboto', sans-serif"
           }}>
-            Slipp mejlkaoset – boka möten på 30 sekunder
+            Planera smartare. Hitta gemensamma tider – på sekunder.
           </Typography>
           <Typography variant="h2" sx={{
             fontSize: { xs: '1.3rem', md: '1.6rem' },
