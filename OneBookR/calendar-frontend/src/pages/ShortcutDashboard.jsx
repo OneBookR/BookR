@@ -10,7 +10,15 @@ import TaskIcon from '@mui/icons-material/Task';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import CloseIcon from '@mui/icons-material/Close';
+import ContactsIcon from '@mui/icons-material/Contacts';
+import AddIcon from '@mui/icons-material/Add';
+import { Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@mui/material';
 import InvitationSidebar from './InvitationSidebar.jsx';
+
+// Exportera kontakter så att andra komponenter kan använda dem
+export const getStoredContacts = () => {
+  return JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
+};
 
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [invites, setInvites] = useState([]);
@@ -20,6 +28,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [sidebarTab, setSidebarTab] = useState('invitations');
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [leftMeetings, setLeftMeetings] = useState([]);
+  const [contactsModalOpen, setContactsModalOpen] = useState(false);
+  const [newContact, setNewContact] = useState({ name: '', email: '' });
+  const [contacts, setContacts] = useState([]);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -55,6 +66,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     // Hämta lämnade möten från localStorage
     const savedLeftMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
     setLeftMeetings(savedLeftMeetings);
+    
+    // Hämta sparade kontakter från localStorage
+    const savedContacts = JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
+    setContacts(savedContacts);
   }, [user?.email]);
 
   const handleInviteResponse = async (groupId, inviteeId, response) => {
@@ -205,6 +220,34 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       const vote = response === 'accept' ? 'accepted' : 'declined';
       voteSuggestion(proposalId, vote, proposal.groupId);
     }
+  };
+
+  const handleAddContact = () => {
+    if (!newContact.name.trim() || !newContact.email.trim()) {
+      setToast({ open: true, message: 'Fyll i både namn och e-post', severity: 'error' });
+      return;
+    }
+    
+    // Kontrollera om kontakten redan finns
+    if (contacts.some(c => c.email.toLowerCase() === newContact.email.toLowerCase())) {
+      setToast({ open: true, message: 'Kontakten finns redan', severity: 'error' });
+      return;
+    }
+    
+    const updatedContacts = [...contacts, { ...newContact, id: Date.now() }];
+    setContacts(updatedContacts);
+    localStorage.setItem('bookr_contacts', JSON.stringify(updatedContacts));
+    
+    setNewContact({ name: '', email: '' });
+    setContactsModalOpen(false);
+    setToast({ open: true, message: 'Kontakt tillagd!', severity: 'success' });
+  };
+
+  const handleDeleteContact = (contactId) => {
+    const updatedContacts = contacts.filter(c => c.id !== contactId);
+    setContacts(updatedContacts);
+    localStorage.setItem('bookr_contacts', JSON.stringify(updatedContacts));
+    setToast({ open: true, message: 'Kontakt borttagen', severity: 'info' });
   };
 
   const formatDateTime = (dateTime) => {
@@ -372,6 +415,33 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>Create Task</Typography>
                   <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Schemalägg tid för uppgifter</Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} sm={6} lg={4}>
+            <Card sx={{ 
+              height: 85, 
+              width: 300,
+              cursor: 'pointer', 
+              background: 'rgba(255,255,255,0.98)',
+              borderRadius: 4,
+              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
+              border: '1.5px solid #e3e8ee',
+              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+              '&:hover': { 
+                transform: 'translateY(-8px) scale(1.02)',
+                boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
+              }
+            }} 
+                  onClick={() => setContactsModalOpen(true)}>
+              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
+                  <ContactsIcon sx={{ fontSize: 36, color: '#635bff' }} />
+                </Box>
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>Lägg till kontakter</Typography>
+                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Spara kontakter för snabbare inbjudningar</Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -994,6 +1064,96 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           {toast.message}
         </Alert>
       </Snackbar>
+
+      {/* Kontakter Modal */}
+      <Dialog 
+        open={contactsModalOpen} 
+        onClose={() => setContactsModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600, color: '#0a2540' }}>
+          Hantera kontakter
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
+              Lägg till ny kontakt
+            </Typography>
+            <TextField
+              fullWidth
+              label="Namn"
+              value={newContact.name}
+              onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="E-postadress"
+              type="email"
+              value={newContact.email}
+              onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleAddContact}
+              sx={{ mb: 3 }}
+            >
+              Lägg till kontakt
+            </Button>
+          </Box>
+          
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
+              Sparade kontakter ({contacts.length})
+            </Typography>
+            {contacts.length === 0 ? (
+              <Typography variant="body2" sx={{ color: '#999', textAlign: 'center', py: 2 }}>
+                Inga kontakter sparade än
+              </Typography>
+            ) : (
+              <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+                {contacts.map((contact) => (
+                  <Paper
+                    key={contact.id}
+                    sx={{
+                      p: 2,
+                      mb: 1,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: '1px solid #e0e3e7'
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {contact.name}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#666' }}>
+                        {contact.email}
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      color="error"
+                      onClick={() => handleDeleteContact(contact.id)}
+                    >
+                      Ta bort
+                    </Button>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setContactsModalOpen(false)}>
+            Stäng
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

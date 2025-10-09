@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 
 export const useContacts = () => {
   const [contacts, setContacts] = useState(() => {
-    const saved = localStorage.getItem('bookr-contacts');
+    const saved = localStorage.getItem('bookr_contacts');
     return saved ? JSON.parse(saved) : [];
   });
 
   useEffect(() => {
-    localStorage.setItem('bookr-contacts', JSON.stringify(contacts));
+    localStorage.setItem('bookr_contacts', JSON.stringify(contacts));
   }, [contacts]);
 
   const addContact = (email, name = '') => {
