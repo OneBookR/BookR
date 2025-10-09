@@ -82,10 +82,15 @@ app.use((req, res, next) => {
       '/api/admin/login'
     ];
     
-    if (req.path.includes('.') || allowedPaths.some(path => req.path.startsWith(path))) {
+    // Tillåt statiska filer (innehåller punkt och är inte HTML)
+    const isStaticFile = req.path.includes('.') && !req.path.endsWith('.html');
+    
+    // Tillåt endast waitlist-relaterade sökvägar
+    if (isStaticFile || allowedPaths.some(path => req.path.startsWith(path))) {
       return next();
     }
     
+    // Omdirigera alla andra sökvägar till waitlist
     return res.redirect('/waitlist');
   }
   
