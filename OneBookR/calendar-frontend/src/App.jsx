@@ -22,9 +22,35 @@ import SecurityIcon from '@mui/icons-material/Security';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 
 function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    // Försök hämta användare från localStorage vid start
+    try {
+      const savedUser = localStorage.getItem('bookr_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('shortcut'); // 'shortcut' eller 'dashboard'
+
+  // Spara användare i localStorage när den ändras
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('bookr_user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('bookr_user');
+      sessionStorage.removeItem('hasTriedSession');
+    }
+  }, [user]);
+
+  // Logout-funktion
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('bookr_user');
+    sessionStorage.removeItem('hasTriedSession');
+    window.location.href = 'https://www.onebookr.se/auth/logout';
+  };
 
   // Spara URL-parametrar i localStorage om det finns group-parameter
   useEffect(() => {
@@ -73,24 +99,32 @@ function App() {
           window.location.hash;
         window.history.replaceState({}, '', newUrl);
       } catch (e) {
+        console.error('Error decoding auth token:', e);
         setUser(null);
         setLoading(false);
       }
     } else {
       // Om ingen auth-token, försök hämta användaren från backend-session (om det finns)
-      fetch('https://www.onebookr.se/api/user', {
-        credentials: 'include'
-      })
-        .then(res => res.ok ? res.json() : null)
-        .then(data => {
-          if (data && data.user) {
-            setUser(data.user);
-          }
-          setLoading(false);
+      // Men bara om vi inte redan försökt
+      const hasTriedSession = sessionStorage.getItem('hasTriedSession');
+      if (!hasTriedSession) {
+        sessionStorage.setItem('hasTriedSession', 'true');
+        fetch('https://www.onebookr.se/api/user', {
+          credentials: 'include'
         })
-        .catch(() => setLoading(false));
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && data.user) {
+              setUser(data.user);
+            }
+            setLoading(false);
+          })
+          .catch(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
     }
-  }, [user]);
+  }, []);
 
   // Efter inloggning, återställ URL om det finns sparade parametrar
   useEffect(() => {
