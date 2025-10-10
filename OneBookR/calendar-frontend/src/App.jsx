@@ -14,6 +14,7 @@ import VenueAdmin from './pages/VenueAdmin.jsx';
 import VenueBooking from './pages/VenueBooking.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
+import MobileNavigation from './components/MobileNavigation.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -603,6 +604,7 @@ function App() {
         )}
       </Box>
       {!shouldShowTask && <Footer />}
+      <MobileNavigation currentPath={window.location.pathname + window.location.search} user={user} />
     </>
   );
 }

@@ -410,7 +410,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
   // Spara vy och datum i state för att kunna byta vy och navigera
   const [calendarView, setCalendarView] = useState('week');
   const [calendarDate, setCalendarDate] = useState(new Date());
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(false);
 
 
 
@@ -762,8 +762,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      if (mobile && calendarView === 'week') {
+      if (mobile) {
         setCalendarView('agenda');
+        setSidebarOpen(false);
+      } else {
+        setCalendarView('week');
+        setSidebarOpen(false);
       }
     };
     
@@ -782,7 +786,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [calendarView]);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
