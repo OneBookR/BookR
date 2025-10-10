@@ -14,6 +14,7 @@ import VenueAdmin from './pages/VenueAdmin.jsx';
 import VenueBooking from './pages/VenueBooking.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
+import MobileNotSupported from './pages/MobileNotSupported.jsx';
 import MobileNavigation from './components/MobileNavigation.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
@@ -34,6 +35,17 @@ function App() {
   });
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('shortcut'); // 'shortcut' eller 'dashboard'
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Kontrollera om det är mobil
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Spara användare i localStorage när den ändras
   useEffect(() => {
@@ -52,6 +64,11 @@ function App() {
     sessionStorage.removeItem('hasTriedSession');
     window.location.href = 'https://www.onebookr.se/auth/logout';
   };
+
+  // Visa mobilsida om användaren är inloggad på mobil
+  if (user && isMobile) {
+    return <MobileNotSupported user={user} onLogout={handleLogout} />;
+  }
 
   // Spara URL-parametrar i localStorage om det finns group-parameter
   useEffect(() => {
