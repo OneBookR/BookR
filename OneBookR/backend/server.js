@@ -147,9 +147,32 @@ app.get('/auth/google', (req, res, next) => {
 
 app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
-  (req, res) => {
+  async (req, res) => {
     console.log('OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
     console.log('OAuth state received:', req.session.oauthState);
+    
+    // Kontrollera om detta är en ny användare
+    const userEmail = req.user?.email || req.user?.emails?.[0]?.value || req.user?.emails?.[0];
+    const isNewUser = !req.session.hasLoggedInBefore && userEmail;
+    
+    if (isNewUser && userEmail) {
+      req.session.hasLoggedInBefore = true;
+      
+      // Skicka välkomstmejl asynkront
+      setImmediate(async () => {
+        try {
+          await resend.emails.send({
+            from: 'BookR <info@onebookr.se>',
+            to: userEmail,
+            subject: 'Välkommen till BookR! 🎉',
+            text: `Hej och välkommen till BookR!\n\nTack för att du registrerade dig! Du är nu redo att börja använda BookR för att:\n\n✅ Jämföra kalendrar med vänner och kollegor\n✅ Hitta gemensamma lediga tider på sekunder\n✅ Boka möten med automatiska Google Meet-länkar\n✅ Slippa mejlkaoset när ni ska planera möten\n\nKom igång direkt på: https://www.onebookr.se\n\nHar du frågor? Svara bara på det här mejlet så hjälper vi dig!\n\nVälkommen ombord! 🚀\n\nBookR-teamet\ninfo@onebookr.se`
+          });
+          console.log('Välkomstmejl skickat till ny användare:', userEmail);
+        } catch (error) {
+          console.error('Fel vid välkomstmejl:', error);
+        }
+      });
+    }
     
     // Skapa en enkel auth token och skicka som URL-parameter
     const authToken = Buffer.from(JSON.stringify({
@@ -1185,8 +1208,16 @@ app.post('/api/waitlist', async (req, res) => {
     await addToWaitlist(email, name);
     const totalCount = await getWaitlistCount();
     
-    // Skicka endast admin-notifiering för att spara kostnader
+    // Skicka välkomstmejl till användaren
     try {
+      await resend.emails.send({
+        from: 'BookR <info@onebookr.se>',
+        to: email,
+        subject: 'Välkommen till BookR väntelistan! 🚀',
+        text: `Hej ${name}!\n\nTack för att du gått med på BookR väntelistan! 🎉\n\nDu är nu en av de första som får tillgång till BookR när vi lanserar. Vi bygger något riktigt coolt som kommer att revolutionera hur vi bokar möten!\n\n💫 Vad du kan förvänta dig:\n• Slut på mejlkaoset när ni ska hitta en tid\n• Jämför kalendrar på sekunder\n• Automatiska Google Meet-länkar\n• 100% gratis att använda\n\n📈 Du är nummer ${totalCount} på väntelistan!\n\nVi skickar uppdateringar om lanseringen och exklusiva förhandsvisningar. Håll utkik i din inkorg!\n\nHa en fantastisk dag! ✨\n\nBookR-teamet\ninfo@onebookr.se\n\nP.S. Dela gärna med dina vänner och kollegor - ju fler vi är, desto bättre blir BookR!`,
+      });
+      
+      // Skicka admin-notifiering
       await resend.emails.send({
         from: 'BookR <info@onebookr.se>',
         to: 'info@onebookr.se',
