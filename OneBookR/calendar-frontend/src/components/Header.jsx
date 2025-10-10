@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { AppBar, Toolbar, Box, Typography, Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Stepper, Step, StepLabel, StepContent, Paper, Drawer, List, ListItem, ListItemIcon, ListItemText, useMediaQuery, useTheme } from '@mui/material';
-import MenuIcon from '@mui/icons-material/Menu';
-import CloseIcon from '@mui/icons-material/Close';
+import { AppBar, Toolbar, Box, Typography, Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Stepper, Step, StepLabel, StepContent, Paper } from '@mui/material';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import GetAppIcon from '@mui/icons-material/GetApp';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -22,9 +20,7 @@ const Header = ({ user, onNavigate }) => {
   const { isInstallable, installApp } = usePWA();
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
 
   const helpSteps = [
     {
@@ -497,177 +493,7 @@ const Header = ({ user, onNavigate }) => {
           </Button>
         </DialogActions>
       </Dialog>
-      
-      {/* Mobile Navigation Drawer */}
-      <Drawer
-        anchor="right"
-        open={mobileMenuOpen}
-        onClose={() => setMobileMenuOpen(false)}
-        PaperProps={{
-          sx: {
-            width: 280,
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: 'white'
-          }
-        }}
-      >
-        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, color: 'white' }}>
-            BookR
-          </Typography>
-          <IconButton onClick={() => setMobileMenuOpen(false)} sx={{ color: 'white' }}>
-            <CloseIcon />
-          </IconButton>
-        </Box>
-        <List sx={{ pt: 2 }}>
-          {user && [
-            { icon: <DashboardIcon />, text: 'Dashboard', href: '/' },
-            { icon: <PersonIcon />, text: '1v1 Meeting', href: '/?meetingType=1v1' },
-            { icon: <GroupIcon />, text: 'Group Meeting', href: '/?meetingType=group' },
-            { icon: <TaskIcon />, text: 'Task Scheduler', href: '/?view=task' },
-            { icon: <HelpOutlineIcon />, text: 'Hjälp', action: () => setHelpModalOpen(true) }
-          ].map((item, index) => (
-            <ListItem 
-              key={index}
-              button 
-              onClick={() => {
-                setMobileMenuOpen(false);
-                if (item.action) {
-                  item.action();
-                } else {
-                  window.location.href = item.href;
-                }
-              }}
-              sx={{
-                py: 1.5,
-                '&:hover': {
-                  bgcolor: 'rgba(255,255,255,0.1)'
-                }
-              }}
-            >
-              <ListItemIcon sx={{ color: 'white', minWidth: 40 }}>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText 
-                primary={item.text} 
-                sx={{ 
-                  '& .MuiListItemText-primary': { 
-                    fontWeight: 500,
-                    fontSize: 16
-                  } 
-                }} 
-              />
-            </ListItem>
-          ))}
-          
-          <Box sx={{ mt: 2, px: 2, borderTop: '1px solid rgba(255,255,255,0.2)', pt: 2 }}>
-            <Button
-              color="inherit"
-              fullWidth
-              sx={{ 
-                justifyContent: 'flex-start',
-                color: 'rgba(255,255,255,0.9)', 
-                fontWeight: 500,
-                mb: 1,
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
-              }}
-              onClick={() => {
-                setMobileMenuOpen(false);
-                window.location.href = '/om-oss';
-              }}
-            >
-              Om oss
-            </Button>
-            <Button
-              color="inherit"
-              fullWidth
-              sx={{ 
-                justifyContent: 'flex-start',
-                color: 'rgba(255,255,255,0.9)', 
-                fontWeight: 500,
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
-              }}
-              onClick={() => {
-                setMobileMenuOpen(false);
-                window.location.href = '/kontakt';
-              }}
-            >
-              Kontakta oss
-            </Button>
-          </Box>
-          
-          {user && (
-            <Box sx={{ mt: 3, px: 2, borderTop: '1px solid rgba(255,255,255,0.2)', pt: 2 }}>
-              {(() => {
-                const urlParams = new URLSearchParams(window.location.search);
-                const groupId = urlParams.get('group');
-                return groupId ? (
-                  <Button
-                    variant="outlined"
-                    fullWidth
-                    startIcon={<ChevronLeftIcon />}
-                    onClick={async () => {
-                      setMobileMenuOpen(false);
-                      // Same logic as desktop version
-                      try {
-                        const groupResponse = await fetch(`https://www.onebookr.se/api/group/${groupId}/status`);
-                        const groupData = await groupResponse.json();
-                        
-                        const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || 'Du';
-                        
-                        const leftMeeting = {
-                          id: groupId,
-                          groupName: groupData.groupName || sessionStorage.getItem('currentGroupName') || 'Kalenderjämförelse',
-                          members: groupData.joined || JSON.parse(sessionStorage.getItem('currentGroupMembers') || '[]'),
-                          leftAt: new Date().toISOString()
-                        };
-                        
-                        const existingMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
-                        const updatedMeetings = existingMeetings.filter(m => m.id !== groupId);
-                        updatedMeetings.push(leftMeeting);
-                        localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
-                      } catch (err) {
-                        console.log('Failed to fetch group info, using fallback:', err);
-                      }
-                      
-                      window.location.href = '/';
-                    }}
-                    sx={{ 
-                      borderColor: 'rgba(255,255,255,0.3)',
-                      color: 'white',
-                      mb: 2,
-                      '&:hover': {
-                        bgcolor: 'rgba(255,255,255,0.1)',
-                        borderColor: 'rgba(255,255,255,0.5)'
-                      }
-                    }}
-                  >
-                    Lämna grupp
-                  </Button>
-                ) : null;
-              })()}
-              <Button
-                variant="contained"
-                fullWidth
-                startIcon={<LogoutIcon />}
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  handleLogout();
-                }}
-                sx={{ 
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  color: 'white',
-                  '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.3)'
-                  }
-                }}
-              >
-                Logga ut
-              </Button>
-            </Box>
-          )}
-        </List>
-      </Drawer>
+
     </AppBar>
   );
 };

@@ -563,7 +563,7 @@ const Task = ({ user, onBack }) => {
                 };
               }}
               views={['month', 'week', 'day', 'agenda']}
-              defaultView={window.innerWidth < 768 ? 'agenda' : 'week'}
+              defaultView="week"
             />
           </Box>
         </Box>
