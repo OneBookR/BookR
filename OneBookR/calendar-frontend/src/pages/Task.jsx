@@ -152,12 +152,12 @@ const Task = ({ user, onBack }) => {
       {/* Clean Banner */}
       <Box sx={{
         background: 'rgba(255,255,255,0.98)',
-        borderRadius: 3,
-        p: 4,
-        mb: 6,
-        mt: 12,
+        borderRadius: { xs: 2, sm: 3 },
+        p: { xs: 3, sm: 4 },
+        mb: { xs: 4, sm: 6 },
+        mt: { xs: 8, sm: 12 },
         mx: 'auto',
-        width: 1500,
+        width: { xs: '100%', sm: '95vw', md: 1500 },
         maxWidth: '95vw',
         textAlign: 'center',
         boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
@@ -170,7 +170,7 @@ const Task = ({ user, onBack }) => {
             fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
             color: '#0a2540',
             mb: 1,
-            fontSize: { xs: 28, md: 36 },
+            fontSize: { xs: 24, sm: 28, md: 36 },
             lineHeight: 1.08
           }}>
             Task Scheduler
@@ -179,7 +179,7 @@ const Task = ({ user, onBack }) => {
             color: '#425466',
             fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
             fontWeight: 400,
-            fontSize: { xs: 16, md: 18 },
+            fontSize: { xs: 14, sm: 16, md: 18 },
             lineHeight: 1.4,
             letterSpacing: -0.5
           }}>
@@ -188,18 +188,19 @@ const Task = ({ user, onBack }) => {
         </Box>
       </Box>
       
-      <Box sx={{ display: 'flex', height: 'calc(100vh - 200px)', mt: 0 }}>
+      <Box sx={{ display: { xs: 'block', md: 'flex' }, height: { xs: 'auto', md: 'calc(100vh - 200px)' }, mt: 0 }}>
         {/* Left sidebar for inputs */}
         <Box sx={{ 
-          width: 380, 
+          width: { xs: '100%', md: 380 }, 
           flexShrink: 0, 
           bgcolor: '#fafbfc', 
-          borderRight: '1px solid #e8eaed',
+          borderRight: { xs: 'none', md: '1px solid #e8eaed' },
+          borderBottom: { xs: '1px solid #e8eaed', md: 'none' },
           overflow: 'auto',
-          boxShadow: '2px 0 8px rgba(60,64,67,.08)'
+          boxShadow: { xs: '0 2px 8px rgba(60,64,67,.08)', md: '2px 0 8px rgba(60,64,67,.08)' }
         }}>
-          <Box sx={{ p: 3, overflow: 'auto' }}>
-            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1a73e8' }}>
+          <Box sx={{ p: { xs: 2, sm: 3 }, overflow: 'auto' }}>
+            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1a73e8', fontSize: { xs: 18, sm: 20 } }}>
               📅 Skapa uppgift
             </Typography>
 
@@ -412,16 +413,16 @@ const Task = ({ user, onBack }) => {
         </Box>
         
         {/* Full-width calendar */}
-        <Box sx={{ flex: 1, bgcolor: '#f8f9fa', display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ p: 3, bgcolor: 'white', borderBottom: '1px solid #e8eaed' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, color: '#202124' }}>
+        <Box sx={{ flex: 1, bgcolor: '#f8f9fa', display: 'flex', flexDirection: 'column', minHeight: { xs: '400px', md: 'auto' } }}>
+          <Box sx={{ p: { xs: 2, sm: 3 }, bgcolor: 'white', borderBottom: '1px solid #e8eaed' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#202124', fontSize: { xs: 16, sm: 18 } }}>
               📅 Din kalender med föreslagna tider
             </Typography>
           </Box>
           
           <Box sx={{ 
             flex: 1,
-            p: 3,
+            p: { xs: 2, sm: 3 },
             '& .rbc-calendar, .rbc-time-view, .rbc-agenda-view, .rbc-month-view': {
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
               background: '#f7f9fb',
@@ -561,8 +562,8 @@ const Task = ({ user, onBack }) => {
                   }
                 };
               }}
-              views={['month', 'week', 'day']}
-              defaultView="week"
+              views={['month', 'week', 'day', 'agenda']}
+              defaultView={window.innerWidth < 768 ? 'agenda' : 'week'}
             />
           </Box>
         </Box>

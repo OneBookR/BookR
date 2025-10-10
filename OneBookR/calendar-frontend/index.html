@@ -21,13 +21,18 @@
     </script>
     <link rel="manifest" href="/manifest.json">
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kalenderjämförare</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#1976d2" />
+    <title>BookR - Kalenderjämförelse</title>
+    <meta name="description" content="Jämför kalendrar och hitta gemensamma lediga tider för möten. Perfekt för grupper, team och vänner." />
     
     <!-- Iubenda Script -->
     <script type="text/javascript">(function (w,d) {var loader = function () {var s = d.createElement("script"), tag = d.getElementsByTagName("script")[0]; s.src="https://cdn.iubenda.com/iubenda.js"; tag.parentNode.insertBefore(s,tag);}; if(w.addEventListener){w.addEventListener("load", loader, false);}else if(w.attachEvent){w.attachEvent("onload", loader);}else{w.onload = loader;}})(window, document);</script>
   </head>
-  <body>
+  <body style="margin: 0; padding: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

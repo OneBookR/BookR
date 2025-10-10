@@ -14,6 +14,7 @@ import VenueAdmin from './pages/VenueAdmin.jsx';
 import VenueBooking from './pages/VenueBooking.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
+import MobileNavigation from './components/MobileNavigation.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -345,7 +346,7 @@ function App() {
               justifyContent: 'flex-start',
               minHeight: '100vh',
               width: '100vw',
-              px: { xs: 0, md: 4 },
+              px: { xs: 2, sm: 3, md: 4 },
               py: 0,
             }}
           >
@@ -377,10 +378,10 @@ function App() {
             <Paper
               elevation={0}
               sx={{
-                p: { xs: 4, sm: 7, md: 9 },
-                borderRadius: 8,
+                p: { xs: 3, sm: 5, md: 7 },
+                borderRadius: { xs: 4, sm: 8 },
                 mb: 5,
-                maxWidth: 540,
+                maxWidth: { xs: '100%', sm: 540 },
                 width: '100%',
                 mx: 'auto',
                 background: 'rgba(255,255,255,0.98)',
@@ -428,33 +429,33 @@ function App() {
               <hr className="stripe-divider" style={{ width: '100%' }} />
               <Grid container spacing={2} justifyContent="center" sx={{ mb: 2 }}>
                 <Grid item xs={12} sm={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
                     <GroupIcon sx={{ color: 'primary.main', mr: 1 }} />
-                    <Typography variant="subtitle1" sx={{ color: 'text.secondary' }}>
+                    <Typography variant="subtitle1" sx={{ color: 'text.secondary', fontSize: { xs: 14, sm: 16 } }}>
                       Perfekt för grupper, team och vänner
                     </Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={12} sm={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
                     <AccessTimeIcon sx={{ color: 'primary.main', mr: 1 }} />
-                    <Typography variant="subtitle1" sx={{ color: 'text.secondary' }}>
+                    <Typography variant="subtitle1" sx={{ color: 'text.secondary', fontSize: { xs: 14, sm: 16 } }}>
                       Spara tid – slipp kalenderkaoset!
                     </Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={12} sm={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
                     <SecurityIcon sx={{ color: 'primary.main', mr: 1 }} />
-                    <Typography variant="subtitle1" sx={{ color: 'text.secondary' }}>
+                    <Typography variant="subtitle1" sx={{ color: 'text.secondary', fontSize: { xs: 14, sm: 16 } }}>
                       Säker inloggning med Google
                     </Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={12} sm={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
                     <EmojiEventsIcon sx={{ color: 'primary.main', mr: 1 }} />
-                    <Typography variant="subtitle1" sx={{ color: 'text.secondary' }}>
+                    <Typography variant="subtitle1" sx={{ color: 'text.secondary', fontSize: { xs: 14, sm: 16 } }}>
                       Få förslag på bästa mötestider
                     </Typography>
                   </Box>
@@ -593,7 +594,7 @@ function App() {
     <>
       {loginIndicator}
       <Header user={user} onNavigate={handleNavigateToMeeting} />
-      <Box sx={{ mt: 16, minHeight: 'calc(100vh - 200px)' }}>
+      <Box sx={{ mt: { xs: 14, sm: 16 }, minHeight: 'calc(100vh - 200px)', px: { xs: 1, sm: 2 }, pb: { xs: 8, sm: 0 } }}>
         {shouldShowTask ? (
           <Task user={user} />
         ) : shouldShowDashboard ? (
@@ -603,6 +604,7 @@ function App() {
         )}
       </Box>
       {!shouldShowTask && <Footer />}
+      <MobileNavigation currentPath={window.location.pathname + window.location.search} user={user} />
     </>
   );
 }

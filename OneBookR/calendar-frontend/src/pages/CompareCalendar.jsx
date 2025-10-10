@@ -936,7 +936,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
       transition: 'margin-right 0.3s ease',
       minHeight: '100vh',
-      padding: isMobile ? '10px' : '0'
+      padding: isMobile ? '8px' : '0'
     }}>
 
 
@@ -944,12 +944,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         <Box
           sx={{
             bgcolor: theme.colors.surface,
-            borderRadius: 3,
+            borderRadius: { xs: 2, sm: 3 },
             boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
             border: `1px solid ${theme.colors.border}`,
-            p: { xs: 2.5, sm: 3.5 },
-            mb: 15,
-            maxWidth: 800,
+            p: { xs: 2, sm: 3 },
+            mb: { xs: 8, sm: 15 },
+            maxWidth: { xs: '100%', sm: 800 },
             mx: 0,
             transition: 'all 0.3s ease'
           }}
@@ -964,7 +964,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
             maxWidth: 600,
           }}
         >
-          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 2, mb: 2 }} data-tutorial="date-inputs">
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }} data-tutorial="date-inputs">
             <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
               <TextField
                 label="Från"
@@ -1100,7 +1100,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
           >
             Om du inte anger något datumintervall visas automatiskt alla lediga tider från idag och 30 dagar framåt.
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, gap: 2, mt: 1 }}>
             <TextField
               label={isMultiDay ? "Timmar per dag" : "Mötestid (minuter)"}
               type="number"
@@ -1324,12 +1324,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       {/* Närmaste lediga tider */}
       {isLoadingAvailability && hasSearched && <TimeSlotSkeleton />}
       {sortedFutureSlots.length > 0 && !isLoadingAvailability && (
-        <Box sx={{ mb: 4, maxWidth: 1200, margin: '0 auto', width: '105%', mt: 4 }} data-tutorial="time-slots">
+        <Box sx={{ mb: 4, maxWidth: { xs: '100%', md: 1200 }, margin: '0 auto', width: { xs: '100%', md: '105%' }, mt: 4 }} data-tutorial="time-slots">
           <Typography variant="h6" sx={{ mb: 2 }}>
             Närmaste lediga tider
           </Typography>
           <Box sx={{
-            display: { xs: 'none', md: 'flex' },
+            display: { xs: 'none', lg: 'flex' },
             flexDirection: 'row',
             alignItems: 'center',
             fontWeight: 600,
@@ -1438,29 +1438,29 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                   <Box
                   sx={{
                     display: 'flex',
-                    flexDirection: { xs: 'column', md: 'row' },
-                    alignItems: { xs: 'stretch', md: 'center' },
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
                     bgcolor: theme.colors.surface,
                     border: `1px solid ${theme.colors.border}`,
                     borderRadius: 2,
-                    p: { xs: 2, md: 2 },
-                    minHeight: { xs: 'auto', md: isMultiDaySlot ? 80 : 64 },
-                    width: showAll ? 'calc(100% - 32px)' : '100%',
-                    marginLeft: showAll ? '16px' : 0,
-                    marginRight: showAll ? '16px' : 0,
+                    p: { xs: 2, sm: 2.5 },
+                    minHeight: 'auto',
+                    width: showAll ? 'calc(100% - 16px)' : '100%',
+                    marginLeft: showAll ? '8px' : 0,
+                    marginRight: showAll ? '8px' : 0,
                     cursor: groupId ? 'pointer' : 'default',
                     transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': groupId ? { 
                       bgcolor: theme.isDark ? '#2a2a2a' : '#e0f2f1',
-                      transform: 'translateY(-4px) scale(1.02)',
-                      boxShadow: theme.isDark ? '0 8px 25px rgba(0,0,0,0.4)' : '0 8px 25px rgba(0,0,0,0.15)'
+                      transform: { xs: 'none', sm: 'translateY(-2px)' },
+                      boxShadow: theme.isDark ? '0 4px 15px rgba(0,0,0,0.4)' : '0 4px 15px rgba(0,0,0,0.15)'
                     } : {},
-                    gap: { xs: 1, md: 0 }
+                    gap: 1
                   }}
                   onClick={groupId ? () => handleSuggest(slot) : undefined}
                 >
                   {/* Mobil layout */}
-                  <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+                  <Box sx={{ display: 'block' }}>
                     <Typography sx={{ fontWeight: 700, color: '#1976d2', fontSize: 16, mb: 1 }}>
                       {isMultiDaySlot ? 
                         `${new Date(slot.multiDayStart || start).toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' })} - ${new Date(slot.multiDayEnd || end).toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' })}` :
@@ -1492,50 +1492,15 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                       )}
                     </Typography>
                   </Box>
-                  
-                  {/* Desktop layout */}
-                  <Typography sx={{ display: { xs: 'none', md: 'block' }, minWidth: 90, fontWeight: 600, color: '#1976d2', mr: 2 }}>
-                    {timeToStart}
-                  </Typography>
-                  <Typography sx={{ display: { xs: 'none', md: 'block' }, minWidth: 140, fontWeight: 500 }}>
-                    {isMultiDaySlot ? 
-                      `${new Date(slot.multiDayStart || start).toLocaleDateString('sv-SE')} - ${new Date(slot.multiDayEnd || end).toLocaleDateString('sv-SE')}` :
-                      start.toLocaleDateString('sv-SE')
-                    }
-                  </Typography>
-                  <Typography sx={{ display: { xs: 'none', md: 'block' }, minWidth: 160 }}>
-                    {isMultiDaySlot ? 
-                      `${dayCount} dagar (${Math.round(actualDurationPerDay)} h/dag)` :
-                      `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                    }
-                    {isMultiDaySlot && slot.dayStart && slot.dayEnd && (
-                      <Typography component="span" sx={{ color: '#1976d2', fontSize: 12, display: 'block' }}>
-                        {slot.dayStart} - {slot.dayEnd}
-                      </Typography>
-                    )}
-                  </Typography>
-                  <Typography sx={{ display: { xs: 'none', md: 'block' }, minWidth: 110 }}>
-                    {isMultiDaySlot ? `${Math.round(dayCount * actualDurationPerDay)} h totalt` : `${durationMinutes} min`}
-                    {slot.busyTimes && slot.busyTimes.length > 0 && (
-                      <Typography component="span" sx={{ color: '#d32f2f', fontSize: 12, display: 'block' }}>
-                        {slot.busyTimes.length} upptagna
-                      </Typography>
-                    )}
-                  </Typography>
-                  <Typography sx={{ display: { xs: 'none', md: 'block' }, minWidth: 120, textTransform: 'capitalize' }}>
-                    {weekday}
-                  </Typography>
-                  <Box sx={{ flex: 1 }} />
+
                   {groupId && (
                     <Button
                       variant="outlined"
                       color="primary"
                       size="small"
-                      fullWidth={true}
+                      fullWidth
                       sx={{ 
-                        ml: { xs: 0, md: 2 }, 
-                        minWidth: { xs: 'auto', md: 180 }, 
-                        mt: { xs: 1, md: 0 },
+                        mt: 2,
                         transition: 'all 0.2s ease',
                         animation: index === 0 && diffMs < 1000 * 60 * 60 * 24 ? 'pulse 2s infinite' : 'none',
                         '@keyframes pulse': {
@@ -1544,7 +1509,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
                           '100%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0)' }
                         },
                         '&:hover': {
-                          transform: 'scale(1.05)',
+                          transform: { xs: 'none', sm: 'scale(1.02)' },
                           boxShadow: '0 2px 8px rgba(25, 118, 210, 0.3)'
                         }
                       }}
@@ -2184,14 +2149,17 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       </Typography>
 
       {/* Vy-väljare */}
-      <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {[
+      <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
+        {(isMobile ? [
+          { key: 'agenda', label: 'Lista' },
+          { key: 'day', label: 'Dag' }
+        ] : [
           { key: 'month', label: 'Månad' },
           { key: 'work_week', label: 'Arbetsvecka' },
           { key: 'week', label: 'Vecka' },
           { key: 'day', label: 'Dag' },
           { key: 'agenda', label: 'Agenda' }
-        ].map(view => (
+        ]).map(view => (
           <Button
             key={view.key}
             variant={calendarView === view.key ? 'contained' : 'outlined'}
@@ -2200,8 +2168,9 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
             sx={{
               fontWeight: 600,
               borderRadius: 2,
-              px: 2,
-              py: 1
+              px: { xs: 1.5, sm: 2 },
+              py: 1,
+              fontSize: { xs: 12, sm: 14 }
             }}
           >
             {view.label}
@@ -2209,7 +2178,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
         ))}
       </Box>
 
-      <div style={{ height: '500px', marginTop: '20px', marginBottom: 100, width: '100%', overflowX: 'auto', position: 'relative' }} data-tutorial="calendar">
+      <div style={{ height: isMobile ? '400px' : '500px', marginTop: '20px', marginBottom: 100, width: '100%', overflowX: 'auto', position: 'relative' }} data-tutorial="calendar">
         <Paper elevation={1} sx={{
           borderRadius: 2,
           overflow: 'hidden',

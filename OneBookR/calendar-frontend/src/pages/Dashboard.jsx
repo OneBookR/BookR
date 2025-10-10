@@ -188,13 +188,13 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   return (
     <>
       {((!groupId || groupStatus.allJoined) && !waitingForOthers) && (
-        <Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3 } }}>
+        <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: 4, px: { xs: 1, sm: 2, md: 3 } }}>
           {/* Clean Banner */}
           <Box sx={{
             background: 'rgba(255,255,255,0.98)',
-            borderRadius: 3,
-            p: 4,
-            mb: 6,
+            borderRadius: { xs: 2, sm: 3 },
+            p: { xs: 3, sm: 4 },
+            mb: { xs: 4, sm: 6 },
             textAlign: 'center',
             boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
             border: '1.5px solid #e3e8ee'
@@ -206,7 +206,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
               color: '#0a2540',
               mb: 1,
-              fontSize: { xs: 28, md: 36 },
+              fontSize: { xs: 24, sm: 28, md: 36 },
               lineHeight: 1.08
             }}>
               Kalenderjämförelse
@@ -215,7 +215,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
               color: '#425466',
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
               fontWeight: 400,
-              fontSize: { xs: 16, md: 18 },
+              fontSize: { xs: 14, sm: 16, md: 18 },
               lineHeight: 1.4,
               letterSpacing: -0.5
             }}>
@@ -226,8 +226,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         </Container>
       )}
       
-      <Container maxWidth="md" sx={{ mt: 2 }}>
-          <Typography variant="h5" gutterBottom sx={{ mt: 4 }}>
+      <Container maxWidth="md" sx={{ mt: 2, px: { xs: 2, sm: 3 } }}>
+          <Typography variant="h5" gutterBottom sx={{ mt: { xs: 2, sm: 4 }, fontSize: { xs: 20, sm: 24 } }}>
             Hej {(() => {
               try {
                 return user.displayName ? decodeURIComponent(escape(user.displayName)) : user.email;
