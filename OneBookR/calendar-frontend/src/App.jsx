@@ -526,33 +526,69 @@ function App() {
                 <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2' }}>användarvillkor</a> och{' '}
                 <a href="https://www.iubenda.com/privacy-policy/71871656" target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2' }}>integritetspolicy</a>
               </Typography>
-              <Button
-                variant="contained"
-                color="primary"
-                href={googleLoginUrl}
-                size="large"
-                sx={{
-                  mt: 1,
-                  px: 6,
-                  py: 1.7,
-                  fontWeight: 600,
-                  fontSize: 18,
-                  borderRadius: 4,
-                  fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-                  background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-                  boxShadow: '0 2px 16px 0 rgba(99,91,255,0.13), 0 0.5px 2px 0 rgba(60,64,67,.06)',
-                  transition: 'box-shadow 0.2s, background 0.2s',
-                  textTransform: 'none',
-                  letterSpacing: 0.1,
-                  animation: 'fadeInUp 1.5s 0.38s cubic-bezier(.23,1.01,.32,1) both',
-                  '&:hover': {
-                    background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
-                    boxShadow: '0 0 0 4px #e9e5ff, 0 8px 32px 0 rgba(99,91,255,0.18)',
-                  },
-                }}
-              >
-                Logga in med Google
-              </Button>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%', alignItems: 'center' }}>
+                <Button
+                  variant="contained"
+                  href={googleLoginUrl}
+                  size="large"
+                  sx={{
+                    px: 6,
+                    py: 1.7,
+                    fontWeight: 600,
+                    fontSize: 18,
+                    borderRadius: 4,
+                    fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+                    background: '#4285f4',
+                    color: 'white',
+                    textTransform: 'none',
+                    letterSpacing: 0.1,
+                    minWidth: 280,
+                    '&:hover': {
+                      background: '#3367d6',
+                    },
+                  }}
+                >
+                  📧 Logga in med Google
+                </Button>
+                
+                <Button
+                  variant="contained"
+                  href={(() => {
+                    let microsoftLoginUrl = 'https://www.onebookr.se/auth/microsoft';
+                    if (groupId) {
+                      const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
+                      microsoftLoginUrl += `?state=${encodeURIComponent(state)}`;
+                    }
+                    return microsoftLoginUrl;
+                  })()}
+                  size="large"
+                  sx={{
+                    px: 6,
+                    py: 1.7,
+                    fontWeight: 600,
+                    fontSize: 18,
+                    borderRadius: 4,
+                    fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+                    background: '#0078d4',
+                    color: 'white',
+                    textTransform: 'none',
+                    letterSpacing: 0.1,
+                    minWidth: 280,
+                    '&:hover': {
+                      background: '#106ebe',
+                    },
+                  }}
+                >
+                  🏢 Logga in med Microsoft
+                </Button>
+                
+                <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center', mt: 1 }}>
+                  Fungerar med Google Kalender, Outlook och Apple Kalender*
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+                  *Apple Kalender-användare kan logga in med sitt Google- eller Microsoft-konto
+                </Typography>
+              </Box>
 
             </Paper>
 

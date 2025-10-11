@@ -12,6 +12,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "passport-microsoft": "^2.1.0",
     "resend": "^6.0.1"
   }
 }

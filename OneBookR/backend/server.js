@@ -7,6 +7,7 @@ import passport from 'passport';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
 import fetch from 'node-fetch';
 import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -98,7 +99,7 @@ app.use((req, res, next) => {
 });
 
 // Google OAuth-strategi
-passport.use(new GoogleStrategy({
+passport.use('google', new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
   callbackURL: 'https://www.onebookr.se/auth/google/callback',
@@ -115,6 +116,19 @@ passport.use(new GoogleStrategy({
   }
   profile.accessToken = accessToken;
   profile.refreshToken = refreshToken;  // Store refresh token for incremental auth
+  return done(null, profile);
+}));
+
+// Microsoft OAuth-strategi
+passport.use('microsoft', new MicrosoftStrategy({
+  clientID: process.env.MICROSOFT_CLIENT_ID,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+  callbackURL: 'https://www.onebookr.se/auth/microsoft/callback',
+  scope: ['user.read', 'calendars.read', 'calendars.readwrite']
+}, (accessToken, refreshToken, profile, done) => {
+  profile.accessToken = accessToken;
+  profile.refreshToken = refreshToken;
+  profile.provider = 'microsoft';
   return done(null, profile);
 }));
 
@@ -144,6 +158,73 @@ app.get('/auth/google', (req, res, next) => {
     includeGrantedScopes: true  // Enable incremental authorization
   })(req, res, next);
 });
+
+// Microsoft OAuth routes
+app.get('/auth/microsoft', (req, res, next) => {
+  const state = req.query.state;
+  if (state) {
+    req.session.oauthState = state;
+  }
+  
+  passport.authenticate('microsoft', {
+    scope: ['user.read', 'calendars.read', 'calendars.readwrite'],
+    state: state
+  })(req, res, next);
+});
+
+app.get('/auth/microsoft/callback',
+  passport.authenticate('microsoft', { failureRedirect: '/' }),
+  async (req, res) => {
+    console.log('Microsoft OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
+    
+    const userEmail = req.user?.mail || req.user?.userPrincipalName;
+    const isNewUser = !req.session.hasLoggedInBefore && userEmail;
+    
+    if (isNewUser && userEmail) {
+      req.session.hasLoggedInBefore = true;
+      
+      setImmediate(async () => {
+        try {
+          await resend.emails.send({
+            from: 'BookR <info@onebookr.se>',
+            to: userEmail,
+            subject: 'Välkommen till BookR! 🎉',
+            text: `Hej och välkommen till BookR!\n\nTack för att du registrerade dig med ditt Microsoft-konto! Du är nu redo att börja använda BookR för att:\n\n✅ Jämföra kalendrar med vänner och kollegor\n✅ Hitta gemensamma lediga tider på sekunder\n✅ Boka möten med automatiska Microsoft Teams-länkar\n✅ Slippa mejlkaoset när ni ska planera möten\n\nKom igång direkt på: https://www.onebookr.se\n\nHar du frågor? Svara bara på det här mejlet så hjälper vi dig!\n\nVälkommen ombord! 🚀\n\nBookR-teamet\ninfo@onebookr.se`
+          });
+          console.log('Välkomstmejl skickat till ny Microsoft-användare:', userEmail);
+        } catch (error) {
+          console.error('Fel vid välkomstmejl:', error);
+        }
+      });
+    }
+    
+    const authToken = Buffer.from(JSON.stringify({
+      user: req.user,
+      timestamp: Date.now()
+    })).toString('base64');
+    
+    const state = req.session.oauthState;
+    delete req.session.oauthState;
+    
+    let redirectUrl = `/?auth=${authToken}`;
+    
+    if (state) {
+      try {
+        const parsed = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+        if (parsed.type === 'business-admin') {
+          redirectUrl = `/business-admin?auth=${authToken}`;
+        } else if (parsed.returnUrl) {
+          redirectUrl = `${parsed.returnUrl}${parsed.returnUrl.includes('?') ? '&' : '?'}auth=${authToken}`;
+        }
+      } catch (e) {
+        // Om state inte kan tolkas, använd standard redirect
+      }
+    }
+
+    const frontendUrl = 'https://www.onebookr.se';
+    res.redirect(`${frontendUrl}${redirectUrl}`);
+  }
+);
 
 app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
@@ -234,7 +315,71 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
-const fetchCalendarEvents = async (token, min, max) => {
+const fetchMicrosoftCalendarEvents = async (token, min, max) => {
+  try {
+    // Test token validity first
+    const testResponse = await fetch(
+      'https://graph.microsoft.com/v1.0/me',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    
+    if (testResponse.status === 401) {
+      console.error('Microsoft OAuth token expired or invalid');
+      return { events: [], timezone: 'Europe/Stockholm' };
+    }
+    
+    // Hämta användarens tidszon
+    let userTimezone = 'Europe/Stockholm'; // Default
+    try {
+      const settingsResponse = await fetch(
+        'https://graph.microsoft.com/v1.0/me/mailboxSettings',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      if (settingsResponse.ok) {
+        const settingsData = await settingsResponse.json();
+        userTimezone = settingsData.timeZone || 'Europe/Stockholm';
+      }
+    } catch (err) {
+      console.log('Could not fetch timezone, using default');
+    }
+    
+    // Hämta kalenderhändelser
+    const response = await fetch(
+      `https://graph.microsoft.com/v1.0/me/events?$filter=start/dateTime ge '${min}' and end/dateTime le '${max}'&$orderby=start/dateTime`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      console.error('Microsoft API-fel vid hämtning av händelser:', data.error);
+      return { events: [], timezone: userTimezone };
+    }
+
+    console.log('Fetched Microsoft events:', data.value?.length || 0, 'timezone:', userTimezone);
+
+    return { events: data.value || [], timezone: userTimezone };
+  } catch (err) {
+    console.error('Fel vid hämtning av Microsoft kalenderhändelser:', err);
+    return { events: [], timezone: 'Europe/Stockholm' };
+  }
+};
+
+const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
+  if (provider === 'microsoft') {
+    return fetchMicrosoftCalendarEvents(token, min, max);
+  }
   try {
     // Test token validity first
     const testResponse = await fetch(
@@ -505,9 +650,10 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
 }
 
 app.post('/api/availability', async (req, res) => {
-  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd } = req.body;
+  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd, providers } = req.body;
 
   console.log('Tokens mottagna av backend:', tokens);
+  console.log('Providers:', providers);
 
   if (!tokens || tokens.length < 2) {
     return res.status(400).json({ error: 'Minst två tokens krävs för att jämföra.' });
@@ -520,8 +666,9 @@ app.post('/api/availability', async (req, res) => {
   try {
     // Hämta upptagna tider för varje token med tidszoner
     const allBusyTimesWithTimezones = await Promise.all(
-      tokens.map(async token => {
-        const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax);
+      tokens.map(async (token, index) => {
+        const provider = providers && providers[index] ? providers[index] : 'google';
+        const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
         // Hantera heldagsevent och vanliga event
         const processedEvents = events.map(e => {
           // Om det är ett heldagsevent (date, ej dateTime)
@@ -688,10 +835,14 @@ app.post('/api/invite', async (req, res) => {
   }
 
   try {
+    // Bestäm provider baserat på användarens inloggningsmetod (kan utvidgas senare)
+    const creatorProvider = 'google'; // Standard, kan uppdateras när vi har mer info
+    
     // Skapa grupp i Firebase
     const groupId = await createGroup({
       creatorEmail,
       creatorToken: fromToken,
+      creatorProvider,
       groupName: groupName || 'Namnlös grupp',
       tokens: [fromToken],
       joinedEmails: [creatorEmail]
@@ -990,8 +1141,8 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         let meetEventId = suggestion.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
         console.log('Generated meetEventId:', meetEventId);
 
-        // Skapa Google Calendar-event ALLTID när alla accepterat
-        // Om withMeet: true, skapa Google Meet-länk, annars bara kalenderhändelse med plats
+        // Skapa kalenderhändelse ALLTID när alla accepterat
+        // Stöd för både Google Calendar och Microsoft Graph API
         const tokens = (group.tokens || []).filter(Boolean);
         console.log('Available tokens:', tokens.length);
         if (!tokens.length) {
@@ -999,30 +1150,98 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           return res.status(500).json({ error: 'Inga tokens för gruppen.' });
         }
         const token = tokens[0];
-        console.log('Using token for calendar creation');
         
-        // Skapa OAuth2-klient med refresh-funktionalitet
-        const userOAuth2 = new google.auth.OAuth2(
-          process.env.CLIENT_ID,
-          process.env.CLIENT_SECRET
-        );
-        userOAuth2.setCredentials({ access_token: token });
+        // Bestäm provider baserat på användarens inloggningsmetod
+        const provider = group.creatorProvider || 'google';
+        console.log('Using token for calendar creation, provider:', provider);
         
-        // Testa token-validitet först
-        try {
-          const testResponse = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (testResponse.status === 401) {
-            throw new Error('Token expired or invalid');
+        if (provider === 'microsoft') {
+          // Microsoft Graph API
+          try {
+            const testResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (testResponse.status === 401) {
+              throw new Error('Microsoft token expired or invalid');
+            }
+          } catch (tokenError) {
+            console.error('Microsoft token validation failed:', tokenError.message);
+            throw new Error('Microsoft OAuth token is invalid or expired. User needs to re-authenticate.');
           }
-        } catch (tokenError) {
-          console.error('Token validation failed:', tokenError.message);
-          throw new Error('OAuth token is invalid or expired. User needs to re-authenticate.');
-        }
-        
-        const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
-        console.log('Google Calendar client created');
+          
+          const eventResource = {
+            subject: suggestion.title || 'Föreslaget möte',
+            body: {
+              contentType: 'HTML',
+              content: 'Bokat via BookR Kalenderjämförelse'
+            },
+            start: {
+              dateTime: new Date(suggestion.start).toISOString(),
+              timeZone: 'Europe/Stockholm'
+            },
+            end: {
+              dateTime: new Date(suggestion.end).toISOString(),
+              timeZone: 'Europe/Stockholm'
+            },
+            attendees: allEmails.map(email => ({ emailAddress: { address: email } }))
+          };
+
+          if (suggestion.withMeet) {
+            eventResource.isOnlineMeeting = true;
+            eventResource.onlineMeetingProvider = 'teamsForBusiness';
+          } else if (suggestion.location) {
+            eventResource.location = {
+              displayName: suggestion.location
+            };
+          }
+
+          console.log('Creating Microsoft calendar event with resource:', JSON.stringify(eventResource, null, 2));
+          const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(eventResource)
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Microsoft Graph API error: ${errorData.error?.message || 'Unknown error'}`);
+          }
+          
+          const responseData = await response.json();
+          console.log('Microsoft calendar event created successfully:', responseData.id);
+
+          if (suggestion.withMeet && responseData.onlineMeeting?.joinUrl) {
+            meetLink = responseData.onlineMeeting.joinUrl;
+            console.log('Teams meeting link extracted:', meetLink);
+          } else {
+            console.log('No Teams meeting link - withMeet:', suggestion.withMeet, 'onlineMeeting:', !!responseData.onlineMeeting);
+          }
+        } else {
+          // Google Calendar API (existing code)
+          const userOAuth2 = new google.auth.OAuth2(
+            process.env.CLIENT_ID,
+            process.env.CLIENT_SECRET
+          );
+          userOAuth2.setCredentials({ access_token: token });
+          
+          // Testa token-validitet först
+          try {
+            const testResponse = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (testResponse.status === 401) {
+              throw new Error('Token expired or invalid');
+            }
+          } catch (tokenError) {
+            console.error('Token validation failed:', tokenError.message);
+            throw new Error('OAuth token is invalid or expired. User needs to re-authenticate.');
+          }
+          
+          const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
+          console.log('Google Calendar client created');
 
       const eventResource = {
         summary: suggestion.title || 'Föreslaget möte',
@@ -1060,7 +1279,9 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           console.log('No meet link - withMeet:', suggestion.withMeet, 'conferenceData:', !!response.data.conferenceData);
         }
         
-        console.log('Meet link created:', meetLink);
+        }
+        
+        console.log('Meeting link created:', meetLink);
         
         // Uppdatera suggestion i Firebase med meet-länk
         console.log('Updating suggestion in Firebase with meet link');
