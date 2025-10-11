@@ -104,6 +104,7 @@ passport.use('google', new GoogleStrategy({
   clientSecret: process.env.CLIENT_SECRET,
   callbackURL: 'https://www.onebookr.se/auth/google/callback',
   accessType: 'offline',
+  prompt: 'consent',  // Force refresh token
   includeGrantedScopes: true  // Enable incremental authorization
 }, (accessToken, refreshToken, profile, done) => {
   // Sätt alltid profile.email till första e-post om den finns
@@ -116,6 +117,8 @@ passport.use('google', new GoogleStrategy({
   }
   profile.accessToken = accessToken;
   profile.refreshToken = refreshToken;  // Store refresh token for incremental auth
+  console.log('Google OAuth - Access token:', accessToken ? 'Present' : 'Missing');
+  console.log('Google OAuth - Refresh token:', refreshToken ? 'Present' : 'Missing');
   return done(null, profile);
 }));
 
@@ -154,7 +157,7 @@ app.get('/auth/google', (req, res, next) => {
       'https://www.googleapis.com/auth/calendar.events'
     ],
     state: state,
-    prompt: 'select_account',
+    prompt: 'consent',  // Force refresh token
     accessType: 'offline',
     includeGrantedScopes: true  // Enable incremental authorization
   })(req, res, next);
@@ -408,7 +411,7 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
     );
     
     if (testResponse.status === 401) {
-      console.error('OAuth token expired or invalid');
+      console.error('Google OAuth token expired or invalid for token:', token.substring(0, 20) + '...');
       return { events: [], timezone: 'Europe/Stockholm' };
     }
     
@@ -470,11 +473,17 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
 
         const data = await response.json();
         if (!response.ok) {
+          if (response.status === 401) {
+            console.error(`Token expired for calendar ${calendar.id}`);
+            return [];
+          }
           console.error(`API-fel för kalender ${calendar.id}:`, data.error);
           return [];
         }
 
-        return data.items || [];
+        const events = data.items || [];
+        console.log(`Calendar ${calendar.summary}: ${events.length} events`);
+        return events;
       } catch (err) {
         console.error(`Fel vid hämtning av händelser för kalender ${calendar.id}:`, err);
         return [];
