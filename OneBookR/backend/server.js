@@ -124,7 +124,8 @@ passport.use('microsoft', new MicrosoftStrategy({
   clientID: process.env.MICROSOFT_CLIENT_ID,
   clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
   callbackURL: 'https://www.onebookr.se/auth/microsoft/callback',
-  scope: ['user.read', 'calendars.read', 'calendars.readwrite']
+  scope: ['user.read', 'calendars.read', 'calendars.readwrite'],
+  tenant: 'common' // Tillåter både personliga och arbets-/skolkonton
 }, (accessToken, refreshToken, profile, done) => {
   profile.accessToken = accessToken;
   profile.refreshToken = refreshToken;
@@ -664,16 +665,44 @@ app.post('/api/availability', async (req, res) => {
   }
 
   try {
+    // För gruppjämförelser, hämta provider-info från gruppen
+    let actualProviders = providers;
+    if (!actualProviders && tokens.length >= 2) {
+      // Försök hämta från URL-parametrar för att identifiera grupp
+      const urlParams = new URLSearchParams(req.headers.referer || '');
+      const groupId = urlParams.get('group');
+      if (groupId) {
+        try {
+          const group = await getGroup(groupId);
+          if (group && group.providers) {
+            actualProviders = group.providers;
+            console.log('Using providers from group:', actualProviders);
+          }
+        } catch (err) {
+          console.log('Could not fetch group providers:', err.message);
+        }
+      }
+    }
+    
     // Hämta upptagna tider för varje token med tidszoner
     const allBusyTimesWithTimezones = await Promise.all(
       tokens.map(async (token, index) => {
-        const provider = providers && providers[index] ? providers[index] : 'google';
+        const provider = actualProviders && actualProviders[index] ? actualProviders[index] : 'google';
+        console.log(`Fetching calendar for token ${index + 1} using provider: ${provider}`);
         const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
-        // Hantera heldagsevent och vanliga event
+        // Hantera heldagsevent och vanliga event (Google och Microsoft format)
         const processedEvents = events.map(e => {
-          // Om det är ett heldagsevent (date, ej dateTime)
-          if (e.start.date && !e.start.dateTime) {
-            // Heldagsevent - lägg till explicit tid för konsistens
+          // Microsoft Graph API format
+          if (e.start && e.start.dateTime) {
+            return {
+              start: new Date(e.start.dateTime).getTime(),
+              end: new Date(e.end.dateTime).getTime(),
+              title: e.subject || 'Upptagen',
+              isAllDay: e.isAllDay || false
+            };
+          }
+          // Google Calendar API format - heldagsevent
+          else if (e.start && e.start.date && !e.start.dateTime) {
             const startDate = new Date(e.start.date + 'T00:00:00');
             const endDate = new Date(e.end.date + 'T00:00:00');
             return {
@@ -682,12 +711,23 @@ app.post('/api/availability', async (req, res) => {
               title: e.summary || 'Upptagen',
               isAllDay: true
             };
-          } else {
-            // Vanligt event med dateTime
+          }
+          // Google Calendar API format - vanligt event
+          else if (e.start && e.start.dateTime) {
             return {
               start: new Date(e.start.dateTime).getTime(),
               end: new Date(e.end.dateTime).getTime(),
               title: e.summary || 'Upptagen',
+              isAllDay: false
+            };
+          }
+          // Fallback
+          else {
+            console.warn('Unknown event format:', e);
+            return {
+              start: Date.now(),
+              end: Date.now() + 60 * 60 * 1000,
+              title: 'Okänt event',
               isAllDay: false
             };
           }
@@ -835,8 +875,11 @@ app.post('/api/invite', async (req, res) => {
   }
 
   try {
-    // Bestäm provider baserat på användarens inloggningsmetod (kan utvidgas senare)
-    const creatorProvider = 'google'; // Standard, kan uppdateras när vi har mer info
+    // Bestäm provider baserat på användarens inloggningsmetod
+    let creatorProvider = 'google'; // Standard
+    if (typeof fromUser === 'object' && fromUser && fromUser.provider) {
+      creatorProvider = fromUser.provider;
+    }
     
     // Skapa grupp i Firebase
     const groupId = await createGroup({
@@ -931,7 +974,7 @@ app.post('/api/invite', async (req, res) => {
 // När någon öppnar länken och loggar in
 app.post('/api/group/join', async (req, res) => {
   try {
-    const { groupId, token, invitee, email: frontendEmail } = req.body;
+    const { groupId, token, invitee, email: frontendEmail, provider } = req.body;
     if (!groupId || !token) return res.status(400).json({ error: 'groupId och token krävs' });
     
     const group = await getGroup(groupId);
@@ -946,9 +989,11 @@ app.post('/api/group/join', async (req, res) => {
     // Uppdatera gruppen med ny medlem
     const updatedTokens = group.tokens || [];
     const updatedEmails = group.joinedEmails || [];
+    const updatedProviders = group.providers || [group.creatorProvider || 'google'];
     
     if (!updatedTokens.includes(token)) {
       updatedTokens.push(token);
+      updatedProviders.push(provider || 'google');
     }
     if (!updatedEmails.includes(email)) {
       updatedEmails.push(email);
@@ -957,10 +1002,11 @@ app.post('/api/group/join', async (req, res) => {
     // Uppdatera gruppen i Firebase
     await updateGroup(groupId, {
       tokens: updatedTokens,
-      joinedEmails: updatedEmails
+      joinedEmails: updatedEmails,
+      providers: updatedProviders
     });
 
-    console.log('User joined group:', { groupId, email });
+    console.log('User joined group:', { groupId, email, provider });
     res.json({ success: true });
   } catch (error) {
     console.error('Error joining group:', error);

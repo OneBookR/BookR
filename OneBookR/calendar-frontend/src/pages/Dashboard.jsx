@@ -75,6 +75,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
               token: user.accessToken,
               invitee: inviteeId,
               email: email,
+              provider: user.provider || 'google'
             }),
           });
         })
