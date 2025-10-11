@@ -156,6 +156,12 @@ const Header = ({ user, onNavigate }) => {
   };
 
   const handleLogout = () => {
+    // Rensa alla relevanta localStorage och sessionStorage-nycklar innan logout
+    localStorage.removeItem('bookr_user');
+    localStorage.removeItem('pendingGroupJoin');
+    sessionStorage.removeItem('hasTriedSession');
+    sessionStorage.removeItem('currentGroupName');
+    sessionStorage.removeItem('currentGroupMembers');
     window.location.href = 'https://www.onebookr.se/auth/logout';
   };
 
@@ -652,7 +658,13 @@ const Header = ({ user, onNavigate }) => {
                 startIcon={<LogoutIcon />}
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  handleLogout();
+                  // Rensa alla relevanta localStorage och sessionStorage-nycklar innan logout
+                  localStorage.removeItem('bookr_user');
+                  localStorage.removeItem('pendingGroupJoin');
+                  sessionStorage.removeItem('hasTriedSession');
+                  sessionStorage.removeItem('currentGroupName');
+                  sessionStorage.removeItem('currentGroupMembers');
+                  window.location.href = 'https://www.onebookr.se/auth/logout';
                 }}
                 sx={{ 
                   bgcolor: 'rgba(255,255,255,0.2)',

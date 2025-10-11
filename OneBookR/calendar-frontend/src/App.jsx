@@ -53,15 +53,22 @@ function App() {
       localStorage.setItem('bookr_user', JSON.stringify(user));
     } else {
       localStorage.removeItem('bookr_user');
+      localStorage.removeItem('pendingGroupJoin');
       sessionStorage.removeItem('hasTriedSession');
+      sessionStorage.removeItem('currentGroupName');
+      sessionStorage.removeItem('currentGroupMembers');
     }
   }, [user]);
 
   // Logout-funktion
   const handleLogout = () => {
     setUser(null);
+    // Rensa alla relevanta localStorage och sessionStorage-nycklar
     localStorage.removeItem('bookr_user');
+    localStorage.removeItem('pendingGroupJoin');
     sessionStorage.removeItem('hasTriedSession');
+    sessionStorage.removeItem('currentGroupName');
+    sessionStorage.removeItem('currentGroupMembers');
     window.location.href = 'https://www.onebookr.se/auth/logout';
   };
 
@@ -95,6 +102,18 @@ function App() {
     // Kolla först efter auth-parameter i URL
     const urlParams = new URLSearchParams(window.location.search);
     const authToken = urlParams.get('auth');
+    
+    // Kontrollera om vi kommer från logout (ingen auth-token och ingen sparad användare)
+    const hasLoggedOut = !authToken && !localStorage.getItem('bookr_user');
+    if (hasLoggedOut) {
+      // Säkerställ att allt är rensat efter logout
+      setUser(null);
+      localStorage.removeItem('bookr_user');
+      localStorage.removeItem('pendingGroupJoin');
+      sessionStorage.removeItem('hasTriedSession');
+      sessionStorage.removeItem('currentGroupName');
+      sessionStorage.removeItem('currentGroupMembers');
+    }
 
     // Om vi redan har en användare, gör inget mer
     if (user) {
