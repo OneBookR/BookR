@@ -156,15 +156,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       const timeoutId = setTimeout(() => controller.abort(), 30000);
       
       // Anpassa API-anrop för flerdagars-möten
-      // Skapa provider-array baserat på user-objektet
-      const providers = tokens.map((token, index) => {
-        if (index === 0) {
-          // Första token är alltid från den inloggade användaren
-          return user.provider || 'google';
-        }
-        // För inbjudna användare, anta Google som standard (kan förbättras senare)
-        return 'google';
-      });
+      // Skapa provider-array - första token är alltid den inloggade användaren
+      const providers = [user.provider || 'google'];
+      // För resten, anta Google som standard
+      for (let i = 1; i < tokens.length; i++) {
+        providers.push('google');
+      }
       
       const requestBody = {
         tokens,

@@ -368,9 +368,23 @@ const fetchMicrosoftCalendarEvents = async (token, min, max) => {
       return { events: [], timezone: userTimezone };
     }
 
-    console.log('Fetched Microsoft events:', data.value?.length || 0, 'timezone:', userTimezone);
+    // Konvertera Microsoft events till Google Calendar format
+    const convertedEvents = (data.value || []).map(event => ({
+      summary: event.subject,
+      start: {
+        dateTime: event.start.dateTime,
+        timeZone: event.start.timeZone
+      },
+      end: {
+        dateTime: event.end.dateTime,
+        timeZone: event.end.timeZone
+      },
+      isAllDay: event.isAllDay
+    }));
 
-    return { events: data.value || [], timezone: userTimezone };
+    console.log('Fetched Microsoft events:', convertedEvents.length, 'timezone:', userTimezone);
+
+    return { events: convertedEvents, timezone: userTimezone };
   } catch (err) {
     console.error('Fel vid hämtning av Microsoft kalenderhändelser:', err);
     return { events: [], timezone: 'Europe/Stockholm' };
@@ -665,44 +679,16 @@ app.post('/api/availability', async (req, res) => {
   }
 
   try {
-    // För gruppjämförelser, hämta provider-info från gruppen
-    let actualProviders = providers;
-    if (!actualProviders && tokens.length >= 2) {
-      // Försök hämta från URL-parametrar för att identifiera grupp
-      const urlParams = new URLSearchParams(req.headers.referer || '');
-      const groupId = urlParams.get('group');
-      if (groupId) {
-        try {
-          const group = await getGroup(groupId);
-          if (group && group.providers) {
-            actualProviders = group.providers;
-            console.log('Using providers from group:', actualProviders);
-          }
-        } catch (err) {
-          console.log('Could not fetch group providers:', err.message);
-        }
-      }
-    }
-    
     // Hämta upptagna tider för varje token med tidszoner
     const allBusyTimesWithTimezones = await Promise.all(
       tokens.map(async (token, index) => {
-        const provider = actualProviders && actualProviders[index] ? actualProviders[index] : 'google';
-        console.log(`Fetching calendar for token ${index + 1} using provider: ${provider}`);
+        const provider = providers && providers[index] ? providers[index] : 'google';
         const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
-        // Hantera heldagsevent och vanliga event (Google och Microsoft format)
+        // Hantera heldagsevent och vanliga event
         const processedEvents = events.map(e => {
-          // Microsoft Graph API format
-          if (e.start && e.start.dateTime) {
-            return {
-              start: new Date(e.start.dateTime).getTime(),
-              end: new Date(e.end.dateTime).getTime(),
-              title: e.subject || 'Upptagen',
-              isAllDay: e.isAllDay || false
-            };
-          }
-          // Google Calendar API format - heldagsevent
-          else if (e.start && e.start.date && !e.start.dateTime) {
+          // Om det är ett heldagsevent (date, ej dateTime)
+          if (e.start.date && !e.start.dateTime) {
+            // Heldagsevent - lägg till explicit tid för konsistens
             const startDate = new Date(e.start.date + 'T00:00:00');
             const endDate = new Date(e.end.date + 'T00:00:00');
             return {
@@ -711,23 +697,12 @@ app.post('/api/availability', async (req, res) => {
               title: e.summary || 'Upptagen',
               isAllDay: true
             };
-          }
-          // Google Calendar API format - vanligt event
-          else if (e.start && e.start.dateTime) {
+          } else {
+            // Vanligt event med dateTime
             return {
               start: new Date(e.start.dateTime).getTime(),
               end: new Date(e.end.dateTime).getTime(),
               title: e.summary || 'Upptagen',
-              isAllDay: false
-            };
-          }
-          // Fallback
-          else {
-            console.warn('Unknown event format:', e);
-            return {
-              start: Date.now(),
-              end: Date.now() + 60 * 60 * 1000,
-              title: 'Okänt event',
               isAllDay: false
             };
           }
@@ -875,11 +850,8 @@ app.post('/api/invite', async (req, res) => {
   }
 
   try {
-    // Bestäm provider baserat på användarens inloggningsmetod
-    let creatorProvider = 'google'; // Standard
-    if (typeof fromUser === 'object' && fromUser && fromUser.provider) {
-      creatorProvider = fromUser.provider;
-    }
+    // Bestäm provider baserat på användarens inloggningsmetod (kan utvidgas senare)
+    const creatorProvider = 'google'; // Standard, kan uppdateras när vi har mer info
     
     // Skapa grupp i Firebase
     const groupId = await createGroup({
@@ -974,7 +946,7 @@ app.post('/api/invite', async (req, res) => {
 // När någon öppnar länken och loggar in
 app.post('/api/group/join', async (req, res) => {
   try {
-    const { groupId, token, invitee, email: frontendEmail, provider } = req.body;
+    const { groupId, token, invitee, email: frontendEmail } = req.body;
     if (!groupId || !token) return res.status(400).json({ error: 'groupId och token krävs' });
     
     const group = await getGroup(groupId);
@@ -989,11 +961,9 @@ app.post('/api/group/join', async (req, res) => {
     // Uppdatera gruppen med ny medlem
     const updatedTokens = group.tokens || [];
     const updatedEmails = group.joinedEmails || [];
-    const updatedProviders = group.providers || [group.creatorProvider || 'google'];
     
     if (!updatedTokens.includes(token)) {
       updatedTokens.push(token);
-      updatedProviders.push(provider || 'google');
     }
     if (!updatedEmails.includes(email)) {
       updatedEmails.push(email);
@@ -1002,11 +972,10 @@ app.post('/api/group/join', async (req, res) => {
     // Uppdatera gruppen i Firebase
     await updateGroup(groupId, {
       tokens: updatedTokens,
-      joinedEmails: updatedEmails,
-      providers: updatedProviders
+      joinedEmails: updatedEmails
     });
 
-    console.log('User joined group:', { groupId, email, provider });
+    console.log('User joined group:', { groupId, email });
     res.json({ success: true });
   } catch (error) {
     console.error('Error joining group:', error);
