@@ -392,6 +392,7 @@ const fetchMicrosoftCalendarEvents = async (token, min, max) => {
 };
 
 const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
+  console.log(`fetchCalendarEvents called with provider: ${provider}`);
   if (provider === 'microsoft') {
     return fetchMicrosoftCalendarEvents(token, min, max);
   }
@@ -483,11 +484,16 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
     // Vänta på alla händelser
     const allEvents = await Promise.all(eventsPromises);
 
-    // Reduced logging
-    console.log('Fetched events for', allEvents.length, 'calendars, timezone:', userTimezone);
+    // Slå ihop alla händelser till en enda array
+    const flatEvents = allEvents.flat();
+    console.log('Google Calendar - Fetched events for', allEvents.length, 'calendars, total events:', flatEvents.length, 'timezone:', userTimezone);
+    
+    // Debug: logga första eventet om det finns
+    if (flatEvents.length > 0) {
+      console.log('First Google event:', JSON.stringify(flatEvents[0], null, 2));
+    }
 
-    // Slå ihop alla händelser till en enda array och returnera med tidszon
-    return { events: allEvents.flat(), timezone: userTimezone };
+    return { events: flatEvents, timezone: userTimezone };
   } catch (err) {
     console.error('Fel vid hämtning av kalenderhändelser:', err);
     return { events: [], timezone: 'Europe/Stockholm' };
@@ -667,8 +673,10 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
 app.post('/api/availability', async (req, res) => {
   const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd, providers } = req.body;
 
-  console.log('Tokens mottagna av backend:', tokens);
+  console.log('=== AVAILABILITY API DEBUG ===');
+  console.log('Tokens mottagna av backend:', tokens.length, 'tokens');
   console.log('Providers:', providers);
+  console.log('Request body providers:', req.body.providers);
 
   if (!tokens || tokens.length < 2) {
     return res.status(400).json({ error: 'Minst två tokens krävs för att jämföra.' });
