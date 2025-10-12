@@ -16,6 +16,8 @@ import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
 import MobileNotSupported from './pages/MobileNotSupported.jsx';
 import MobileNavigation from './components/MobileNavigation.jsx';
+import GoogleLogo from './assets/GoogleLogo.jsx';
+import MicrosoftLogo from './assets/MicrosoftLogo.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, Divider, Grid } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import GroupIcon from '@mui/icons-material/Group';
@@ -531,6 +533,7 @@ function App() {
                   variant="contained"
                   href={googleLoginUrl}
                   size="large"
+                  startIcon={<GoogleLogo size={20} />}
                   sx={{
                     px: 6,
                     py: 1.7,
@@ -548,7 +551,7 @@ function App() {
                     },
                   }}
                 >
-                  📧 Logga in med Google
+                  Logga in med Google
                 </Button>
                 
                 <Button
@@ -562,6 +565,7 @@ function App() {
                     return microsoftLoginUrl;
                   })()}
                   size="large"
+                  startIcon={<MicrosoftLogo size={20} />}
                   sx={{
                     px: 6,
                     py: 1.7,
@@ -579,7 +583,7 @@ function App() {
                     },
                   }}
                 >
-                  🏢 Logga in med Microsoft
+                  Logga in med Microsoft
                 </Button>
                 
                 <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center', mt: 1 }}>
