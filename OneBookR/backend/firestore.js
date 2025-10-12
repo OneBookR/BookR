@@ -231,11 +231,56 @@ export async function updateBookingSession(sessionId, updateData) {
 }
 
 // -----------------------------
+// Användare
+// -----------------------------
+
+export async function createUser(email, provider = 'google') {
+  try {
+    await setDoc(doc(db, 'users', email), {
+      email,
+      provider,
+      firstLogin: serverTimestamp(),
+      lastLogin: serverTimestamp()
+    });
+  } catch (err) {
+    console.error('Fel vid createUser:', err);
+    throw err;
+  }
+}
+
+export async function getUser(email) {
+  try {
+    const docRef = doc(db, 'users', email);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+  } catch (err) {
+    console.error('Fel vid getUser:', err);
+    throw err;
+  }
+}
+
+export async function updateUserLastLogin(email) {
+  try {
+    const docRef = doc(db, 'users', email);
+    await updateDoc(docRef, {
+      lastLogin: serverTimestamp()
+    });
+  } catch (err) {
+    console.error('Fel vid updateUserLastLogin:', err);
+    throw err;
+  }
+}
+
+// -----------------------------
 // GDPR – radera användardata
 // -----------------------------
 
 export async function deleteUserData(email) {
   const batch = [];
+
+  // Användare
+  const userDoc = doc(db, 'users', email);
+  batch.push(deleteDoc(userDoc));
 
   // Grupper där användaren är skapare
   const groupsQuery = query(collection(db, 'groups'), where('creatorEmail', '==', email));

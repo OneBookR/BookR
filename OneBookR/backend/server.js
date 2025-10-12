@@ -14,7 +14,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
-import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData } from './firestore.js';
+import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData, createUser, getUser, updateUserLastLogin } from './firestore.js';
 
 const app = express();
 app.set('trust proxy', 1); // NYTT: Behövs för secure cookies bakom proxy (Railway/Heroku/Render)
@@ -182,24 +182,36 @@ app.get('/auth/microsoft/callback',
     console.log('Microsoft OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
     
     const userEmail = req.user?.mail || req.user?.userPrincipalName;
-    const isNewUser = !req.session.hasLoggedInBefore && userEmail;
     
-    if (isNewUser && userEmail) {
-      req.session.hasLoggedInBefore = true;
-      
-      setImmediate(async () => {
-        try {
-          await resend.emails.send({
-            from: 'BookR <info@onebookr.se>',
-            to: userEmail,
-            subject: 'Välkommen till BookR! 🎉',
-            text: `Hej och välkommen till BookR!\n\nTack för att du registrerade dig med ditt Microsoft-konto! Du är nu redo att börja använda BookR för att:\n\n✅ Jämföra kalendrar med vänner och kollegor\n✅ Hitta gemensamma lediga tider på sekunder\n✅ Boka möten med automatiska Microsoft Teams-länkar\n✅ Slippa mejlkaoset när ni ska planera möten\n\nKom igång direkt på: https://www.onebookr.se\n\nHar du frågor? Svara bara på det här mejlet så hjälper vi dig!\n\nVälkommen ombord! 🚀\n\nBookR-teamet\ninfo@onebookr.se`
+    if (userEmail) {
+      try {
+        const existingUser = await getUser(userEmail);
+        const isNewUser = !existingUser;
+        
+        if (isNewUser) {
+          // Skapa ny användare i Firestore
+          await createUser(userEmail, 'microsoft');
+          
+          setImmediate(async () => {
+            try {
+              await resend.emails.send({
+                from: 'BookR <info@onebookr.se>',
+                to: userEmail,
+                subject: 'Välkommen till BookR! 🎉',
+                text: `Hej och välkommen till BookR!\n\nTack för att du registrerade dig med ditt Microsoft-konto! Du är nu redo att börja använda BookR för att:\n\n✅ Jämföra kalendrar med vänner och kollegor\n✅ Hitta gemensamma lediga tider på sekunder\n✅ Boka möten med automatiska Microsoft Teams-länkar\n✅ Slippa mejlkaoset när ni ska planera möten\n\nKom igång direkt på: https://www.onebookr.se\n\nHar du frågor? Svara bara på det här mejlet så hjälper vi dig!\n\nVälkommen ombord! 🚀\n\nBookR-teamet\ninfo@onebookr.se`
+              });
+              console.log('Välkomstmejl skickat till ny Microsoft-användare:', userEmail);
+            } catch (error) {
+              console.error('Fel vid välkomstmejl:', error);
+            }
           });
-          console.log('Välkomstmejl skickat till ny Microsoft-användare:', userEmail);
-        } catch (error) {
-          console.error('Fel vid välkomstmejl:', error);
+        } else {
+          // Uppdatera senaste inloggning för befintlig användare
+          await updateUserLastLogin(userEmail);
         }
-      });
+      } catch (error) {
+        console.error('Fel vid användarhantering:', error);
+      }
     }
     
     const authToken = Buffer.from(JSON.stringify({
@@ -236,27 +248,39 @@ app.get('/auth/google/callback',
     console.log('OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
     console.log('OAuth state received:', req.session.oauthState);
     
-    // Kontrollera om detta är en ny användare
+    // Kontrollera om detta är en ny användare genom Firestore
     const userEmail = req.user?.email || req.user?.emails?.[0]?.value || req.user?.emails?.[0];
-    const isNewUser = !req.session.hasLoggedInBefore && userEmail;
     
-    if (isNewUser && userEmail) {
-      req.session.hasLoggedInBefore = true;
-      
-      // Skicka välkomstmejl asynkront
-      setImmediate(async () => {
-        try {
-          await resend.emails.send({
-            from: 'BookR <info@onebookr.se>',
-            to: userEmail,
-            subject: 'Välkommen till BookR! 🎉',
-            text: `Hej och välkommen till BookR!\n\nTack för att du registrerade dig! Du är nu redo att börja använda BookR för att:\n\n✅ Jämföra kalendrar med vänner och kollegor\n✅ Hitta gemensamma lediga tider på sekunder\n✅ Boka möten med automatiska Google Meet-länkar\n✅ Slippa mejlkaoset när ni ska planera möten\n\nKom igång direkt på: https://www.onebookr.se\n\nHar du frågor? Svara bara på det här mejlet så hjälper vi dig!\n\nVälkommen ombord! 🚀\n\nBookR-teamet\ninfo@onebookr.se`
+    if (userEmail) {
+      try {
+        const existingUser = await getUser(userEmail);
+        const isNewUser = !existingUser;
+        
+        if (isNewUser) {
+          // Skapa ny användare i Firestore
+          await createUser(userEmail, 'google');
+          
+          // Skicka välkomstmejl asynkront
+          setImmediate(async () => {
+            try {
+              await resend.emails.send({
+                from: 'BookR <info@onebookr.se>',
+                to: userEmail,
+                subject: 'Välkommen till BookR! 🎉',
+                text: `Hej och välkommen till BookR!\n\nTack för att du registrerade dig! Du är nu redo att börja använda BookR för att:\n\n✅ Jämföra kalendrar med vänner och kollegor\n✅ Hitta gemensamma lediga tider på sekunder\n✅ Boka möten med automatiska Google Meet-länkar\n✅ Slippa mejlkaoset när ni ska planera möten\n\nKom igång direkt på: https://www.onebookr.se\n\nHar du frågor? Svara bara på det här mejlet så hjälper vi dig!\n\nVälkommen ombord! 🚀\n\nBookR-teamet\ninfo@onebookr.se`
+              });
+              console.log('Välkomstmejl skickat till ny användare:', userEmail);
+            } catch (error) {
+              console.error('Fel vid välkomstmejl:', error);
+            }
           });
-          console.log('Välkomstmejl skickat till ny användare:', userEmail);
-        } catch (error) {
-          console.error('Fel vid välkomstmejl:', error);
+        } else {
+          // Uppdatera senaste inloggning för befintlig användare
+          await updateUserLastLogin(userEmail);
         }
-      });
+      } catch (error) {
+        console.error('Fel vid användarhantering:', error);
+      }
     }
     
     // Skapa en enkel auth token och skicka som URL-parameter
