@@ -1918,6 +1918,12 @@ function findTaskSlots(busyTimes, totalHours, startDate, endDate, workStartHour 
     if (remainingHours <= 0) break;
     
     let sessionStart = freeSlot.start;
+    const now = Date.now();
+    
+    // VIKTIGT: Säkerställ att sessionStart aldrig är i det förflutna
+    if (sessionStart < now) {
+      sessionStart = now;
+    }
     
     const isNewDay = !lastSlotEndTime || freeSlot.date !== new Date(lastSlotEndTime).toDateString();
     const needsBreak = lastSlotEndTime && !isNewDay && currentSessionHours >= maxSessionHours;
@@ -1930,6 +1936,11 @@ function findTaskSlots(busyTimes, totalHours, startDate, endDate, workStartHour 
       currentSessionHours = 0;
     } else if (isNewDay) {
       currentSessionHours = 0;
+    }
+    
+    // Dubbelkolla att sessionStart fortfarande är i framtiden efter alla justeringar
+    if (sessionStart < now) {
+      sessionStart = now;
     }
     
     if (sessionStart >= freeSlot.end) continue;
@@ -1955,7 +1966,13 @@ function findTaskSlots(busyTimes, totalHours, startDate, endDate, workStartHour 
         lastSlotEndTime = slotEndTime;
         
         if (remainingHours > 0 && availableDurationHours > hoursToUse && currentSessionHours >= maxSessionHours) {
-          const afterBreakStart = slotEndTime + (breakMinutes * 60 * 1000);
+          let afterBreakStart = slotEndTime + (breakMinutes * 60 * 1000);
+          
+          // Säkerställ att tiden efter rast inte är i det förflutna
+          if (afterBreakStart < now) {
+            afterBreakStart = now;
+          }
+          
           if (afterBreakStart < freeSlot.end) {
             const remainingSlotMs = freeSlot.end - afterBreakStart;
             const remainingSlotHours = remainingSlotMs / (1000 * 60 * 60);
