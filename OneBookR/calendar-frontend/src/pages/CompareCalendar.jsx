@@ -124,11 +124,11 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     
     const tokens = Array.from(new Set([myToken, ...invitedTokens]));
     
-    // För direktåtkomst behöver vi bara användarens token
-    if (directAccess) {
-      console.log('Direct access mode - using only user token');
-      // Använd bara användarens token för direktåtkomst
-    } else if (tokens.length < 2) {
+    console.log('Tokens for comparison:', tokens.length, 'directAccess:', directAccess);
+    console.log('MyToken:', myToken ? 'Present' : 'Missing');
+    console.log('InvitedTokens:', invitedTokens.length);
+    
+    if (!directAccess && tokens.length < 2) {
       setError('Minst två tokens krävs för att jämföra.');
       setAvailability([]);
       setIsLoadingAvailability(false);
@@ -663,12 +663,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   const fetchAvailabilityAuto = async (start, end) => {
     const tokens = Array.from(new Set([myToken, ...invitedTokens]));
     
-    // För direktåtkomst eller om bara en token finns
-    if (directAccess || tokens.length < 2) {
-      console.log('Auto-loading with single token (direct access or single user)');
-    } else if (tokens.length < 2) {
+    if (!directAccess && tokens.length < 2) {
+      console.log('Auto-loading skipped - need at least 2 tokens for comparison');
       return;
     }
+    
+    console.log('Auto-loading availability with', tokens.length, 'tokens');
     try {
       const res = await fetch(`${API_BASE_URL}/api/availability`, {
         method: 'POST',

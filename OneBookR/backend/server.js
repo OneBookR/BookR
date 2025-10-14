@@ -708,16 +708,21 @@ app.post('/api/availability', async (req, res) => {
 
   console.log('=== AVAILABILITY API DEBUG ===');
   console.log('Tokens mottagna av backend:', tokens.length, 'tokens');
+  console.log('First token preview:', tokens[0] ? tokens[0].substring(0, 20) + '...' : 'None');
   console.log('Providers:', providers);
   console.log('Request body providers:', req.body.providers);
+  console.log('TimeMin:', timeMin);
+  console.log('TimeMax:', timeMax);
 
   if (!tokens || tokens.length < 1) {
     return res.status(400).json({ error: 'Minst en token krävs.' });
   }
   
-  // För direktåtkomst använder vi bara en token
-  if (tokens.length === 1) {
-    console.log('Single token mode (direct access) - showing user calendar only');
+  // För vanliga kalenderjämförelser krävs minst 2 tokens
+  if (tokens.length < 2) {
+    console.log('Single token mode - showing only user calendar (no comparison)');
+  } else {
+    console.log('Multi-token mode - comparing', tokens.length, 'calendars');
   }
 
   if (!timeMin || !timeMax) {
@@ -729,7 +734,9 @@ app.post('/api/availability', async (req, res) => {
     const allBusyTimesWithTimezones = await Promise.all(
       tokens.map(async (token, index) => {
         const provider = providers && providers[index] ? providers[index] : 'google';
+        console.log(`Fetching calendar events for token ${index + 1}/${tokens.length}, provider: ${provider}`);
         const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
+        console.log(`Token ${index + 1} returned ${events.length} events`);
         // Hantera heldagsevent och vanliga event
         const processedEvents = events.map(e => {
           // Om det är ett heldagsevent (date, ej dateTime)
@@ -753,6 +760,7 @@ app.post('/api/availability', async (req, res) => {
             };
           }
         });
+        console.log(`Token ${index + 1} processed ${processedEvents.length} events`);
         return { events: processedEvents, timezone };
       })
     );

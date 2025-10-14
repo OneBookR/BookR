@@ -290,7 +290,15 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   // Om ingen grupp, använd bara din egen token
   const tokens = (groupId || directAccess === 'true') ? groupTokens : [user.accessToken];
-  const invitedTokens = directAccess === 'true' ? [] : tokens.filter(token => token !== user.accessToken);
+  const invitedTokens = tokens.filter(token => token !== user.accessToken);
+  
+  console.log('Dashboard tokens setup:', {
+    totalTokens: tokens.length,
+    myToken: user.accessToken ? 'Present' : 'Missing',
+    invitedTokens: invitedTokens.length,
+    directAccess: directAccess === 'true',
+    groupId: groupId
+  });
 
   // Grupp-länk
   const groupLink = groupId
