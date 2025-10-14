@@ -104,6 +104,23 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         }
       }
       
+      // NYTT: Kontrollera om den som bjuder in har direktåtkomst via Team-kontakter
+      const urlParams = new URLSearchParams(window.location.search);
+      const inviterEmail = urlParams.get('inviterEmail'); // Antag att detta skickas med i länken
+      if (inviterEmail) {
+        const userEmail = user?.email || user?.emails?.[0]?.value;
+        const teamContactsKey = `bookr_team_contacts_${userEmail}`;
+        const teamContacts = JSON.parse(localStorage.getItem(teamContactsKey) || '[]');
+        const inviterContact = teamContacts.find(c => c.email.toLowerCase() === inviterEmail.toLowerCase());
+
+        if (inviterContact?.directAccess) {
+          // Anslut automatiskt eftersom inbjudaren har direktåtkomst
+          console.log(`Ansluter automatiskt eftersom ${inviterEmail} har direktåtkomst.`);
+          // Logiken för att ansluta direkt hamnar här, liknande den befintliga join-logiken
+        }
+      }
+
+
       // Hantera team-möten
       if (teamName && teamMembers) {
         const memberEmails = teamMembers.split(',');

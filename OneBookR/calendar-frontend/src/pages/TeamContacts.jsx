@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, Box, Button, Card, CardContent, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Paper, Snackbar, Alert } from '@mui/material';
+import { Container, Typography, Box, Button, Card, CardContent, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Paper, Snackbar, Alert, Switch, FormControlLabel } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import PersonIcon from '@mui/icons-material/Person';
@@ -32,7 +32,7 @@ export default function TeamContacts({ user, onNavigateBack }) {
       return;
     }
     
-    const updatedContacts = [...contacts, { ...newContact, id: Date.now() }];
+        const updatedContacts = [...contacts, { ...newContact, id: Date.now(), directAccess: false }];
     const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
     
     if (userEmail) {
@@ -60,6 +60,19 @@ export default function TeamContacts({ user, onNavigateBack }) {
       // Trigga uppdatering av kontaktlistan
       window.dispatchEvent(new Event('storage'));
       window.dispatchEvent(new Event('teamContactsUpdated'));
+    }
+  };
+
+  const handleToggleDirectAccess = (contactId) => {
+    const updatedContacts = contacts.map(c => 
+      c.id === contactId ? { ...c, directAccess: !c.directAccess } : c
+    );
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+    
+    if (userEmail) {
+      localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
+      setContacts(updatedContacts);
+      setToast({ open: true, message: 'Inställning sparad!', severity: 'success' });
     }
   };
 
@@ -138,13 +151,27 @@ export default function TeamContacts({ user, onNavigateBack }) {
                       {contact.email}
                     </Typography>
                   </Box>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    onClick={() => handleDeleteContact(contact.id)}
-                  >
-                    Ta bort
-                  </Button>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={contact.directAccess}
+                          onChange={() => handleToggleDirectAccess(contact.id)}
+                          color="primary"
+                        />
+                      }
+                      label="Direktåtkomst"
+                      labelPlacement="start"
+                      sx={{ mr: 2 }}
+                    />
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={() => handleDeleteContact(contact.id)}
+                    >
+                      Ta bort
+                    </Button>
+                  </Box>
                 </Paper>
               ))}
             </Box>
