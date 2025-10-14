@@ -241,6 +241,10 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   if (currentView === 'team') {
     return <TeamDashboard user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
   }
+  
+  if (currentView === 'contacts') {
+    return <ContactManager user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
+  }
 
 
 
