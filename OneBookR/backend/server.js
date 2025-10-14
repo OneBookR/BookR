@@ -1836,6 +1836,24 @@ app.post('/api/invites/:inviteId/respond', async (req, res) => {
   res.json({ success: true });
 });
 
+// Skicka kontaktförfrågan
+app.post('/api/contact-request', async (req, res) => {
+  const { fromEmail, toEmail, fromName } = req.body;
+  
+  if (!fromEmail || !toEmail) {
+    return res.status(400).json({ error: 'Från- och till-email krävs' });
+  }
+  
+  try {
+    // Skicka notifikation till mottagaren (i produktion skulle detta vara databas)
+    // För nu använder vi localStorage på frontend
+    res.json({ success: true, message: 'Kontaktförfrågan skickad' });
+  } catch (error) {
+    console.error('Error sending contact request:', error);
+    res.status(500).json({ error: 'Kunde inte skicka kontaktförfrågan' });
+  }
+});
+
 // Direktbokning endpoint
 app.post('/api/direct-booking', async (req, res) => {
   const { contactEmail, contactName, userEmail, userToken } = req.body;

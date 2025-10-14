@@ -4,6 +4,7 @@ import CompareCalendar from './CompareCalendar';
 import Task from './Task';
 import ShortcutDashboard from './ShortcutDashboard';
 import TeamDashboard from './TeamDashboard';
+import ContactManager from './ContactManager';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 
@@ -33,6 +34,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       setCurrentView('task');
     } else if (type === 'team') {
       setCurrentView('team');
+    } else if (type === 'contacts') {
+      setCurrentView('contacts');
     } else if (type === '1v1' || type === 'group') {
       setCurrentView('dashboard');
     }

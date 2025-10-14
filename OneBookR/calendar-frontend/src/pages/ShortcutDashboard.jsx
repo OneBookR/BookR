@@ -15,6 +15,7 @@ import AddIcon from '@mui/icons-material/Add';
 import { Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@mui/material';
 import InvitationSidebar from './InvitationSidebar.jsx';
 import ContactSettings from '../components/ContactSettings.jsx';
+import ContactManager from './ContactManager.jsx';
 
 // Exportera kontakter så att andra komponenter kan använda dem
 export const getStoredContacts = () => {
@@ -33,6 +34,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [newContact, setNewContact] = useState({ name: '', email: '' });
   const [contacts, setContacts] = useState([]);
   const [contactSettingsOpen, setContactSettingsOpen] = useState(false);
+  const [showContactManager, setShowContactManager] = useState(false);
+  
+  if (showContactManager) {
+    return <ContactManager user={user} onNavigateBack={() => setShowContactManager(false)} />;
+  }
 
   useEffect(() => {
     if (!user?.email) return;
@@ -224,7 +230,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     }
   };
 
-  const handleAddContact = () => {
+  const handleAddContact = async () => {
     if (!newContact.name.trim() || !newContact.email.trim()) {
       setToast({ open: true, message: 'Fyll i både namn och e-post', severity: 'error' });
       return;
@@ -240,9 +246,29 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     setContacts(updatedContacts);
     localStorage.setItem('bookr_contacts', JSON.stringify(updatedContacts));
     
+    // Skicka kontaktförfrågan till mottagaren
+    try {
+      const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
+      const userName = user.displayName || userEmail;
+      
+      // Simulera att vi skickar en notifikation till mottagaren
+      // I verkligheten skulle detta gå via backend och databas
+      const existingRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${newContact.email}`) || '[]');
+      const newRequest = {
+        email: userEmail,
+        name: userName,
+        timestamp: new Date().toISOString()
+      };
+      existingRequests.push(newRequest);
+      localStorage.setItem(`bookr_contact_requests_${newContact.email}`, JSON.stringify(existingRequests));
+      
+    } catch (error) {
+      console.error('Failed to send contact request:', error);
+    }
+    
     setNewContact({ name: '', email: '' });
     setContactsModalOpen(false);
-    setToast({ open: true, message: 'Kontakt tillagd!', severity: 'success' });
+    setToast({ open: true, message: 'Kontakt tillagd och förfrågan skickad!', severity: 'success' });
   };
 
   const handleDeleteContact = (contactId) => {
@@ -436,7 +462,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
               }
             }} 
-                  onClick={() => setContactsModalOpen(true)}>
+                  onClick={() => onNavigateToMeeting('team')}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
                   <ContactsIcon sx={{ fontSize: 36, color: '#635bff' }} />
@@ -463,7 +489,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
               }
             }} 
-                  onClick={() => setContactsModalOpen(true)}>
+                  onClick={() => setShowContactManager(true)}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
                   <ContactsIcon sx={{ fontSize: 36, color: '#635bff' }} />
