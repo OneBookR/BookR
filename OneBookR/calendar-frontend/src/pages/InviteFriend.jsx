@@ -34,7 +34,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
     }
   }, [fromUser]);
 
-  // Lyssna på förifyllda kontakter från kontaktboken
+  // Lyssna på förifyllda kontakter från kontaktboken eller team-sidan
   useEffect(() => {
     const handlePrefilledContacts = (event) => {
       const { emails: prefilledEmails } = event.detail;
@@ -234,8 +234,26 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
         if (data.inviteLinks && Array.isArray(data.inviteLinks)) {
           setGroupLink(data.inviteLinks.join('\n'));
         }
+        
+        // Om det finns ett groupId, omdirigera direkt till kalenderjämföraren
         if (data.groupId) {
-          window.location.href = `${window.location.origin}${window.location.pathname}?group=${data.groupId}`;
+          // Kontrollera om alla inbjudna har direktåtkomst
+          const allHaveDirectAccess = emails.every(email => {
+            const contact = teamContacts.find(c => c.email.toLowerCase() === email.toLowerCase());
+            return contact && contact.directAccess;
+          });
+
+          if (allHaveDirectAccess) {
+            const params = new URLSearchParams({
+              group: data.groupId,
+              directAccess: 'true',
+              teamName: groupName.trim() || 'Namnlös grupp'
+            });
+            emails.forEach(email => params.append('contactEmail', email));
+            window.location.href = `/?${params.toString()}`;
+          } else {
+            window.location.href = `/?group=${data.groupId}`;
+          }
         }
       } else {
         setMessage(data.error || 'Något gick fel.');

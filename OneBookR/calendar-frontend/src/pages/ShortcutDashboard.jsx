@@ -17,6 +17,7 @@ import { Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@m
 import InvitationSidebar from './InvitationSidebar.jsx';
 import ContactSettings from '../components/ContactSettings.jsx';
 import ContactManager from './ContactManager.jsx';
+import TeamPage from './TeamPage.jsx'; // Importera den nya sidan
 
 // Exportera kontakter så att andra komponenter kan använda dem
 export const getStoredContacts = () => {
@@ -35,6 +36,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [newContact, setNewContact] = useState({ name: '', email: '' });
   const [contacts, setContacts] = useState([]);
   const [contactSettingsOpen, setContactSettingsOpen] = useState(false);
+  const [teams, setTeams] = useState([]);
+  const [hasDirectAccessTeam, setHasDirectAccessTeam] = useState(false);
 
 
   useEffect(() => {
@@ -75,6 +78,22 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     // Hämta sparade kontakter från localStorage
     const savedContacts = JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
     setContacts(savedContacts);
+
+    // NYTT: Hämta teams och kontakter för att kolla direktåtkomst
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+    if (userEmail) {
+      const savedTeamContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
+      const savedTeams = JSON.parse(localStorage.getItem(`bookr_teams_${userEmail}`) || '[]');
+      setTeams(savedTeams);
+
+      const directAccessTeamExists = savedTeams.some(team =>
+        team.members.every(member => {
+          const contact = savedTeamContacts.find(c => c.email === member.email);
+          return contact && contact.directAccess;
+        })
+      );
+      setHasDirectAccessTeam(directAccessTeamExists);
+    }
   }, [user?.email]);
 
   const handleInviteResponse = async (groupId, inviteeId, response) => {
@@ -459,10 +478,24 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
               }
             }} 
-                  onClick={() => window.location.href = '/?meetingType=team'}>
+                  onClick={() => onNavigateToMeeting('team')}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
-                  <GroupsIcon sx={{ fontSize: 36, color: '#635bff' }} />
+                  <Badge
+                    variant="dot"
+                    color="success"
+                    invisible={!hasDirectAccessTeam}
+                    sx={{
+                      '& .MuiBadge-dot': {
+                        boxShadow: '0 0 0 2px #fff',
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                      }
+                    }}
+                  >
+                    <GroupsIcon sx={{ fontSize: 36, color: '#635bff' }} />
+                  </Badge>
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>TEAM</Typography>
@@ -543,7 +576,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         <Button 
                           size="small" 
                           variant="outlined" 
-                          onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')}
+                          onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'decline')}
                           sx={{ fontSize: 10, py: 0.5, px: 1 }}
                         >
                           Neka
@@ -551,7 +584,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         <Button 
                           size="small" 
                           variant="outlined" 
-                          onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept_passive')}
+                          onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'accept_passive')}
                           sx={{ fontSize: 10, py: 0.5, px: 1, bgcolor: 'rgba(25,118,210,0.1)' }}
                         >
                           Ge tillgång
@@ -559,7 +592,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         <Button 
                           size="small" 
                           variant="contained" 
-                          onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')}
+                          onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'accept')}
                           sx={{ fontSize: 10, py: 0.5, px: 1 }}
                         >
                           Gå med
