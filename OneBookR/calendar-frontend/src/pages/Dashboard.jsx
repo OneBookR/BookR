@@ -5,6 +5,7 @@ import Task from './Task';
 import ShortcutDashboard from './ShortcutDashboard';
 import TeamDashboard from './TeamDashboard';
 import ContactManager from './ContactManager';
+import TeamContacts from './TeamContacts';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 
@@ -38,6 +39,9 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     } else if (type === 'group') {
       // Navigera till InviteFriend för gruppmöten
       setCurrentView('invite');
+    } else if (type === 'team') {
+      // Navigera till TeamContacts
+      setCurrentView('team');
     }
   });
   
@@ -242,6 +246,10 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   
   if (currentView === 'invite') {
     return <InviteFriend user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
+  }
+  
+  if (currentView === 'team') {
+    return <TeamContacts user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
   }
 
 
