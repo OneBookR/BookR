@@ -5,6 +5,13 @@ import { useContacts } from '../hooks/useContacts';
 import { useTheme } from '../hooks/useTheme';
 
 const InviteFriend = ({ fromUser, fromToken, theme }) => {
+  // Sätt window.user för useContacts
+  useEffect(() => {
+    if (fromUser && !window.user) {
+      window.user = fromUser;
+    }
+  }, [fromUser]);
+  
   const { contacts } = useContacts();
   const currentTheme = theme || useTheme().theme;
   const [emails, setEmails] = useState([]);

@@ -37,8 +37,16 @@ export const useContacts = () => {
       setContacts(uniqueContacts);
     };
 
+    // Lyssna på storage events
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    
+    // Lyssna på custom events också
+    window.addEventListener('teamContactsUpdated', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('teamContactsUpdated', handleStorageChange);
+    };
   }, []);
 
   const addContact = (email, name = '') => {

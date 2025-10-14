@@ -44,6 +44,7 @@ export default function TeamContacts({ user, onNavigateBack }) {
       
       // Trigga uppdatering av kontaktlistan
       window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('teamContactsUpdated'));
     }
   };
 
@@ -58,6 +59,7 @@ export default function TeamContacts({ user, onNavigateBack }) {
       
       // Trigga uppdatering av kontaktlistan
       window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('teamContactsUpdated'));
     }
   };
 
