@@ -138,8 +138,32 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
       window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
     } else if (response === 'accept_passive') {
-      // Acceptera utan att gå in i kalenderjämföraren
+      // Acceptera utan att gå in i kalenderjämföraren - ge direktåtkomst
       try {
+        // Först, lägg till inbjudaren som kontakt med direktåtkomst
+        const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
+        const teamContactsKey = `bookr_team_contacts_${userEmail}`;
+        const existingContacts = JSON.parse(localStorage.getItem(teamContactsKey) || '[]');
+        
+        // Kolla om kontakten redan finns
+        const existingContactIndex = existingContacts.findIndex(c => c.email.toLowerCase() === invitation.fromEmail.toLowerCase());
+        
+        if (existingContactIndex >= 0) {
+          // Uppdatera befintlig kontakt med direktåtkomst
+          existingContacts[existingContactIndex].directAccess = true;
+        } else {
+          // Lägg till ny kontakt med direktåtkomst
+          existingContacts.push({
+            id: Date.now(),
+            name: invitation.fromEmail.split('@')[0], // Använd första delen av e-posten som namn
+            email: invitation.fromEmail,
+            directAccess: true
+          });
+        }
+        
+        localStorage.setItem(teamContactsKey, JSON.stringify(existingContacts));
+        
+        // Sedan, gå med i gruppen
         const joinRes = await fetch(`https://www.onebookr.se/api/group/join`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -147,7 +171,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             groupId,
             token: user.accessToken,
             invitee: inviteeId,
-            email: user.email || user.emails?.[0]?.value || user.emails?.[0]
+            email: userEmail
           })
         });
         
@@ -163,7 +187,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           const openMeeting = {
             id: groupId,
             groupName: invitation.groupName || 'Kalenderjämförelse',
-            members: [invitation.fromEmail, user.email || user.emails?.[0]?.value || user.emails?.[0]],
+            members: [invitation.fromEmail, userEmail],
             leftAt: new Date().toISOString()
           };
           const existingMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
@@ -173,7 +197,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           setLeftMeetings(updatedMeetings);
           
           setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
-          setToast({ open: true, message: 'Du har gett tillgång till din kalender!', severity: 'success' });
+          setToast({ open: true, message: `Du har gett ${invitation.fromEmail} direktåtkomst till din kalender!`, severity: 'success' });
         } else {
           setToast({ open: true, message: 'Kunde inte acceptera inbjudan.', severity: 'error' });
         }

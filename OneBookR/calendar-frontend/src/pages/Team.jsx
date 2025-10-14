@@ -126,13 +126,40 @@ export default function Team({ user, onNavigateBack }) {
         return contact && contact.directAccess;
     });
 
-    const params = new URLSearchParams();
     if (allHaveDirectAccess) {
-        params.append('directAccess', 'true');
-        params.append('teamName', team.name);
-        memberEmails.forEach(email => params.append('contactEmail', email));
-        window.location.href = `/?${params.toString()}`;
+        // Skapa en grupp med direktåtkomst
+        fetch('https://www.onebookr.se/api/invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                emails: memberEmails,
+                fromUser: userEmail,
+                fromToken: user.accessToken || 'mock_token',
+                groupName: team.name,
+                isTeamMeeting: true,
+                teamName: team.name,
+                hasDirectAccessTeam: true
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.groupId) {
+                const params = new URLSearchParams();
+                params.append('group', data.groupId);
+                params.append('directAccess', 'true');
+                params.append('teamName', team.name);
+                memberEmails.forEach(email => params.append('contactEmail', email));
+                window.location.href = `/?${params.toString()}`;
+            } else {
+                setToast({ open: true, message: 'Kunde inte skapa direktåtkomst-grupp', severity: 'error' });
+            }
+        })
+        .catch(err => {
+            console.error('Error creating direct access group:', err);
+            setToast({ open: true, message: 'Fel vid skapande av grupp', severity: 'error' });
+        });
     } else {
+        // Vanlig gruppinbjudan
         const prefilledEvent = new CustomEvent('prefilledContacts', { detail: { emails: memberEmails, groupName: team.name } });
         window.dispatchEvent(prefilledEvent);
         window.location.href = '/';

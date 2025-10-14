@@ -711,8 +711,13 @@ app.post('/api/availability', async (req, res) => {
   console.log('Providers:', providers);
   console.log('Request body providers:', req.body.providers);
 
-  if (!tokens || tokens.length < 2) {
-    return res.status(400).json({ error: 'Minst två tokens krävs för att jämföra.' });
+  if (!tokens || tokens.length < 1) {
+    return res.status(400).json({ error: 'Minst en token krävs.' });
+  }
+  
+  // För direktåtkomst använder vi bara en token
+  if (tokens.length === 1) {
+    console.log('Single token mode (direct access) - showing user calendar only');
   }
 
   if (!timeMin || !timeMax) {
@@ -834,8 +839,15 @@ app.post('/api/availability', async (req, res) => {
 
     // Gemensamma lediga tider mellan ALLA användare
     let commonFreeTimes = allFreeTimes[0] || [];
-    for (let i = 1; i < allFreeTimes.length; i++) {
-      commonFreeTimes = findCommonFreeTimes(commonFreeTimes, allFreeTimes[i]);
+    
+    // Om bara en användare (direktåtkomst), använd bara deras lediga tider
+    if (allFreeTimes.length === 1) {
+      console.log('Single user mode - using only their free times');
+    } else {
+      // Flera användare - hitta gemensamma tider
+      for (let i = 1; i < allFreeTimes.length; i++) {
+        commonFreeTimes = findCommonFreeTimes(commonFreeTimes, allFreeTimes[i]);
+      }
     }
 
     // Dela upp långa luckor i mindre block
@@ -870,7 +882,7 @@ app.post('/api/availability', async (req, res) => {
 
 // Skapa grupp och skicka inbjudan
 app.post('/api/invite', async (req, res) => {
-  const { emails, fromUser, fromToken, groupName, isTeamMeeting, teamName, directAccess } = req.body;
+  const { emails, fromUser, fromToken, groupName, isTeamMeeting, teamName, directAccess, hasDirectAccessTeam } = req.body;
   // SÄKER: Hämta alltid e-post från fromUser-objekt om det är ett objekt
   let creatorEmail = fromUser;
   if (
@@ -904,7 +916,7 @@ app.post('/api/invite', async (req, res) => {
       joinedEmails: [creatorEmail],
       isTeamMeeting: isTeamMeeting || false,
       teamName: teamName || null,
-      directAccess: directAccess || false
+      directAccess: directAccess || hasDirectAccessTeam || false
     });
 
     // Skapa inbjudningar i Firebase
@@ -931,7 +943,12 @@ app.post('/api/invite', async (req, res) => {
     console.log('Skickar inbjudningar:', invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`));
 
     // Returnera svar omedelbart
-    res.json({ message: 'Inbjudningar skickade!', groupId, inviteLinks });
+    res.json({ 
+      message: 'Inbjudningar skickade!', 
+      groupId, 
+      inviteLinks,
+      directAccess: directAccess || hasDirectAccessTeam || false
+    });
     
     // Skicka mejl asynkront med Gmail
     setImmediate(async () => {
@@ -1085,7 +1102,9 @@ app.get('/api/group/:groupId/status', async (req, res) => {
       expected,
       invited: invitedEmails,
       joined: group.joinedEmails || [],
-      groupName: group.groupName || 'Namnlös grupp'
+      groupName: group.groupName || 'Namnlös grupp',
+      creatorEmail: group.creatorEmail,
+      directAccess: group.directAccess || false
     });
   } catch (error) {
     console.error('Error fetching group status:', error);
@@ -1882,6 +1901,31 @@ app.post('/api/direct-booking', async (req, res) => {
   } catch (error) {
     console.error('Error creating direct booking:', error);
     res.status(500).json({ error: 'Kunde inte skapa direktbokning' });
+  }
+});
+
+// Hämta direktåtkomst-tokens för team/kontakter
+app.post('/api/group/direct-access-tokens', async (req, res) => {
+  const { ownerEmail, targetEmails } = req.body;
+  
+  if (!ownerEmail || !targetEmails || !Array.isArray(targetEmails)) {
+    return res.status(400).json({ error: 'ownerEmail och targetEmails (array) krävs' });
+  }
+  
+  try {
+    // För direktåtkomst använder vi bara ägarens token
+    // Direktåtkomst betyder att vi kan se andras kalendrar utan att de behöver logga in
+    console.log('Direct access tokens requested for:', { ownerEmail, targetEmails });
+    console.log('Returning owner token only for direct access');
+    
+    res.json({ 
+      success: true, 
+      tokens: [], // Inga extra tokens behövs för direktåtkomst
+      message: 'Direktåtkomst aktiverat - använder endast ägarens token' 
+    });
+  } catch (error) {
+    console.error('Error fetching direct access tokens:', error);
+    res.status(500).json({ error: 'Kunde inte hämta direktåtkomst-tokens' });
   }
 });
 

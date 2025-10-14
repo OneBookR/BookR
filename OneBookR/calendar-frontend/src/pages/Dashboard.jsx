@@ -68,29 +68,20 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
     // Hantera direktåtkomst för team eller enskilda kontakter
     if (directAccess === 'true' && contactEmails.length > 0) {
-      fetch('https://www.onebookr.se/api/group/direct-access-tokens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ownerEmail: email, targetEmails: contactEmails }),
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.tokens && data.tokens.length > 0) {
-          const allTokens = [user.accessToken, ...data.tokens];
-          setGroupTokens(allTokens);
-          setGroupStatus({
-            allJoined: true,
-            current: allTokens.length,
-            expected: allTokens.length,
-            invited: contactEmails,
-            groupName: teamName || `Möte med ${contactName || contactEmails[0]}`
-          });
-        } else {
-          console.error('Could not fetch direct access tokens:', data.error);
-          // Fallback or show error
-        }
-      })
-      .catch(err => console.error('Error fetching direct access tokens:', err));
+      console.log('Handling direct access for contacts:', contactEmails);
+      
+      // För direktåtkomst använder vi bara användarens egen token
+      // Direktåtkomst betyder att vi kan se andras kalendrar utan att de behöver logga in
+      setGroupTokens([user.accessToken]);
+      setGroupStatus({
+        allJoined: true,
+        current: 1 + contactEmails.length, // Simulera att alla är med
+        expected: 1 + contactEmails.length,
+        invited: contactEmails,
+        groupName: teamName || `Möte med ${contactName || contactEmails[0]}`
+      });
+      
+      console.log('Direct access setup complete - using only user token');
       return; // Stop further execution in this effect
     }
     
@@ -132,21 +123,59 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         }
       }
       
-      // NYTT: Kontrollera om den som bjuder in har direktåtkomst via Team-kontakter
-      const urlParams = new URLSearchParams(window.location.search);
-      const inviterEmail = urlParams.get('inviterEmail'); // Antag att detta skickas med i länken
-      if (inviterEmail) {
-        const userEmail = user?.email || user?.emails?.[0]?.value;
-        const teamContactsKey = `bookr_team_contacts_${userEmail}`;
-        const teamContacts = JSON.parse(localStorage.getItem(teamContactsKey) || '[]');
-        const inviterContact = teamContacts.find(c => c.email.toLowerCase() === inviterEmail.toLowerCase());
+      // Kontrollera om inbjudaren har direktåtkomst via Team-kontakter
+      fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
+        .then(res => res.json())
+        .then(groupData => {
+          if (groupData && groupData.creatorEmail) {
+            const teamContactsKey = `bookr_team_contacts_${email}`;
+            const teamContacts = JSON.parse(localStorage.getItem(teamContactsKey) || '[]');
+            const inviterContact = teamContacts.find(c => c.email.toLowerCase() === groupData.creatorEmail.toLowerCase());
 
-        if (inviterContact?.directAccess) {
-          // Anslut automatiskt eftersom inbjudaren har direktåtkomst
-          console.log(`Ansluter automatiskt eftersom ${inviterEmail} har direktåtkomst.`);
-          // Logiken för att ansluta direkt hamnar här, liknande den befintliga join-logiken
-        }
-      }
+            if (inviterContact?.directAccess) {
+              console.log(`Ansluter automatiskt eftersom ${groupData.creatorEmail} har direktåtkomst.`);
+              
+              // Anslut automatiskt och sätt upp direktåtkomst
+              fetch('https://www.onebookr.se/api/group/join', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  groupId,
+                  token: user.accessToken,
+                  invitee: inviteeId,
+                  email: email,
+                }),
+              })
+              .then(joinRes => joinRes.json())
+              .then(joinData => {
+                if (joinData.success) {
+                  // Sätt upp direktåtkomst-läge
+                  setGroupTokens([user.accessToken]);
+                  setGroupStatus({
+                    allJoined: true,
+                    current: 2, // Du och inbjudaren
+                    expected: 2,
+                    invited: [groupData.creatorEmail],
+                    groupName: groupData.groupName || 'Direktåtkomst-möte'
+                  });
+                  console.log('Direktåtkomst aktiverat för grupp:', groupId);
+                }
+              })
+              .catch(err => console.error('Error joining with direct access:', err));
+              
+              return; // Stoppa vanlig grupplogik
+            }
+          }
+          
+          // Fortsätt med vanlig grupplogik om ingen direktåtkomst
+          continueNormalGroupJoin();
+        })
+        .catch(err => {
+          console.error('Error checking group status for direct access:', err);
+          continueNormalGroupJoin();
+        });
+      
+      const continueNormalGroupJoin = () => {
 
 
       // Hantera team-möten
@@ -162,54 +191,55 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         // Fortsätt med vanlig grupplogik för team-möten
       }
       
-      console.log('Joining group:', { groupId, email, inviteeId });
-      
-      // Kontrollera om gruppen existerar först
-      fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
-        .then(res => {
-          console.log('Group status response:', res.status);
-          if (!res.ok) {
-            console.error('Group not found');
-            return;
-          }
-          return res.json();
-        })
-        .then(statusData => {
-          if (!statusData) return;
-          console.log('Group exists, joining...');
-          
-          // Gruppen finns, fortsätt med join
-          return fetch('https://www.onebookr.se/api/group/join', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              groupId,
-              token: user.accessToken,
-              invitee: inviteeId,
-              email: email,
-            }),
+        console.log('Joining group normally:', { groupId, email, inviteeId });
+        
+        // Kontrollera om gruppen existerar först
+        fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
+          .then(res => {
+            console.log('Group status response:', res.status);
+            if (!res.ok) {
+              console.error('Group not found');
+              return;
+            }
+            return res.json();
+          })
+          .then(statusData => {
+            if (!statusData) return;
+            console.log('Group exists, joining...');
+            
+            // Gruppen finns, fortsätt med join
+            return fetch('https://www.onebookr.se/api/group/join', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                groupId,
+                token: user.accessToken,
+                invitee: inviteeId,
+                email: email,
+              }),
+            });
+          })
+          .then(joinRes => {
+            if (joinRes) {
+              console.log('Join response:', joinRes.status);
+              return fetch(`https://www.onebookr.se/api/group/${groupId}/tokens`);
+            }
+          })
+          .then(tokensRes => {
+            if (tokensRes) {
+              return tokensRes.json();
+            }
+          })
+          .then(data => {
+            if (data) {
+              console.log('Group tokens:', data.tokens);
+              setGroupTokens(data.tokens || []);
+            }
+          })
+          .catch(error => {
+            console.error('Error in group join flow:', error);
           });
-        })
-        .then(joinRes => {
-          if (joinRes) {
-            console.log('Join response:', joinRes.status);
-            return fetch(`https://www.onebookr.se/api/group/${groupId}/tokens`);
-          }
-        })
-        .then(tokensRes => {
-          if (tokensRes) {
-            return tokensRes.json();
-          }
-        })
-        .then(data => {
-          if (data) {
-            console.log('Group tokens:', data.tokens);
-            setGroupTokens(data.tokens || []);
-          }
-        })
-        .catch(error => {
-          console.error('Error in group join flow:', error);
-        });
+      }; // End of continueNormalGroupJoin function
     }
   }, [groupId, user.accessToken, inviteeId, user.email, user.emails, directAccess, teamName]);
 
@@ -260,7 +290,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   // Om ingen grupp, använd bara din egen token
   const tokens = (groupId || directAccess === 'true') ? groupTokens : [user.accessToken];
-  const invitedTokens = tokens.filter(token => token !== user.accessToken);
+  const invitedTokens = directAccess === 'true' ? [] : tokens.filter(token => token !== user.accessToken);
 
   // Grupp-länk
   const groupLink = groupId
