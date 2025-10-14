@@ -36,8 +36,12 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       setCurrentView('team');
     } else if (type === 'contacts') {
       setCurrentView('contacts');
-    } else if (type === '1v1' || type === 'group') {
-      setCurrentView('dashboard');
+    } else if (type === '1v1') {
+      // Navigera till InviteFriend för 1v1 möten
+      setCurrentView('invite');
+    } else if (type === 'group') {
+      // Navigera till InviteFriend för gruppmöten
+      setCurrentView('invite');
     }
   });
   
@@ -244,6 +248,10 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   
   if (currentView === 'contacts') {
     return <ContactManager user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
+  }
+  
+  if (currentView === 'invite') {
+    return <InviteFriend user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
   }
 
 
