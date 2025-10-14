@@ -5,7 +5,7 @@ import Task from './Task';
 import ShortcutDashboard from './ShortcutDashboard';
 import TeamDashboard from './TeamDashboard';
 import ContactManager from './ContactManager';
-import Team from './Team';
+import TeamContacts from './TeamContacts';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 
@@ -48,7 +48,9 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   // Set initial view based on URL params
   useEffect(() => {
     const meetingType = urlParams.get('meetingType');
-    if (groupId || meetingType) {
+    if (meetingType === 'team') {
+      setCurrentView('team');
+    } else if (groupId || meetingType) {
       setCurrentView('dashboard');
     }
   }, [groupId]);
@@ -249,7 +251,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   }
   
   if (currentView === 'team') {
-    return <Team user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
+    return <TeamContacts user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
   }
 
 

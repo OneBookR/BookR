@@ -459,7 +459,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
               }
             }} 
-                  onClick={() => onNavigateToMeeting('team')}>
+                  onClick={() => window.location.href = '/?meetingType=team'}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
                   <GroupsIcon sx={{ fontSize: 36, color: '#635bff' }} />
