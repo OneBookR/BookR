@@ -32,10 +32,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   const handleNavigateToMeeting = onNavigateToMeeting || ((type) => {
     if (type === 'task') {
       setCurrentView('task');
-    } else if (type === 'team') {
-      setCurrentView('team');
-    } else if (type === 'contacts') {
-      setCurrentView('contacts');
     } else if (type === '1v1') {
       // Navigera till InviteFriend för 1v1 möten
       setCurrentView('invite');
@@ -242,13 +238,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     return <Task user={user} />;
   }
   
-  if (currentView === 'team') {
-    return <TeamDashboard user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
-  }
-  
-  if (currentView === 'contacts') {
-    return <ContactManager user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
-  }
+
   
   if (currentView === 'invite') {
     return <InviteFriend user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
