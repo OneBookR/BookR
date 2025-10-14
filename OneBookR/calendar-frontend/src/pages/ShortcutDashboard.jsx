@@ -14,6 +14,7 @@ import ContactsIcon from '@mui/icons-material/Contacts';
 import AddIcon from '@mui/icons-material/Add';
 import { Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@mui/material';
 import InvitationSidebar from './InvitationSidebar.jsx';
+import ContactSettings from '../components/ContactSettings.jsx';
 
 // Exportera kontakter så att andra komponenter kan använda dem
 export const getStoredContacts = () => {
@@ -31,6 +32,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [contactsModalOpen, setContactsModalOpen] = useState(false);
   const [newContact, setNewContact] = useState({ name: '', email: '' });
   const [contacts, setContacts] = useState([]);
+  const [contactSettingsOpen, setContactSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -1095,14 +1097,22 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
               sx={{ mb: 2 }}
             />
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={handleAddContact}
-              sx={{ mb: 3 }}
-            >
-              Lägg till kontakt
-            </Button>
+            <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleAddContact}
+              >
+                Lägg till kontakt
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => setContactSettingsOpen(true)}
+                disabled={contacts.length === 0}
+              >
+                Inställningar
+              </Button>
+            </Box>
           </Box>
           
           <Box>
@@ -1154,6 +1164,17 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Kontakt-inställningar Modal */}
+      <ContactSettings
+        open={contactSettingsOpen}
+        onClose={() => setContactSettingsOpen(false)}
+        contacts={contacts}
+        onUpdateContactSettings={(contactId, settings) => {
+          // Uppdatera kontakt-inställningar
+          console.log('Uppdaterar inställningar för kontakt:', contactId, settings);
+        }}
+      />
     </>
   );
 }

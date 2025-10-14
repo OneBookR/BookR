@@ -870,7 +870,7 @@ app.post('/api/availability', async (req, res) => {
 
 // Skapa grupp och skicka inbjudan
 app.post('/api/invite', async (req, res) => {
-  const { emails, fromUser, fromToken, groupName } = req.body;
+  const { emails, fromUser, fromToken, groupName, isTeamMeeting, teamName, directAccess } = req.body;
   // SÄKER: Hämta alltid e-post från fromUser-objekt om det är ett objekt
   let creatorEmail = fromUser;
   if (
@@ -899,9 +899,12 @@ app.post('/api/invite', async (req, res) => {
       creatorEmail,
       creatorToken: fromToken,
       creatorProvider,
-      groupName: groupName || 'Namnlös grupp',
+      groupName: groupName || teamName || 'Namnlös grupp',
       tokens: [fromToken],
-      joinedEmails: [creatorEmail]
+      joinedEmails: [creatorEmail],
+      isTeamMeeting: isTeamMeeting || false,
+      teamName: teamName || null,
+      directAccess: directAccess || false
     });
 
     // Skapa inbjudningar i Firebase
@@ -913,7 +916,9 @@ app.post('/api/invite', async (req, res) => {
         inviteeId,
         email,
         fromEmail: creatorEmail,
-        groupName: groupName || 'Namnlös grupp'
+        groupName: groupName || teamName || 'Namnlös grupp',
+        isTeamMeeting: isTeamMeeting || false,
+        teamName: teamName || null
       });
       invitees.push({ id: inviteeId, email });
     }
@@ -940,11 +945,16 @@ app.post('/api/invite', async (req, res) => {
           // Skicka inte till samma adress som avsändaren
           if (inv.email && inv.email !== creatorEmail) {
             try {
+              const emailSubject = isTeamMeeting ? `Inbjudan till teammöte: ${teamName}` : 'Inbjudan till Kalenderjämförelse';
+              const emailText = isTeamMeeting 
+                ? `Hej!\n\n${creatorEmail} har bjudit in dig till ett teammöte för "${teamName}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
+                : `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`;
+              
               await resend.emails.send({
                 from: 'BookR <info@onebookr.se>',
                 to: inv.email,
-                subject: 'Inbjudan till Kalenderjämförelse',
-                text: `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
+                subject: emailSubject,
+                text: emailText
               });
               console.log('Inbjudningsmejl skickat till:', inv.email);
             } catch (sendErr) {
@@ -958,11 +968,16 @@ app.post('/api/invite', async (req, res) => {
         // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
         try {
           const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
+          const creatorSubject = isTeamMeeting ? `Du har bjudit in personer till teammöte: ${teamName}` : 'Du har bjudit in personer till din kalendergrupp';
+          const creatorText = isTeamMeeting
+            ? `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till teammötet "${teamName}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
+            : `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`;
+          
           await resend.emails.send({
             from: 'BookR <info@onebookr.se>',
             to: creatorEmail,
-            subject: 'Du har bjudit in personer till din kalendergrupp',
-            text: `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
+            subject: creatorSubject,
+            text: creatorText
           });
           console.log('Mejl skickat till skaparen:', creatorEmail);
         } catch (creatorMailErr) {
@@ -1807,6 +1822,37 @@ app.post('/api/invites/:inviteId/respond', async (req, res) => {
   
   // För nu returnerar vi bara success
   res.json({ success: true });
+});
+
+// Direktbokning endpoint
+app.post('/api/direct-booking', async (req, res) => {
+  const { contactEmail, contactName, userEmail, userToken } = req.body;
+  
+  if (!contactEmail || !userEmail || !userToken) {
+    return res.status(400).json({ error: 'Kontakt-email, användar-email och token krävs' });
+  }
+  
+  try {
+    // Skapa en direktbokningsgrupp
+    const groupId = `direct_${Date.now()}`;
+    
+    const group = await createGroup({
+      creatorEmail: userEmail,
+      creatorToken: userToken,
+      creatorProvider: 'google',
+      groupName: `Möte med ${contactName || contactEmail}`,
+      tokens: [userToken],
+      joinedEmails: [userEmail],
+      directAccess: true,
+      contactEmail,
+      contactName
+    });
+    
+    res.json({ success: true, groupId, redirectUrl: `/?group=${groupId}&directAccess=true&contactEmail=${encodeURIComponent(contactEmail)}&contactName=${encodeURIComponent(contactName || '')}` });
+  } catch (error) {
+    console.error('Error creating direct booking:', error);
+    res.status(500).json({ error: 'Kunde inte skapa direktbokning' });
+  }
 });
 
 // GDPR-endpoint för att radera användardata

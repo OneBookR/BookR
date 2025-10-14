@@ -3,6 +3,7 @@ import InviteFriend from './InviteFriend';
 import CompareCalendar from './CompareCalendar';
 import Task from './Task';
 import ShortcutDashboard from './ShortcutDashboard';
+import TeamDashboard from './TeamDashboard';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 
@@ -21,10 +22,17 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
+  const directAccess = urlParams.get('directAccess');
+  const contactEmail = urlParams.get('contactEmail');
+  const contactName = urlParams.get('contactName');
+  const teamName = urlParams.get('teamName');
+  const teamMembers = urlParams.get('members');
   
   const handleNavigateToMeeting = onNavigateToMeeting || ((type) => {
     if (type === 'task') {
       setCurrentView('task');
+    } else if (type === 'team') {
+      setCurrentView('team');
     } else if (type === '1v1' || type === 'group') {
       setCurrentView('dashboard');
     }
@@ -48,6 +56,33 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       if (!email) {
         alert('Kunde inte hitta din e-postadress. Logga ut och logga in igen med ett Google-konto som har e-post.');
         return;
+      }
+      
+      // Hantera direktbokning
+      if (directAccess === 'true' && contactEmail) {
+        // Skapa en simulerad grupp för direktbokning
+        setGroupTokens([user.accessToken]); // Bara din token för nu
+        setGroupStatus({
+          allJoined: true,
+          current: 1,
+          expected: 1,
+          invited: [contactEmail],
+          groupName: `Möte med ${contactName || contactEmail}`
+        });
+        return;
+      }
+      
+      // Hantera team-möten
+      if (teamName && teamMembers) {
+        const memberEmails = teamMembers.split(',');
+        setGroupStatus({
+          allJoined: false,
+          current: 1,
+          expected: memberEmails.length + 1,
+          invited: memberEmails,
+          groupName: `${teamName} - Teammöte`
+        });
+        // Fortsätt med vanlig grupplogik för team-möten
       }
       
       console.log('Joining group:', { groupId, email, inviteeId });
@@ -176,6 +211,10 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   if (currentView === 'task') {
     return <Task user={user} />;
   }
+  
+  if (currentView === 'team') {
+    return <TeamDashboard user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
+  }
 
 
 
@@ -263,9 +302,9 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
             }}>
               ⏳ Väntar på att alla ska ansluta
             </Typography>
-            {groupStatus.groupName && (
+            {(groupStatus.groupName || teamName) && (
               <Typography variant="h6" sx={{ color: '#1976d2', mb: 2 }}>
-                {groupStatus.groupName}
+                {groupStatus.groupName || `${teamName} - Teammöte`}
               </Typography>
             )}
             <Typography variant="body1" sx={{
@@ -365,6 +404,10 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           invitedTokens={invitedTokens}
           user={user}
           groupId={groupId}
+          directAccess={directAccess === 'true'}
+          contactEmail={contactEmail}
+          contactName={contactName}
+          teamName={teamName}
         />
       )}
 

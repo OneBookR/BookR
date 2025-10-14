@@ -38,7 +38,7 @@ const calendarTodayBg = "#fffde7";
 
 const localizer = momentLocalizer(moment);
 
-export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
+export default function CompareCalendar({ myToken, invitedTokens = [], user, directAccess, contactEmail, contactName, teamName }) {
   const { theme, toggleTheme } = useTheme();
   const { permission, requestPermission, showNotification, scheduleReminder } = useNotifications();
   const { isInstallable, installApp } = usePWA();
@@ -2152,6 +2152,41 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user }) {
       </Dialog>
 
       {/* Kalender */}
+      {/* Visa information om direktbokning eller team-möte */}
+      {directAccess && contactEmail && (
+        <Box sx={{
+          mb: 4,
+          p: 3,
+          bgcolor: '#e8f5e8',
+          borderRadius: 3,
+          border: '2px solid #4caf50'
+        }}>
+          <Typography variant="h6" sx={{ color: '#2e7d32', fontWeight: 600, mb: 1 }}>
+            🤝 Direktbokning med {contactName || contactEmail}
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#1b5e20' }}>
+            Du kan boka möten direkt utan att skicka inbjudan först eftersom {contactName || contactEmail} har gett dig tillgång till sin kalender.
+          </Typography>
+        </Box>
+      )}
+      
+      {teamName && (
+        <Box sx={{
+          mb: 4,
+          p: 3,
+          bgcolor: '#e3f2fd',
+          borderRadius: 3,
+          border: '2px solid #1976d2'
+        }}>
+          <Typography variant="h6" sx={{ color: '#1976d2', fontWeight: 600, mb: 1 }}>
+            👥 {teamName} - Teammöte
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#1565c0' }}>
+            Hitta en tid som passar alla i teamet.
+          </Typography>
+        </Box>
+      )}
+      
       <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
         Kalender
       </Typography>

@@ -64,9 +64,26 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
   };
 
   const selectContact = (contact) => {
-    addEmail(contact.email);
-    setInputValue('');
-    setShowSuggestions(false);
+    // Kontrollera om kontakten har direkttillgång till kalendern
+    const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
+    const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess;
+    
+    if (hasDirectAccess) {
+      // Gå direkt till kalenderjämföraren utan inbjudan
+      const groupId = `direct_${Date.now()}`;
+      const params = new URLSearchParams({
+        group: groupId,
+        directAccess: 'true',
+        contactEmail: contact.email,
+        contactName: contact.name
+      });
+      window.location.href = `/?${params.toString()}`;
+    } else {
+      // Lägg till i vanlig inbjudningslista
+      addEmail(contact.email);
+      setInputValue('');
+      setShowSuggestions(false);
+    }
   };
 
   const handleInputKeyDown = (e) => {
@@ -313,7 +330,12 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
                       py: 1.5,
                       '&:hover': {
                         bgcolor: '#f5f5f5'
-                      }
+                      },
+                      bgcolor: (() => {
+                        const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
+                        const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess;
+                        return hasDirectAccess ? '#e8f5e8' : 'transparent';
+                      })()
                     }}
                   >
                     <Avatar
@@ -328,8 +350,30 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
                       {contact.name.charAt(0).toUpperCase()}
                     </Avatar>
                     <ListItemText
-                      primary={contact.name}
-                      secondary={contact.email}
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <span>{contact.name}</span>
+                          {(() => {
+                            const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
+                            const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess;
+                            return hasDirectAccess ? (
+                              <Chip 
+                                label="Direktbokning" 
+                                size="small" 
+                                color="success"
+                                sx={{ fontSize: 10, height: 20 }}
+                              />
+                            ) : null;
+                          })()
+                        </Box>
+                      }
+                      secondary={(() => {
+                        const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
+                        const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess;
+                        return hasDirectAccess 
+                          ? `${contact.email} • Klicka för att boka direkt`
+                          : contact.email;
+                      })()}
                       primaryTypographyProps={{
                         fontWeight: 600,
                         fontSize: 14
