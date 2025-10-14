@@ -202,10 +202,18 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
       if (res.ok) {
         setAvailability(data);
         setError(null);
-        setToast({ open: true, message: `Hittade ${data.length} lediga tider`, severity: 'success' });
+        if (data.length === 0) {
+          setToast({ open: true, message: 'Inga lediga tider hittades. Kontrollera att alla är inloggade med giltiga tokens.', severity: 'warning' });
+        } else {
+          setToast({ open: true, message: `Hittade ${data.length} lediga tider`, severity: 'success' });
+        }
       } else {
         setAvailability([]);
-        setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
+        if (res.status === 401) {
+          setError('Inloggningen har gått ut. Logga ut och logga in igen för att få nya tokens.');
+        } else {
+          setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
+        }
       }
     } catch (err) {
       setAvailability([]);

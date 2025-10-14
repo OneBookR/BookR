@@ -436,6 +436,7 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
     
     if (testResponse.status === 401) {
       console.error('Google OAuth token expired or invalid for token:', token.substring(0, 20) + '...');
+      console.error('Token validation failed - user needs to re-authenticate');
       return { events: [], timezone: 'Europe/Stockholm' };
     }
     
@@ -498,7 +499,7 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
         const data = await response.json();
         if (!response.ok) {
           if (response.status === 401) {
-            console.error(`Token expired for calendar ${calendar.id}`);
+            console.error(`Token expired for calendar ${calendar.id} - user needs to re-authenticate`);
             return [];
           }
           console.error(`API-fel för kalender ${calendar.id}:`, data.error);
@@ -768,6 +769,14 @@ app.post('/api/availability', async (req, res) => {
     // Extrahera bara events för bakåtkompatibilitet
     const allBusyTimes = allBusyTimesWithTimezones.map(item => item.events);
     const userTimezones = allBusyTimesWithTimezones.map(item => item.timezone);
+    
+    // Kontrollera om alla tokens returnerade tomma resultat (kan betyda ogiltiga tokens)
+    const totalEvents = allBusyTimes.reduce((sum, events) => sum + events.length, 0);
+    console.log('Total events fetched from all calendars:', totalEvents);
+    
+    if (totalEvents === 0 && tokens.length > 1) {
+      console.warn('No events found for any calendar - tokens might be expired');
+    }
 
     // För flerdagars möten, hantera annorlunda
     if (isMultiDay && multiDayStart && multiDayEnd) {
@@ -877,7 +886,10 @@ app.post('/api/availability', async (req, res) => {
       end: new Date(slot.end).toISOString()
     }));
 
-    console.log('Sending formatted blocks to frontend:', formattedBlocks.slice(0, 2)); // Logga bara första 2 för debug
+    console.log('Sending', formattedBlocks.length, 'formatted blocks to frontend');
+    if (formattedBlocks.length === 0) {
+      console.log('No free time slots found - this might indicate token issues or very busy calendars');
+    }
 
     res.json(formattedBlocks);
   } catch (err) {
