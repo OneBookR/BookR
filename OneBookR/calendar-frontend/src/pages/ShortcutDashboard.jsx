@@ -17,7 +17,7 @@ import { Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@m
 import InvitationSidebar from './InvitationSidebar.jsx';
 import ContactSettings from '../components/ContactSettings.jsx';
 import ContactManager from './ContactManager.jsx';
-import TeamPage from './TeamPage.jsx'; // Importera den nya sidan
+import Team from './Team.jsx'; // Importera den nya sidan
 
 // Exportera kontakter så att andra komponenter kan använda dem
 export const getStoredContacts = () => {
@@ -38,6 +38,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [contactSettingsOpen, setContactSettingsOpen] = useState(false);
   const [teams, setTeams] = useState([]);
   const [hasDirectAccessTeam, setHasDirectAccessTeam] = useState(false);
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' eller 'team'
 
 
   useEffect(() => {
@@ -95,6 +96,15 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       setHasDirectAccessTeam(directAccessTeamExists);
     }
   }, [user?.email]);
+
+  const handleNavigateToMeeting = (type) => {
+    if (type === 'team') {
+      setCurrentView('team');
+    } else {
+      // Befintlig logik för 1v1, group, task
+      window.location.href = `/?meetingType=${type}`;
+    }
+  };
 
   const handleInviteResponse = async (groupId, inviteeId, response) => {
     const invitation = invites.find(inv => inv.inviteeId === inviteeId);
@@ -339,6 +349,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     }
   };
 
+  if (currentView === 'team') {
+    return <Team user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
+  }
+
   return (
     <>
 
@@ -397,7 +411,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
               }
             }} 
-                  onClick={() => onNavigateToMeeting('1v1')}>
+                  onClick={() => handleNavigateToMeeting('1v1')}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
                   <PersonIcon sx={{ fontSize: 36, color: '#635bff' }} />
@@ -424,7 +438,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
               }
             }} 
-                  onClick={() => onNavigateToMeeting('group')}>
+                  onClick={() => handleNavigateToMeeting('group')}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
                   <GroupIcon sx={{ fontSize: 36, color: '#635bff' }} />
@@ -451,7 +465,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
               }
             }} 
-                  onClick={() => onNavigateToMeeting('task')}>
+                  onClick={() => handleNavigateToMeeting('task')}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
                   <TaskIcon sx={{ fontSize: 36, color: '#635bff' }} />
@@ -478,7 +492,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
               }
             }} 
-                  onClick={() => onNavigateToMeeting('team')}>
+                  onClick={() => handleNavigateToMeeting('team')}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
                   <Badge

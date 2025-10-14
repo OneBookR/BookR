@@ -37,11 +37,14 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
   // Lyssna på förifyllda kontakter från kontaktboken eller team-sidan
   useEffect(() => {
     const handlePrefilledContacts = (event) => {
-      const { emails: prefilledEmails } = event.detail;
+      const { emails: prefilledEmails, groupName: prefilledGroupName } = event.detail;
       setEmails(prev => {
         const newEmails = prefilledEmails.filter(email => !prev.includes(email));
         return [...prev, ...newEmails];
       });
+      if (prefilledGroupName) {
+        setGroupName(prefilledGroupName);
+      }
     };
 
     window.addEventListener('prefilledContacts', handlePrefilledContacts);
