@@ -11,62 +11,17 @@ export default function TeamContacts({ user, onNavigateBack }) {
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [loading, setLoading] = useState(true);
 
-  const saveContactsToGoogleDrive = async (contactsData) => {
-    try {
-      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=media', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${user.accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: 'bookr_team_contacts.json',
-          parents: ['appDataFolder'],
-          content: JSON.stringify(contactsData)
-        })
-      });
-      return response.ok;
-    } catch (error) {
-      console.error('Failed to save to Google Drive:', error);
-      return false;
-    }
-  };
-
-  const loadContactsFromGoogleDrive = async () => {
-    try {
-      const searchResponse = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='bookr_team_contacts.json' and parents in 'appDataFolder'`, {
-        headers: { 'Authorization': `Bearer ${user.accessToken}` }
-      });
-      const searchData = await searchResponse.json();
-      
-      if (searchData.files && searchData.files.length > 0) {
-        const fileId = searchData.files[0].id;
-        const fileResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-          headers: { 'Authorization': `Bearer ${user.accessToken}` }
-        });
-        const contactsData = await fileResponse.json();
-        return contactsData || [];
-      }
-      return [];
-    } catch (error) {
-      console.error('Failed to load from Google Drive:', error);
-      return [];
-    }
-  };
-
   useEffect(() => {
-    const loadContacts = async () => {
-      setLoading(true);
-      const savedContacts = await loadContactsFromGoogleDrive();
+    setLoading(true);
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+    if (userEmail) {
+      const savedContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
       setContacts(savedContacts);
-      setLoading(false);
-    };
-    if (user?.accessToken) {
-      loadContacts();
     }
-  }, [user?.accessToken]);
+    setLoading(false);
+  }, [user]);
 
-  const handleAddContact = async () => {
+  const handleAddContact = () => {
     if (!newContact.name.trim() || !newContact.email.trim()) {
       setToast({ open: true, message: 'Fyll i både namn och e-post', severity: 'error' });
       return;
@@ -78,27 +33,25 @@ export default function TeamContacts({ user, onNavigateBack }) {
     }
     
     const updatedContacts = [...contacts, { ...newContact, id: Date.now() }];
-    const saved = await saveContactsToGoogleDrive(updatedContacts);
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
     
-    if (saved) {
+    if (userEmail) {
+      localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
       setContacts(updatedContacts);
       setNewContact({ name: '', email: '' });
       setAddContactOpen(false);
-      setToast({ open: true, message: 'Kontakt sparad till Google Drive!', severity: 'success' });
-    } else {
-      setToast({ open: true, message: 'Kunde inte spara kontakt', severity: 'error' });
+      setToast({ open: true, message: 'Kontakt sparad!', severity: 'success' });
     }
   };
 
-  const handleDeleteContact = async (contactId) => {
+  const handleDeleteContact = (contactId) => {
     const updatedContacts = contacts.filter(c => c.id !== contactId);
-    const saved = await saveContactsToGoogleDrive(updatedContacts);
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
     
-    if (saved) {
+    if (userEmail) {
+      localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
       setContacts(updatedContacts);
       setToast({ open: true, message: 'Kontakt borttagen', severity: 'info' });
-    } else {
-      setToast({ open: true, message: 'Kunde inte ta bort kontakt', severity: 'error' });
     }
   };
 
