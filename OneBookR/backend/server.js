@@ -1014,6 +1014,18 @@ app.post('/api/group/join', async (req, res) => {
       return res.status(400).json({ error: 'Giltig e-postadress krävs' });
     }
 
+    // Kontrollera om detta är direkttillgång
+    if (group.directAccess) {
+      // För direkttillgång, markera gruppen som klar direkt
+      await updateGroup(groupId, {
+        tokens: [group.creatorToken, token],
+        joinedEmails: [group.creatorEmail, email],
+        allJoined: true
+      });
+      console.log('Direct access group joined:', { groupId, email });
+      return res.json({ success: true, directAccess: true });
+    }
+
     // Uppdatera gruppen med ny medlem
     const updatedTokens = group.tokens || [];
     const updatedEmails = group.joinedEmails || [];

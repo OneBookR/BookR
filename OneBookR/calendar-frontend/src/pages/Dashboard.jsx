@@ -72,6 +72,29 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         return;
       }
       
+      // Kontrollera om inbjudaren har direkttillgång till min kalender
+      if (groupId && !directAccess) {
+        // Hämta alla mina kontakt-inställningar
+        const myContactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
+        
+        // Hitta kontakt som matchar inbjudarens email
+        const myContacts = JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
+        const inviterContact = myContacts.find(contact => contact.email === email);
+        
+        if (inviterContact && myContactSettings[inviterContact.id]?.hasCalendarAccess) {
+          // Inbjudaren har direkttillgång - hoppa över väntrum
+          setGroupTokens([user.accessToken]);
+          setGroupStatus({
+            allJoined: true,
+            current: 1,
+            expected: 1,
+            invited: [email],
+            groupName: `Möte med ${email}`
+          });
+          return;
+        }
+      }
+      
       // Hantera team-möten
       if (teamName && teamMembers) {
         const memberEmails = teamMembers.split(',');

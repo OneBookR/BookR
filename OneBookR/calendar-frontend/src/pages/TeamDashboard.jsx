@@ -292,18 +292,45 @@ export default function TeamDashboard({ user, onNavigateBack }) {
             ) : (
               <Paper sx={{ maxHeight: 300, overflow: 'auto', border: '1px solid #e0e3e7' }}>
                 <List>
-                  {contacts.map((contact) => (
-                    <ListItem key={contact.id} button onClick={() => handleMemberToggle(contact)}>
-                      <Checkbox
-                        checked={newTeam.members.find(m => m.id === contact.id) !== undefined}
-                        onChange={() => handleMemberToggle(contact)}
-                      />
-                      <ListItemText
-                        primary={contact.name}
-                        secondary={contact.email}
-                      />
-                    </ListItem>
-                  ))}
+                  {contacts.map((contact) => {
+                    const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
+                    const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess;
+                    
+                    return (
+                      <ListItem 
+                        key={contact.id} 
+                        button 
+                        onClick={() => handleMemberToggle(contact)}
+                        sx={{
+                          bgcolor: hasDirectAccess ? '#e8f5e8' : 'transparent',
+                          '&:hover': {
+                            bgcolor: hasDirectAccess ? '#d4edda' : '#f5f5f5'
+                          }
+                        }}
+                      >
+                        <Checkbox
+                          checked={newTeam.members.find(m => m.id === contact.id) !== undefined}
+                          onChange={() => handleMemberToggle(contact)}
+                        />
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <span>{contact.name}</span>
+                              {hasDirectAccess && (
+                                <Chip 
+                                  label="Direkttillgång" 
+                                  size="small" 
+                                  color="success"
+                                  sx={{ fontSize: 10, height: 18 }}
+                                />
+                              )}
+                            </Box>
+                          }
+                          secondary={contact.email}
+                        />
+                      </ListItem>
+                    );
+                  })}
                 </List>
               </Paper>
             )}
