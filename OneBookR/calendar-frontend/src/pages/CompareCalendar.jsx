@@ -1770,7 +1770,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                         {notAnswered.length > 0 && (
                           <Box sx={{ mt: 2, p: 2, bgcolor: theme.isDark ? '#2d2d00' : '#fff3e0', borderRadius: 2, border: `1px solid ${theme.colors.warning}` }}>
                             <Typography variant="body2" sx={{ color: theme.colors.warning, fontWeight: 600, mb: 1 }}>
-                              ⏳ Väntar på svar från:
+                                                           ⏳ Väntar på svar från:
                             </Typography>
                             {notAnswered.map(email => (
                               <Typography key={email} variant="body2" sx={{ color: theme.isDark ? '#ffab40' : '#bf360c', ml: 1 }}>

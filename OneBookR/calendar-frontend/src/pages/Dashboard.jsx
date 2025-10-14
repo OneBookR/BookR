@@ -25,7 +25,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
   const directAccess = urlParams.get('directAccess');
-  const contactEmail = urlParams.get('contactEmail');
+  const contactEmails = urlParams.getAll('contactEmail'); // Changed to getAll
   const contactName = urlParams.get('contactName');
   const teamName = urlParams.get('teamName');
   const teamMembers = urlParams.get('members');
@@ -50,33 +50,61 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     const meetingType = urlParams.get('meetingType');
     if (meetingType === 'team') {
       setCurrentView('team');
-    } else if (groupId || meetingType) {
+    } else if (groupId || meetingType || directAccess === 'true') { // Added directAccess check
       setCurrentView('dashboard');
     }
-  }, [groupId]);
+  }, [groupId, directAccess]);
  
   useEffect(() => {
+    // Hämta e-post på säkert sätt
+    let email = user.email;
+    if (!email && user.emails && user.emails.length > 0) {
+      email = user.emails[0].value || user.emails[0];
+    }
+    if (!email) {
+      alert('Kunde inte hitta din e-postadress. Logga ut och logga in igen med ett Google-konto som har e-post.');
+      return;
+    }
+
+    // Hantera direktåtkomst för team eller enskilda kontakter
+    if (directAccess === 'true' && contactEmails.length > 0) {
+      fetch('https://www.onebookr.se/api/group/direct-access-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ownerEmail: email, targetEmails: contactEmails }),
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.tokens && data.tokens.length > 0) {
+          const allTokens = [user.accessToken, ...data.tokens];
+          setGroupTokens(allTokens);
+          setGroupStatus({
+            allJoined: true,
+            current: allTokens.length,
+            expected: allTokens.length,
+            invited: contactEmails,
+            groupName: teamName || `Möte med ${contactName || contactEmails[0]}`
+          });
+        } else {
+          console.error('Could not fetch direct access tokens:', data.error);
+          // Fallback or show error
+        }
+      })
+      .catch(err => console.error('Error fetching direct access tokens:', err));
+      return; // Stop further execution in this effect
+    }
+    
     if (groupId) {
-      // Hämta e-post på säkert sätt
-      let email = user.email;
-      if (!email && user.emails && user.emails.length > 0) {
-        email = user.emails[0].value || user.emails[0];
-      }
-      if (!email) {
-        alert('Kunde inte hitta din e-postadress. Logga ut och logga in igen med ett Google-konto som har e-post.');
-        return;
-      }
-      
-      // Hantera direktbokning
-      if (directAccess === 'true' && contactEmail) {
+      // Hantera direktbokning (gammal logik, kan tas bort eller behållas för bakåtkompatibilitet)
+      if (directAccess === 'true' && contactEmails.length === 1) {
         // Skapa en simulerad grupp för direktbokning
         setGroupTokens([user.accessToken]); // Bara din token för nu
         setGroupStatus({
           allJoined: true,
           current: 1,
           expected: 1,
-          invited: [contactEmail],
-          groupName: `Möte med ${contactName || contactEmail}`
+          invited: contactEmails,
+          groupName: `Möte med ${contactName || contactEmails[0]}`
         });
         return;
       }
@@ -183,7 +211,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           console.error('Error in group join flow:', error);
         });
     }
-  }, [groupId, user.accessToken, inviteeId, user.email, user.emails]);
+  }, [groupId, user.accessToken, inviteeId, user.email, user.emails, directAccess, teamName]);
 
   useEffect(() => {
     if (groupId) {
@@ -231,7 +259,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   }, [groupId, groupStatus.allJoined]);
 
   // Om ingen grupp, använd bara din egen token
-  const tokens = groupId ? groupTokens : [user.accessToken];
+  const tokens = (groupId || directAccess === 'true') ? groupTokens : [user.accessToken];
   const invitedTokens = tokens.filter(token => token !== user.accessToken);
 
   // Grupp-länk
@@ -240,7 +268,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     : '';
 
   // NYTT: Visa väntrum om bara en token finns
-  const waitingForOthers = groupId && tokens.length < 2;
+  const waitingForOthers = groupId && tokens.length < 2 && directAccess !== 'true';
 
   if (!user) {
     return (
@@ -281,7 +309,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   return (
     <>
-      {((!groupId || groupStatus.allJoined) && !waitingForOthers) && (
+      {((!groupId && directAccess !== 'true') || groupStatus.allJoined) && !waitingForOthers && (
         <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: 4, px: { xs: 1, sm: 2, md: 3 } }}>
           {/* Clean Banner */}
           <Box sx={{
@@ -330,7 +358,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
               }
             })()}
           </Typography>
-        {!groupId && (
+        {!groupId && directAccess !== 'true' && (
           <Box sx={{ mb: 2, mt: 3 }}>
             <InviteFriend key={`theme-${theme?.isDark}`} fromUser={user} fromToken={user.accessToken} theme={theme} />
           </Box>
@@ -453,14 +481,14 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         </Box>
       )}
       {/* Visa kalendern först när alla är inne */}
-      {(!groupId || groupStatus.allJoined) && !waitingForOthers && (
+      {((!groupId && directAccess !== 'true') || groupStatus.allJoined) && !waitingForOthers && (
         <CompareCalendar
           myToken={user.accessToken}
           invitedTokens={invitedTokens}
           user={user}
           groupId={groupId}
           directAccess={directAccess === 'true'}
-          contactEmail={contactEmail}
+          contactEmails={contactEmails}
           contactName={contactName}
           teamName={teamName}
         />
