@@ -41,6 +41,9 @@ export default function TeamContacts({ user, onNavigateBack }) {
       setNewContact({ name: '', email: '' });
       setAddContactOpen(false);
       setToast({ open: true, message: 'Kontakt sparad!', severity: 'success' });
+      
+      // Trigga uppdatering av kontaktlistan
+      window.dispatchEvent(new Event('storage'));
     }
   };
 
@@ -52,6 +55,9 @@ export default function TeamContacts({ user, onNavigateBack }) {
       localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
       setContacts(updatedContacts);
       setToast({ open: true, message: 'Kontakt borttagen', severity: 'info' });
+      
+      // Trigga uppdatering av kontaktlistan
+      window.dispatchEvent(new Event('storage'));
     }
   };
 
