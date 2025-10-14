@@ -162,6 +162,19 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
     setIsLoading(true);
     setMessage('Skickar inbjudningar...');
 
+    // NYTT: Kontrollera om någon av de inbjudna har gett direktåtkomst
+    const userEmail = fromUser?.email || fromUser?.emails?.[0]?.value || fromUser?.emails?.[0];
+    const directAccessEmails = [];
+    if (userEmail) {
+      const savedTeamContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
+      emails.forEach(invitedEmail => {
+        const contact = savedTeamContacts.find(c => c.email.toLowerCase() === invitedEmail.toLowerCase() && c.directAccess);
+        if (contact) {
+          directAccessEmails.push(contact.email);
+        }
+      });
+    }
+
     // SÄKER: Hämta e-post från alla möjliga ställen
     let emailToSend = fromUser;
     console.log('fromUser:', fromUser);
@@ -205,6 +218,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
           fromUser: emailToSend,
           fromToken,
           groupName: groupName.trim() || 'Namnlös grupp',
+          directAccessEmails, // Skicka med e-postadresser som har gett direktåtkomst
         }),
       });
 
