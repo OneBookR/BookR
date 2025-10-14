@@ -5,7 +5,7 @@ import Task from './Task';
 import ShortcutDashboard from './ShortcutDashboard';
 import TeamDashboard from './TeamDashboard';
 import ContactManager from './ContactManager';
-import TeamContacts from './TeamContacts';
+import Team from './Team';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 
@@ -249,7 +249,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   }
   
   if (currentView === 'team') {
-    return <TeamContacts user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
+    return <Team user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
   }
 
 
