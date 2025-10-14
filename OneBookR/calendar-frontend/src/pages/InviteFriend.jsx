@@ -13,6 +13,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
   }, [fromUser]);
   
   const { contacts } = useContacts();
+  const [teamContacts, setTeamContacts] = useState([]);
   const currentTheme = theme || useTheme().theme;
   const [emails, setEmails] = useState([]);
   const [inputValue, setInputValue] = useState('');
@@ -23,6 +24,15 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
   const [filteredContacts, setFilteredContacts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef();
+
+  // Hämta team-kontakter
+  useEffect(() => {
+    const userEmail = fromUser?.email || fromUser?.emails?.[0]?.value || fromUser?.emails?.[0];
+    if (userEmail) {
+      const savedContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
+      setTeamContacts(savedContacts);
+    }
+  }, [fromUser]);
 
   // Lyssna på förifyllda kontakter från kontaktboken
   useEffect(() => {
@@ -41,9 +51,13 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
   // Filtrera kontakter baserat på input
   useEffect(() => {
     if (inputValue.length > 0) {
-      const filtered = contacts.filter(contact => 
+      const allContacts = [...contacts, ...teamContacts].filter((contact, index, self) => 
+        index === self.findIndex(c => c.email === contact.email)
+      );
+
+      const filtered = allContacts.filter(contact => 
         contact.email.toLowerCase().includes(inputValue.toLowerCase()) ||
-        contact.name.toLowerCase().includes(inputValue.toLowerCase())
+        (contact.name && contact.name.toLowerCase().includes(inputValue.toLowerCase()))
       ).filter(contact => !emails.includes(contact.email));
       
       setFilteredContacts(filtered);
@@ -52,7 +66,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
       setShowSuggestions(false);
       setFilteredContacts([]);
     }
-  }, [inputValue, contacts, emails]);
+  }, [inputValue, contacts, teamContacts, emails]);
 
   // Lägg till e-post om användaren trycker på , eller Enter eller Space
   const handleInputChange = (e) => {
@@ -73,7 +87,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
   const selectContact = (contact) => {
     // Kontrollera om kontakten har direkttillgång till kalendern
     const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
-    const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess;
+    const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess || contact.directAccess;
     
     if (hasDirectAccess) {
       // Gå direkt till kalenderjämföraren utan inbjudan
@@ -362,10 +376,10 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
                           <span>{contact.name}</span>
                           {(() => {
                             const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
-                            const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess;
+                            const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess || contact.directAccess;
                             return hasDirectAccess ? (
                               <Chip 
-                                label="Direktbokning" 
+                                label="Direktåtkomst" 
                                 size="small" 
                                 color="success"
                                 sx={{ fontSize: 10, height: 20 }}
@@ -376,7 +390,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
                       }
                       secondary={(() => {
                         const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
-                        const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess;
+                        const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess || contact.directAccess;
                         return hasDirectAccess 
                           ? `${contact.email} • Klicka för att boka direkt`
                           : contact.email;
