@@ -364,7 +364,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
                                 sx={{ fontSize: 10, height: 20 }}
                               />
                             ) : null;
-                          })()
+                          })()}
                         </Box>
                       }
                       secondary={(() => {
