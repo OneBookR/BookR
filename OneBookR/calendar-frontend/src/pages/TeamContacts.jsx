@@ -39,7 +39,7 @@ export default function TeamContacts({ user, onNavigateBack }) {
     setLoading(false);
   }, [user]);
 
-  const handleAddContact = () => {
+  const handleAddContact = async () => {
     if (!newContact.name.trim() || !newContact.email.trim()) {
       setToast({ open: true, message: 'Fyll i både namn och e-post', severity: 'error' });
       return;
@@ -57,7 +57,24 @@ export default function TeamContacts({ user, onNavigateBack }) {
       localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
       setContacts(updatedContacts);
       
-      // Skicka kontaktförfrågan
+      // Skicka kontaktförfrågan via BookR backend
+      try {
+        await fetch('https://www.onebookr.se/api/contact-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromEmail: userEmail,
+            fromName: user.displayName || userEmail,
+            toEmail: newContact.email,
+            toName: newContact.name,
+            message: `${user.displayName || userEmail} vill lägga till dig som kontakt i BookR`
+          })
+        });
+      } catch (error) {
+        console.log('Failed to send contact request via API, using localStorage fallback');
+      }
+      
+      // Fallback: Spara lokalt också
       const existingRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${newContact.email}`) || '[]');
       const newRequest = {
         id: Date.now(),

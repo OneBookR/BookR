@@ -296,17 +296,29 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     setContacts(updatedContacts);
     localStorage.setItem('bookr_contacts', JSON.stringify(updatedContacts));
     
-    // Skicka kontaktförfrågan till mottagaren
+    // Skicka kontaktförfrågan via BookR backend
     try {
       const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
       const userName = user.displayName || userEmail;
       
-      // Simulera att vi skickar en notifikation till mottagaren
-      // I verkligheten skulle detta gå via backend och databas
+      await fetch('https://www.onebookr.se/api/contact-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromEmail: userEmail,
+          fromName: userName,
+          toEmail: newContact.email,
+          toName: newContact.name,
+          message: `${userName} vill lägga till dig som kontakt i BookR`
+        })
+      });
+      
+      // Fallback: Spara lokalt också
       const existingRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${newContact.email}`) || '[]');
       const newRequest = {
-        email: userEmail,
-        name: userName,
+        id: Date.now(),
+        fromEmail: userEmail,
+        fromName: userName,
         timestamp: new Date().toISOString()
       };
       existingRequests.push(newRequest);
