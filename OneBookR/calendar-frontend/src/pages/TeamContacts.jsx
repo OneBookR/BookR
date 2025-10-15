@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, Box, Button, Card, CardContent, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Paper, Snackbar, Alert, Switch, FormControlLabel } from '@mui/material';
+import { Container, Typography, Box, Button, Card, CardContent, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Paper, Snackbar, Alert, Switch, FormControlLabel, Tabs, Tab, Avatar } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import PersonIcon from '@mui/icons-material/Person';
+import NotificationsIcon from '@mui/icons-material/Notifications';
+import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
 
 export default function TeamContacts({ user, onNavigateBack }) {
+  const [currentTab, setCurrentTab] = useState(0);
   const [contacts, setContacts] = useState([]);
+  const [contactRequests, setContactRequests] = useState([]);
   const [newContact, setNewContact] = useState({ name: '', email: '' });
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
@@ -15,8 +20,21 @@ export default function TeamContacts({ user, onNavigateBack }) {
     setLoading(true);
     const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
     if (userEmail) {
-      const savedContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
-      setContacts(savedContacts);
+      // Hämta både gamla och nya kontakter
+      const oldContacts = JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
+      const teamContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
+      
+      // Kombinera och ta bort dubbletter
+      const allContacts = [...oldContacts, ...teamContacts];
+      const uniqueContacts = allContacts.filter((contact, index, self) => 
+        index === self.findIndex(c => c.email.toLowerCase() === contact.email.toLowerCase())
+      );
+      
+      setContacts(uniqueContacts);
+      
+      // Ladda kontaktförfrågningar
+      const savedRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${userEmail}`) || '[]');
+      setContactRequests(savedRequests);
     }
     setLoading(false);
   }, [user]);
@@ -38,9 +56,21 @@ export default function TeamContacts({ user, onNavigateBack }) {
     if (userEmail) {
       localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
       setContacts(updatedContacts);
+      
+      // Skicka kontaktförfrågan
+      const existingRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${newContact.email}`) || '[]');
+      const newRequest = {
+        id: Date.now(),
+        fromEmail: userEmail,
+        fromName: user.displayName || userEmail,
+        timestamp: new Date().toISOString()
+      };
+      existingRequests.push(newRequest);
+      localStorage.setItem(`bookr_contact_requests_${newContact.email}`, JSON.stringify(existingRequests));
+      
       setNewContact({ name: '', email: '' });
       setAddContactOpen(false);
-      setToast({ open: true, message: 'Kontakt sparad!', severity: 'success' });
+      setToast({ open: true, message: 'Kontakt sparad och vänförslag skickat!', severity: 'success' });
       
       // Trigga uppdatering av kontaktlistan
       window.dispatchEvent(new Event('storage'));
@@ -49,11 +79,21 @@ export default function TeamContacts({ user, onNavigateBack }) {
   };
 
   const handleDeleteContact = (contactId) => {
+    const contactToDelete = contacts.find(c => c.id === contactId);
     const updatedContacts = contacts.filter(c => c.id !== contactId);
     const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
     
-    if (userEmail) {
-      localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
+    if (userEmail && contactToDelete) {
+      // Ta bort från både gamla och nya kontakter
+      const oldContacts = JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
+      const teamContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
+      
+      const updatedOldContacts = oldContacts.filter(c => c.email !== contactToDelete.email);
+      const updatedTeamContacts = teamContacts.filter(c => c.email !== contactToDelete.email);
+      
+      localStorage.setItem('bookr_contacts', JSON.stringify(updatedOldContacts));
+      localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedTeamContacts));
+      
       setContacts(updatedContacts);
       setToast({ open: true, message: 'Kontakt borttagen', severity: 'info' });
       
@@ -74,6 +114,32 @@ export default function TeamContacts({ user, onNavigateBack }) {
       setContacts(updatedContacts);
       setToast({ open: true, message: 'Inställning sparad!', severity: 'success' });
     }
+  };
+
+  const handleContactRequest = (requestId, action) => {
+    const request = contactRequests.find(r => r.id === requestId);
+    if (!request) return;
+    
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+    
+    if (action === 'accept') {
+      // Lägg till som kontakt
+      const newContact = {
+        id: Date.now(),
+        name: request.fromName,
+        email: request.fromEmail,
+        directAccess: false
+      };
+      const updatedContacts = [...contacts, newContact];
+      localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
+      setContacts(updatedContacts);
+      setToast({ open: true, message: `${request.fromName} är nu din kontakt!`, severity: 'success' });
+    }
+    
+    // Ta bort förfrågan
+    const updatedRequests = contactRequests.filter(r => r.id !== requestId);
+    localStorage.setItem(`bookr_contact_requests_${userEmail}`, JSON.stringify(updatedRequests));
+    setContactRequests(updatedRequests);
   };
 
   return (
@@ -100,6 +166,14 @@ export default function TeamContacts({ user, onNavigateBack }) {
           </Typography>
         </Box>
 
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 4 }}>
+          <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)}>
+            <Tab label={`Kontakter (${contacts.length})`} icon={<PersonIcon />} />
+            <Tab label={`Förfrågningar (${contactRequests.length})`} icon={<NotificationsIcon />} />
+          </Tabs>
+        </Box>
+
+        {currentTab === 0 && (
         <Box sx={{ mb: 4 }}>
           <Button
             variant="contained"
@@ -177,6 +251,80 @@ export default function TeamContacts({ user, onNavigateBack }) {
             </Box>
           )}
         </Box>
+        )}
+
+        {currentTab === 1 && (
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 600, color: '#0a2540', mb: 3 }}>Kontaktförfrågningar</Typography>
+          {loading ? (
+            <Typography>Laddar förfrågningar...</Typography>
+          ) : contactRequests.length === 0 ? (
+            <Card sx={{ p: 4, textAlign: 'center' }}>
+              <NotificationsIcon sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
+              <Typography variant="h6" sx={{ color: '#666', mb: 1 }}>
+                Inga kontaktförfrågningar
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#999' }}>
+                När någon lägger till dig som kontakt kommer det att visas här
+              </Typography>
+            </Card>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {contactRequests.map((request) => (
+                <Paper
+                  key={request.id}
+                  sx={{
+                    p: 3,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    border: '1px solid #e0e3e7',
+                    borderRadius: 2,
+                    '&:hover': {
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Avatar sx={{ bgcolor: '#1976d2' }}>
+                      {request.fromName.charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        {request.fromName}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        {request.fromEmail}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#999' }}>
+                        {new Date(request.timestamp).toLocaleDateString('sv-SE')}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      startIcon={<CheckIcon />}
+                      onClick={() => handleContactRequest(request.id, 'accept')}
+                    >
+                      Acceptera
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<CloseIcon />}
+                      onClick={() => handleContactRequest(request.id, 'decline')}
+                    >
+                      Neka
+                    </Button>
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
+          )}
+        </Box>
+        )}
       </Container>
 
       <Dialog open={addContactOpen} onClose={() => setAddContactOpen(false)} maxWidth="sm" fullWidth>

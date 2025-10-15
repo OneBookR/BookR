@@ -123,12 +123,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     setError(null);
     
     const tokens = Array.from(new Set([myToken, ...invitedTokens]));
-    
-    console.log('Tokens for comparison:', tokens.length, 'directAccess:', directAccess);
-    console.log('MyToken:', myToken ? 'Present' : 'Missing');
-    console.log('InvitedTokens:', invitedTokens.length);
-    
-    if (!directAccess && tokens.length < 2) {
+    if (tokens.length < 2) {
       setError('Minst två tokens krävs för att jämföra.');
       setAvailability([]);
       setIsLoadingAvailability(false);
@@ -202,18 +197,10 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
       if (res.ok) {
         setAvailability(data);
         setError(null);
-        if (data.length === 0) {
-          setToast({ open: true, message: 'Inga lediga tider hittades. Kontrollera att alla är inloggade med giltiga tokens.', severity: 'warning' });
-        } else {
-          setToast({ open: true, message: `Hittade ${data.length} lediga tider`, severity: 'success' });
-        }
+        setToast({ open: true, message: `Hittade ${data.length} lediga tider`, severity: 'success' });
       } else {
         setAvailability([]);
-        if (res.status === 401) {
-          setError('Inloggningen har gått ut. Logga ut och logga in igen för att få nya tokens.');
-        } else {
-          setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
-        }
+        setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
       }
     } catch (err) {
       setAvailability([]);
@@ -670,13 +657,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   // Separat fetch-funktion för auto-laddning (utan validering)
   const fetchAvailabilityAuto = async (start, end) => {
     const tokens = Array.from(new Set([myToken, ...invitedTokens]));
-    
-    if (!directAccess && tokens.length < 2) {
-      console.log('Auto-loading skipped - need at least 2 tokens for comparison');
-      return;
-    }
-    
-    console.log('Auto-loading availability with', tokens.length, 'tokens');
+    if (tokens.length < 2) return;
     try {
       const res = await fetch(`${API_BASE_URL}/api/availability`, {
         method: 'POST',
@@ -1789,7 +1770,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                         {notAnswered.length > 0 && (
                           <Box sx={{ mt: 2, p: 2, bgcolor: theme.isDark ? '#2d2d00' : '#fff3e0', borderRadius: 2, border: `1px solid ${theme.colors.warning}` }}>
                             <Typography variant="body2" sx={{ color: theme.colors.warning, fontWeight: 600, mb: 1 }}>
-                                                           ⏳ Väntar på svar från:
+                              ⏳ Väntar på svar från:
                             </Typography>
                             {notAnswered.map(email => (
                               <Typography key={email} variant="body2" sx={{ color: theme.isDark ? '#ffab40' : '#bf360c', ml: 1 }}>

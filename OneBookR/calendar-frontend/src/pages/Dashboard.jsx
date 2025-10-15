@@ -3,7 +3,6 @@ import InviteFriend from './InviteFriend';
 import CompareCalendar from './CompareCalendar';
 import Task from './Task';
 import ShortcutDashboard from './ShortcutDashboard';
-import TeamDashboard from './TeamDashboard';
 import ContactManager from './ContactManager';
 import TeamContacts from './TeamContacts';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
