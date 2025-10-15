@@ -42,13 +42,30 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
 
   useEffect(() => {
-    if (!user?.email) return;
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+    if (!userEmail) return;
     
     // Hämta invites från samma endpoint som InvitationSidebar
-    fetch(`https://www.onebookr.se/api/invitations/${encodeURIComponent(user.email)}`)
+    fetch(`https://www.onebookr.se/api/invitations/${encodeURIComponent(userEmail)}`)
     .then(res => res.json())
     .then(data => setInvites((data.invitations || []).filter(inv => !inv.responded)))
     .catch(err => console.log('Failed to fetch invites:', err));
+    
+    // Hämta kontaktförfrågningar från localStorage
+    const contactRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${userEmail}`) || '[]');
+    console.log('Contact requests found:', contactRequests);
+    
+    // Lägg till kontaktförfrågningar till invites för att visa dem i notifikationer
+    const formattedRequests = contactRequests.map(req => ({
+      id: `contact_${req.id}`,
+      type: 'contact_request',
+      fromEmail: req.fromEmail,
+      fromName: req.fromName,
+      createdAt: req.timestamp,
+      groupName: 'Kontaktförfrågan'
+    }));
+    
+    setInvites(prev => [...prev, ...formattedRequests]);
 
     // Hämta upcoming meetings från Google Calendar (endast möten med Google Meet länk)
     if (user.accessToken) {
@@ -68,9 +85,28 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     }
 
     // Hämta tidsförslag (samma logik som CompareCalendar)
-    if (user?.email) {
+    if (userEmail) {
       fetchTimeProposals();
     }
+    
+    // Lyssna på localStorage-ändringar för kontaktförfrågningar
+    const handleStorageChange = () => {
+      const updatedRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${userEmail}`) || '[]');
+      const formattedRequests = updatedRequests.map(req => ({
+        id: `contact_${req.id}`,
+        type: 'contact_request',
+        fromEmail: req.fromEmail,
+        fromName: req.fromName,
+        createdAt: req.timestamp,
+        groupName: 'Kontaktförfrågan'
+      }));
+      
+      setInvites(prev => {
+        // Ta bort gamla kontaktförfrågningar och lägg till nya
+        const nonContactInvites = prev.filter(inv => !inv.type || inv.type !== 'contact_request');
+        return [...nonContactInvites, ...formattedRequests];
+      });
+    };
     
     // Hämta lämnade möten från localStorage
     const savedLeftMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
@@ -80,21 +116,21 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     const savedContacts = JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
     setContacts(savedContacts);
 
-    // NYTT: Hämta teams och kontakter för att kolla direktåtkomst
-    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
-    if (userEmail) {
-      const savedTeamContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
-      const savedTeams = JSON.parse(localStorage.getItem(`bookr_teams_${userEmail}`) || '[]');
-      setTeams(savedTeams);
+    // Hämta teams och kontakter för att kolla direktåtkomst
+    const savedTeamContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
+    const savedTeams = JSON.parse(localStorage.getItem(`bookr_teams_${userEmail}`) || '[]');
+    setTeams(savedTeams);
 
-      const directAccessTeamExists = savedTeams.some(team =>
-        team.members.every(member => {
-          const contact = savedTeamContacts.find(c => c.email === member.email);
-          return contact && contact.directAccess;
-        })
-      );
-      setHasDirectAccessTeam(directAccessTeamExists);
-    }
+    const directAccessTeamExists = savedTeams.some(team =>
+      team.members.every(member => {
+        const contact = savedTeamContacts.find(c => c.email === member.email);
+        return contact && contact.directAccess;
+      })
+    );
+    setHasDirectAccessTeam(directAccessTeamExists);
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, [user?.email]);
 
   const handleNavigateToMeeting = (type) => {
@@ -107,9 +143,56 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   };
 
   const handleInviteResponse = async (groupId, inviteeId, response) => {
-    const invitation = invites.find(inv => inv.inviteeId === inviteeId);
+    const invitation = invites.find(inv => inv.inviteeId === inviteeId || inv.id === groupId);
     if (!invitation) return;
+    
+    // Hantera kontaktförfrågningar
+    if (invitation.type === 'contact_request') {
+      const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+      const contactRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${userEmail}`) || '[]');
+      const requestId = parseInt(invitation.id.replace('contact_', ''));
+      
+      if (response === 'accept') {
+        // Lägg till som kontakt
+        const teamContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
+        const newContact = {
+          id: Date.now(),
+          name: invitation.fromName,
+          email: invitation.fromEmail,
+          directAccess: false
+        };
+        teamContacts.push(newContact);
+        localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(teamContacts));
+        
+        // Ge direktåtkomst tillbaka till den som skickade förfrågan
+        const directAccessKey = `bookr_direct_access_granted_${invitation.fromEmail}`;
+        const directAccessList = JSON.parse(localStorage.getItem(directAccessKey) || '[]');
+        if (!directAccessList.find(c => c.email === userEmail)) {
+          directAccessList.push({
+            id: Date.now(),
+            name: user.displayName || userEmail,
+            email: userEmail,
+            grantedAt: new Date().toISOString()
+          });
+          localStorage.setItem(directAccessKey, JSON.stringify(directAccessList));
+        }
+        
+        setToast({ open: true, message: `${invitation.fromName} är nu din kontakt och har fått direktåtkomst!`, severity: 'success' });
+      }
+      
+      // Ta bort förfrågan
+      const updatedRequests = contactRequests.filter(req => req.id !== requestId);
+      localStorage.setItem(`bookr_contact_requests_${userEmail}`, JSON.stringify(updatedRequests));
+      
+      // Ta bort från invites
+      setInvites(prev => prev.filter(inv => inv.id !== invitation.id));
+      
+      // Trigga storage event för att uppdatera andra komponenter
+      window.dispatchEvent(new Event('storage'));
+      return;
+    }
 
+    // Hantera vanliga kalenderinbjudningar
     if (response === 'accept') {
       // Markera som svarad innan redirect
       try {
@@ -162,6 +245,143 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         }
         
         localStorage.setItem(teamContactsKey, JSON.stringify(existingContacts));
+        
+        // Lägg till i inbjudarens direktåtkomst-lista också
+        const inviterDirectAccessKey = `bookr_direct_access_granted_${invitation.fromEmail}`;
+        const inviterDirectAccessList = JSON.parse(localStorage.getItem(inviterDirectAccessKey) || '[]');
+        if (!inviterDirectAccessList.find(c => c.email === userEmail)) {
+          inviterDirectAccessList.push({
+            id: Date.now(),
+            name: user.displayName || userEmail,
+            email: userEmail,
+            grantedAt: new Date().toISOString()
+          });
+          localStorage.setItem(inviterDirectAccessKey, JSON.stringify(inviterDirectAccessList));
+        }
+        
+        // Sedan, gå med i gruppen
+        const joinRes = await fetch(`https://www.onebookr.se/api/group/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            groupId,
+            token: user.accessToken,
+            invitee: inviteeId,
+            email: userEmail
+          })
+        });
+        
+        if (joinRes.ok) {
+          // Markera inbjudan som svarad
+          await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ response: 'accept' })
+          });
+          
+          // Skapa öppet möte med gruppnamn
+          const openMeeting = {
+            id: groupId,
+            groupName: invitation.groupName || 'Kalenderjämförelse',
+            members: [invitation.fromEmail, userEmail],
+            leftAt: new Date().toISOString()
+          };
+          const existingMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
+          const updatedMeetings = existingMeetings.filter(m => m.id !== groupId);
+          updatedMeetings.push(openMeeting);
+          localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
+          setLeftMeetings(updatedMeetings);
+          
+          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+          setToast({ open: true, message: `Du har gett ${invitation.fromEmail} direktåtkomst till din kalender!`, severity: 'success' });
+        } else {
+          setToast({ open: true, message: 'Kunde inte acceptera inbjudan.', severity: 'error' });
+        }
+      } catch (err) {
+        console.log('Failed to join group passively:', err);
+        setToast({ open: true, message: 'Kunde inte acceptera inbjudan.', severity: 'error' });
+      }
+    } else {
+      // Neka inbjudan
+      try {
+        await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ response: 'decline' })
+        });
+        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+        setToast({ open: true, message: 'Inbjudan nekad.', severity: 'info' });
+      } catch (err) {
+        console.log('Failed to decline invite:', err);
+        // Ta bort lokalt som fallback
+        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+        setToast({ open: true, message: 'Inbjudan nekad.', severity: 'info' });
+      }
+    }
+  };n redirect
+      try {
+        await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ response: 'accept' })
+        });
+      } catch (err) {
+        console.log('Failed to mark invitation as responded:', err);
+      }
+      
+      // Skapa öppet möte med gruppnamn
+      const openMeeting = {
+        id: groupId,
+        groupName: invitation.groupName || 'Kalenderjämförelse',
+        members: [invitation.fromEmail, user.email || user.emails?.[0]?.value || user.emails?.[0]],
+        leftAt: new Date().toISOString()
+      };
+      const existingMeetings = JSON.parse(localStorage.getItem('leftMeetings') || '[]');
+      const updatedMeetings = existingMeetings.filter(m => m.id !== groupId);
+      updatedMeetings.push(openMeeting);
+      localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
+      setLeftMeetings(updatedMeetings);
+      
+      setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+      window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
+    } else if (response === 'accept_passive') {
+      // Acceptera utan att gå in i kalenderjämföraren - ge direktåtkomst
+      try {
+        // Först, lägg till inbjudaren som kontakt med direktåtkomst
+        const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
+        const teamContactsKey = `bookr_team_contacts_${userEmail}`;
+        const existingContacts = JSON.parse(localStorage.getItem(teamContactsKey) || '[]');
+        
+        // Kolla om kontakten redan finns
+        const existingContactIndex = existingContacts.findIndex(c => c.email.toLowerCase() === invitation.fromEmail.toLowerCase());
+        
+        if (existingContactIndex >= 0) {
+          // Uppdatera befintlig kontakt med direktåtkomst
+          existingContacts[existingContactIndex].directAccess = true;
+        } else {
+          // Lägg till ny kontakt med direktåtkomst
+          existingContacts.push({
+            id: Date.now(),
+            name: invitation.fromEmail.split('@')[0], // Använd första delen av e-posten som namn
+            email: invitation.fromEmail,
+            directAccess: true
+          });
+        }
+        
+        localStorage.setItem(teamContactsKey, JSON.stringify(existingContacts));
+        
+        // Lägg till i inbjudarens direktåtkomst-lista också
+        const inviterDirectAccessKey = `bookr_direct_access_granted_${invitation.fromEmail}`;
+        const inviterDirectAccessList = JSON.parse(localStorage.getItem(inviterDirectAccessKey) || '[]');
+        if (!inviterDirectAccessList.find(c => c.email === userEmail)) {
+          inviterDirectAccessList.push({
+            id: Date.now(),
+            name: user.displayName || userEmail,
+            email: userEmail,
+            grantedAt: new Date().toISOString()
+          });
+          localStorage.setItem(inviterDirectAccessKey, JSON.stringify(inviterDirectAccessList));
+        }
         
         // Sedan, gå med i gruppen
         const joinRes = await fetch(`https://www.onebookr.se/api/group/join`, {
@@ -619,36 +839,59 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         {invite.groupName || 'Kalenderjämförelse'}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', mb: 1, fontWeight: 600 }}>
-                        Från: {invite.fromEmail}
+                        Från: {invite.fromName || invite.fromEmail}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
                         {new Date(invite.createdAt).toLocaleDateString()}
                       </Typography>
                       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                        <Button 
-                          size="small" 
-                          variant="outlined" 
-                          onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'decline')}
-                          sx={{ fontSize: 10, py: 0.5, px: 1 }}
-                        >
-                          Neka
-                        </Button>
-                        <Button 
-                          size="small" 
-                          variant="outlined" 
-                          onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'accept_passive')}
-                          sx={{ fontSize: 10, py: 0.5, px: 1, bgcolor: 'rgba(25,118,210,0.1)' }}
-                        >
-                          Ge tillgång
-                        </Button>
-                        <Button 
-                          size="small" 
-                          variant="contained" 
-                          onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'accept')}
-                          sx={{ fontSize: 10, py: 0.5, px: 1 }}
-                        >
-                          Gå med
-                        </Button>
+                        {invite.type === 'contact_request' ? (
+                          <>
+                            <Button 
+                              size="small" 
+                              variant="outlined" 
+                              onClick={() => handleInviteResponse(invite.id, null, 'decline')}
+                              sx={{ fontSize: 10, py: 0.5, px: 1 }}
+                            >
+                              Neka
+                            </Button>
+                            <Button 
+                              size="small" 
+                              variant="contained" 
+                              onClick={() => handleInviteResponse(invite.id, null, 'accept')}
+                              sx={{ fontSize: 10, py: 0.5, px: 1 }}
+                            >
+                              Acceptera
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button 
+                              size="small" 
+                              variant="outlined" 
+                              onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'decline')}
+                              sx={{ fontSize: 10, py: 0.5, px: 1 }}
+                            >
+                              Neka
+                            </Button>
+                            <Button 
+                              size="small" 
+                              variant="outlined" 
+                              onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'accept_passive')}
+                              sx={{ fontSize: 10, py: 0.5, px: 1, bgcolor: 'rgba(25,118,210,0.1)' }}
+                            >
+                              Ge tillgång
+                            </Button>
+                            <Button 
+                              size="small" 
+                              variant="contained" 
+                              onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'accept')}
+                              sx={{ fontSize: 10, py: 0.5, px: 1 }}
+                            >
+                              Gå med
+                            </Button>
+                          </>
+                        )}
                       </Box>
                     </Card>
                   ))}
@@ -1069,34 +1312,57 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         }}
                       >
                         <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
-                          {invitation.fromEmail}
+                          {invitation.fromName || invitation.fromEmail}
                         </Typography>
                         <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', fontWeight: 600 }}>
                           {invitation.groupName}
                         </Typography>
                         <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
-                          Vill jämföra kalendrar med dig
+                          {invitation.type === 'contact_request' ? 'Vill lägga till dig som kontakt' : 'Vill jämföra kalendrar med dig'}
                         </Typography>
                         <Typography variant="caption" sx={{ color: '#999', fontSize: 11 }}>
                           {new Date(invitation.createdAt).toLocaleDateString()}
                         </Typography>
                         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                          <Button 
-                            size="small" 
-                            variant="contained" 
-                            sx={{ fontSize: 12 }}
-                            onClick={() => window.location.href = `/?group=${invitation.groupId}&invitee=${invitation.inviteeId}`}
-                          >
-                            Gå med
-                          </Button>
-                          <Button 
-                            size="small" 
-                            variant="outlined" 
-                            sx={{ fontSize: 12 }}
-                            onClick={() => handleInviteResponse(invitation.groupId, invitation.inviteeId, 'decline')}
-                          >
-                            Neka
-                          </Button>
+                          {invitation.type === 'contact_request' ? (
+                            <>
+                              <Button 
+                                size="small" 
+                                variant="contained" 
+                                sx={{ fontSize: 12 }}
+                                onClick={() => handleInviteResponse(invitation.id, null, 'accept')}
+                              >
+                                Acceptera
+                              </Button>
+                              <Button 
+                                size="small" 
+                                variant="outlined" 
+                                sx={{ fontSize: 12 }}
+                                onClick={() => handleInviteResponse(invitation.id, null, 'decline')}
+                              >
+                                Neka
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button 
+                                size="small" 
+                                variant="contained" 
+                                sx={{ fontSize: 12 }}
+                                onClick={() => window.location.href = `/?group=${invitation.groupId}&invitee=${invitation.inviteeId}`}
+                              >
+                                Gå med
+                              </Button>
+                              <Button 
+                                size="small" 
+                                variant="outlined" 
+                                sx={{ fontSize: 12 }}
+                                onClick={() => handleInviteResponse(invitation.groupId, invitation.inviteeId, 'decline')}
+                              >
+                                Neka
+                              </Button>
+                            </>
+                          )}
                         </Box>
                       </Paper>
                     ))

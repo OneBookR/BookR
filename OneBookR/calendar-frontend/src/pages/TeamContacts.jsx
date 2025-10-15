@@ -6,11 +6,14 @@ import PersonIcon from '@mui/icons-material/Person';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 
 export default function TeamContacts({ user, onNavigateBack }) {
   const [currentTab, setCurrentTab] = useState(0);
   const [contacts, setContacts] = useState([]);
   const [contactRequests, setContactRequests] = useState([]);
+  const [directAccessContacts, setDirectAccessContacts] = useState([]);
   const [newContact, setNewContact] = useState({ name: '', email: '' });
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
@@ -35,6 +38,22 @@ export default function TeamContacts({ user, onNavigateBack }) {
       // Ladda kontaktförfrågningar
       const savedRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${userEmail}`) || '[]');
       setContactRequests(savedRequests);
+      
+      // Ladda kontakter som har gett dig direktåtkomst
+      const directAccessList = JSON.parse(localStorage.getItem(`bookr_direct_access_granted_${userEmail}`) || '[]');
+      setDirectAccessContacts(directAccessList);
+      
+      // Lyssna på storage events för att uppdatera kontaktförfrågningar
+      const handleStorageChange = () => {
+        const updatedRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${userEmail}`) || '[]');
+        setContactRequests(updatedRequests);
+        
+        const updatedDirectAccess = JSON.parse(localStorage.getItem(`bookr_direct_access_granted_${userEmail}`) || '[]');
+        setDirectAccessContacts(updatedDirectAccess);
+      };
+      
+      window.addEventListener('storage', handleStorageChange);
+      return () => window.removeEventListener('storage', handleStorageChange);
     }
     setLoading(false);
   }, [user]);
@@ -90,7 +109,10 @@ export default function TeamContacts({ user, onNavigateBack }) {
       setToast({ open: true, message: 'Kontakt sparad och vänförslag skickat!', severity: 'success' });
       
       // Trigga uppdatering av kontaktlistan
-      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: `bookr_contact_requests_${newContact.email}`,
+        newValue: JSON.stringify(existingRequests)
+      }));
       window.dispatchEvent(new Event('teamContactsUpdated'));
     }
   };
@@ -150,13 +172,57 @@ export default function TeamContacts({ user, onNavigateBack }) {
       const updatedContacts = [...contacts, newContact];
       localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
       setContacts(updatedContacts);
-      setToast({ open: true, message: `${request.fromName} är nu din kontakt!`, severity: 'success' });
+      // Ge direktåtkomst tillbaka till den som skickade förfrågan
+      const directAccessKey = `bookr_direct_access_granted_${request.fromEmail}`;
+      const directAccessList = JSON.parse(localStorage.getItem(directAccessKey) || '[]');
+      if (!directAccessList.find(c => c.email === userEmail)) {
+        directAccessList.push({
+          id: Date.now(),
+          name: user.displayName || userEmail,
+          email: userEmail,
+          grantedAt: new Date().toISOString()
+        });
+        localStorage.setItem(directAccessKey, JSON.stringify(directAccessList));
+      }
+      
+      setToast({ open: true, message: `${request.fromName} är nu din kontakt och har fått direktåtkomst!`, severity: 'success' });
     }
     
     // Ta bort förfrågan
     const updatedRequests = contactRequests.filter(r => r.id !== requestId);
     localStorage.setItem(`bookr_contact_requests_${userEmail}`, JSON.stringify(updatedRequests));
     setContactRequests(updatedRequests);
+  };
+
+  const handleViewCalendar = (contact) => {
+    // Navigera till kalenderjämförelse med direktåtkomst
+    const params = new URLSearchParams();
+    params.append('directAccess', 'true');
+    params.append('contactEmail', contact.email);
+    params.append('contactName', contact.name);
+    window.location.href = `/?${params.toString()}`;
+  };
+
+  // Simulera att någon ger dig direktåtkomst (detta skulle normalt komma från backend)
+  const simulateDirectAccessGrant = (fromEmail, fromName) => {
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+    if (!userEmail) return;
+    
+    const existingDirectAccess = JSON.parse(localStorage.getItem(`bookr_direct_access_granted_${userEmail}`) || '[]');
+    
+    // Kolla om kontakten redan finns
+    if (!existingDirectAccess.find(c => c.email === fromEmail)) {
+      const newDirectAccessContact = {
+        id: Date.now(),
+        name: fromName,
+        email: fromEmail,
+        grantedAt: new Date().toISOString()
+      };
+      
+      existingDirectAccess.push(newDirectAccessContact);
+      localStorage.setItem(`bookr_direct_access_granted_${userEmail}`, JSON.stringify(existingDirectAccess));
+      setDirectAccessContacts(existingDirectAccess);
+    }
   };
 
   return (
@@ -187,6 +253,7 @@ export default function TeamContacts({ user, onNavigateBack }) {
           <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)}>
             <Tab label={`Kontakter (${contacts.length})`} icon={<PersonIcon />} />
             <Tab label={`Förfrågningar (${contactRequests.length})`} icon={<NotificationsIcon />} />
+            <Tab label={`Direktåtkomst (${directAccessContacts.length})`} icon={<VisibilityIcon />} />
           </Tabs>
         </Box>
 
@@ -334,6 +401,77 @@ export default function TeamContacts({ user, onNavigateBack }) {
                       onClick={() => handleContactRequest(request.id, 'decline')}
                     >
                       Neka
+                    </Button>
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
+          )}
+        </Box>
+        )}
+
+        {currentTab === 2 && (
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 600, color: '#0a2540', mb: 3 }}>Kontakter med direktåtkomst</Typography>
+          <Typography variant="body2" sx={{ color: '#666', mb: 3 }}>
+            Dessa kontakter har gett dig direktåtkomst till sina kalendrar. Du kan se deras lediga tider utan att de behöver gå med i kalenderjämförelsen.
+          </Typography>
+          
+          {loading ? (
+            <Typography>Laddar direktåtkomst-kontakter...</Typography>
+          ) : directAccessContacts.length === 0 ? (
+            <Card sx={{ p: 4, textAlign: 'center' }}>
+              <VisibilityIcon sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
+              <Typography variant="h6" sx={{ color: '#666', mb: 1 }}>
+                Inga direktåtkomst-kontakter
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#999' }}>
+                När någon ger dig direktåtkomst till sin kalender kommer de att visas här
+              </Typography>
+            </Card>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {directAccessContacts.map((contact) => (
+                <Paper
+                  key={contact.id}
+                  sx={{
+                    p: 3,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    border: '1px solid #e0e3e7',
+                    borderRadius: 2,
+                    bgcolor: '#f8fff8',
+                    borderLeft: '4px solid #4caf50',
+                    '&:hover': {
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Avatar sx={{ bgcolor: '#4caf50' }}>
+                      {contact.name.charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        {contact.name}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        {contact.email}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 600 }}>
+                        ✓ Direktåtkomst aktiverad
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      startIcon={<CalendarTodayIcon />}
+                      onClick={() => handleViewCalendar(contact)}
+                    >
+                      Visa kalender
                     </Button>
                   </Box>
                 </Paper>
