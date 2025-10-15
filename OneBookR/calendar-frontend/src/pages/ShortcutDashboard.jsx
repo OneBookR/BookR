@@ -17,6 +17,7 @@ import { Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@m
 import InvitationSidebar from './InvitationSidebar.jsx';
 import ContactSettings from '../components/ContactSettings.jsx';
 import ContactManager from './ContactManager.jsx';
+import Team from './Team.jsx';
 
 // Exportera kontakter så att andra komponenter kan använda dem
 export const getStoredContacts = () => {
@@ -97,8 +98,12 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   }, [user?.email]);
 
   const handleNavigateToMeeting = (type) => {
-    // Navigera till rätt meetingType via URL
-    window.location.href = `/?meetingType=${type}`;
+    if (type === 'team') {
+      setCurrentView('team');
+    } else {
+      // Befintlig logik för 1v1, group, task
+      window.location.href = `/?meetingType=${type}`;
+    }
   };
 
   const handleInviteResponse = async (groupId, inviteeId, response) => {
@@ -369,6 +374,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   };
 
 
+
+  if (currentView === 'team') {
+    return <Team user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
+  }
 
   return (
     <>
