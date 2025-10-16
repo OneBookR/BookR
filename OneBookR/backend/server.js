@@ -723,7 +723,7 @@ function generateVenueFreeSlots(busyEvents, startDate, endDate) {
   return freeSlots;
 }
 
-// Säker filtrering av tider inom daglig tidsram
+// Korrekt filtrering av tider inom daglig tidsram - fixa tidszonproblem
 function filterSlotsByDayTime(slots, dayStart, dayEnd) {
   if (!Array.isArray(slots) || slots.length === 0) return [];
   if (!dayStart || !dayEnd) return slots;
@@ -736,29 +736,42 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
       return slots;
     }
 
+    console.log(`Filtering slots by day time: ${dayStart} - ${dayEnd}`);
+
     return slots.filter(slot => {
       if (!slot || !slot.start || !slot.end) return false;
       
       try {
+        // Använd lokal tid utan tidszonkonvertering
         const start = new Date(slot.start);
         const end = new Date(slot.end);
         
         if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
 
-        // Skapa dagliga gränser för slot-dagen
-        const slotDayStart = new Date(start);
-        slotDayStart.setHours(startHour, startMinute, 0, 0);
-
-        const slotDayEnd = new Date(start);
-        slotDayEnd.setHours(endHour, endMinute, 0, 0);
-
-        // Om sluttiden är tidigare än starttiden, lägg till en dag
-        if (endHour < startHour || (endHour === startHour && endMinute < startMinute)) {
-          slotDayEnd.setDate(slotDayEnd.getDate() + 1);
+        // Hämta lokal tid för start och slut
+        const startLocalHour = start.getHours();
+        const startLocalMinute = start.getMinutes();
+        const endLocalHour = end.getHours();
+        const endLocalMinute = end.getMinutes();
+        
+        // Konvertera till minuter för enklare jämförelse
+        const slotStartMinutes = startLocalHour * 60 + startLocalMinute;
+        const slotEndMinutes = endLocalHour * 60 + endLocalMinute;
+        const dayStartMinutes = startHour * 60 + startMinute;
+        const dayEndMinutes = endHour * 60 + endMinute;
+        
+        console.log(`Slot ${slotStartMinutes/60}:${slotStartMinutes%60} - ${slotEndMinutes/60}:${slotEndMinutes%60}, Day range: ${dayStartMinutes/60}:${dayStartMinutes%60} - ${dayEndMinutes/60}:${dayEndMinutes%60}`);
+        
+        // Kontrollera att sloten är inom daglig tidsram
+        const withinRange = slotStartMinutes >= dayStartMinutes && slotEndMinutes <= dayEndMinutes;
+        
+        if (withinRange) {
+          console.log(`✓ Slot accepted: ${start.toLocaleTimeString()} - ${end.toLocaleTimeString()}`);
+        } else {
+          console.log(`✗ Slot rejected: ${start.toLocaleTimeString()} - ${end.toLocaleTimeString()}`);
         }
-
-        // Blocket måste börja och sluta inom dagens tidsram
-        return start >= slotDayStart && end <= slotDayEnd;
+        
+        return withinRange;
       } catch (error) {
         console.warn('Error filtering slot by day time:', error);
         return false;
@@ -802,7 +815,7 @@ app.post('/api/availability', async (req, res) => {
           const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
           console.log(`Token ${index + 1} returned ${events.length} events`);
           
-          // Säker hantering av kalenderhändelser
+          // Korrekt hantering av kalenderhändelser med tidszon
           const processedEvents = events
             .filter(e => e && (e.start || {}) && (e.end || {})) // Filtrera ogiltiga events
             .map(e => {
@@ -811,10 +824,12 @@ app.post('/api/availability', async (req, res) => {
                 
                 // Hantera heldagsevent
                 if (e.start.date && !e.start.dateTime) {
-                  startTime = new Date(e.start.date + 'T00:00:00').getTime();
-                  endTime = new Date(e.end.date + 'T00:00:00').getTime();
+                  // För heldagsevent, använd lokal tid
+                  const startDate = new Date(e.start.date + 'T00:00:00');
+                  const endDate = new Date(e.end.date + 'T00:00:00');
+                  startTime = startDate.getTime();
+                  endTime = endDate.getTime();
                   
-                  // Säkerhetskontroll för heldagsevent
                   if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
                     return null;
                   }
@@ -826,30 +841,35 @@ app.post('/api/availability', async (req, res) => {
                     isAllDay: true
                   };
                 } else if (e.start.dateTime && e.end.dateTime) {
-                  // Vanligt event med dateTime
-                  startTime = new Date(e.start.dateTime).getTime();
-                  endTime = new Date(e.end.dateTime).getTime();
+                  // För timed events, behåll ursprunglig tidszon
+                  const startDate = new Date(e.start.dateTime);
+                  const endDate = new Date(e.end.dateTime);
+                  startTime = startDate.getTime();
+                  endTime = endDate.getTime();
                   
-                  // Säkerhetskontroll
                   if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
                     return null;
                   }
+                  
+                  const durationMinutes = Math.round((endTime - startTime) / (1000 * 60));
+                  console.log(`Event: ${e.summary || 'Untitled'} - ${startDate.toLocaleTimeString()} to ${endDate.toLocaleTimeString()} (${durationMinutes} min)`);
                   
                   return {
                     start: startTime,
                     end: endTime,
                     title: e.summary || 'Upptagen',
-                    isAllDay: false
+                    isAllDay: false,
+                    duration: durationMinutes
                   };
                 }
                 
-                return null; // Ogiltigt event
+                return null;
               } catch (error) {
                 console.warn('Error processing calendar event:', error);
                 return null;
               }
             })
-            .filter(Boolean); // Ta bort null-värden
+            .filter(Boolean);
           console.log(`Token ${index + 1} processed ${processedEvents.length} events`);
           return { events: processedEvents, timezone };
         } catch (error) {
@@ -975,12 +995,19 @@ app.post('/api/availability', async (req, res) => {
     const now = Date.now();
     splitBlocks = splitBlocks.filter(slot => new Date(slot.end).getTime() > now);
 
-    // Ta bort CET/UTC+1 justering – skicka tider som de är
-    const formattedBlocks = splitBlocks.map(slot => ({
-      ...slot,
-      start: new Date(slot.start).toISOString(),
-      end: new Date(slot.end).toISOString()
-    }));
+    // Formatera tider korrekt utan tidszonförskjutning
+    const formattedBlocks = splitBlocks.map(slot => {
+      const startDate = new Date(slot.start);
+      const endDate = new Date(slot.end);
+      
+      console.log(`Formatted slot: ${startDate.toLocaleTimeString()} - ${endDate.toLocaleTimeString()}`);
+      
+      return {
+        ...slot,
+        start: startDate.toISOString(),
+        end: endDate.toISOString()
+      };
+    });
 
     console.log(`Sending ${formattedBlocks.length} formatted blocks to frontend`);
     if (formattedBlocks.length === 0) {
