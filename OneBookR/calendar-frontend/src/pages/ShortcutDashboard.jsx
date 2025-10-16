@@ -350,31 +350,50 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
   const voteSuggestion = async (suggestionId, vote, targetGroupId) => {
     try {
+      const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
+      if (!userEmail) {
+        throw new Error('Användarens e-post saknas');
+      }
+      
       const response = await fetch(`https://www.onebookr.se/api/group/${targetGroupId}/suggestion/${suggestionId}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: user.email || user.emails?.[0]?.value || user.emails?.[0],
+          email: userEmail,
           vote,
         }),
       });
-      if (response.ok) {
-        const voteText = vote === 'accepted' ? 'accepterat' : 'nekat';
-        setToast({ open: true, message: `Du har ${voteText} tidsförslaget!`, severity: 'success' });
-        fetchTimeProposals();
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
+      
+      const voteText = vote === 'accepted' ? 'accepterat' : 'nekat';
+      setToast({ open: true, message: `Du har ${voteText} tidsförslaget!`, severity: 'success' });
+      await fetchTimeProposals();
     } catch (error) {
-      setToast({ open: true, message: 'Kunde inte registrera röst. Försök igen.', severity: 'error' });
+      console.error('Error voting on suggestion:', error);
+      setToast({ open: true, message: `Kunde inte registrera röst: ${error.message}`, severity: 'error' });
+      throw error;
     }
   };
 
-  const handleProposalResponse = (proposalId, response) => {
-    const proposal = timeProposals.find(p => p.id === proposalId);
-    if (proposal) {
+  const handleProposalResponse = async (proposalId, response) => {
+    try {
+      const proposal = timeProposals.find(p => p.id === proposalId);
+      if (!proposal) {
+        setToast({ open: true, message: 'Förslaget kunde inte hittas', severity: 'error' });
+        return;
+      }
+      
       const vote = response === 'accept' ? 'accepted' : 'declined';
-      voteSuggestion(proposalId, vote, proposal.groupId);
+      await voteSuggestion(proposalId, vote, proposal.groupId);
       // Ta bort förslaget från listan efter svar
       setTimeProposals(prev => prev.filter(p => p.id !== proposalId));
+    } catch (error) {
+      console.error('Error handling proposal response:', error);
+      setToast({ open: true, message: 'Kunde inte svara på förslaget', severity: 'error' });
     }
   };
 
