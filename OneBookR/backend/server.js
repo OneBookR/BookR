@@ -534,54 +534,84 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
   }
 };
 
-// Justera mergeBusyTimes så att den hanterar överlapp korrekt och att tiderna är i millisekunder
+// Exakt sammanslagning av upptagna tider - bevara korta events
 const mergeBusyTimes = (busyTimes) => {
-  // Filtrera bort block utan giltiga tider
+  if (!Array.isArray(busyTimes) || busyTimes.length === 0) return [];
+  
   const filtered = busyTimes
     .filter(t => typeof t.start === 'number' && typeof t.end === 'number' && t.end > t.start)
     .sort((a, b) => a.start - b.start);
 
-  const merged = [];
-  for (const time of filtered) {
-    if (!merged.length || time.start > merged[merged.length - 1].end) {
-      merged.push({ ...time });
+  if (filtered.length === 0) return [];
+
+  const merged = [{ ...filtered[0] }];
+  
+  for (let i = 1; i < filtered.length; i++) {
+    const current = filtered[i];
+    const lastMerged = merged[merged.length - 1];
+    
+    // Endast slå ihop om events verkligen överlappar (inte bara är intill)
+    // Detta bevarar korta events som 15-minuters möten
+    if (current.start < lastMerged.end) {
+      // Verkligt överlapp - slå ihop
+      lastMerged.end = Math.max(lastMerged.end, current.end);
+      console.log(`Merged overlapping events: ${lastMerged.title} + ${current.title}`);
     } else {
-      merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, time.end);
-      // Behåll titel och andra egenskaper från det längsta eventet
-      if (time.end > merged[merged.length - 1].end) {
-        merged[merged.length - 1].title = time.title;
-        merged[merged.length - 1].isAllDay = time.isAllDay;
-      }
+      // Inget överlapp - behåll som separata events
+      merged.push({ ...current });
     }
   }
+  
+  console.log(`Merged ${filtered.length} events into ${merged.length} busy periods`);
   return merged;
 };
 
-// Justera calculateFreeTimes så att den alltid returnerar lediga block som INTE överlappar med upptagna tider
+// Exakt beräkning av lediga tider - respektera korta upptagna perioder
 const calculateFreeTimes = (mergedBusy, rangeStart, rangeEnd) => {
+  if (typeof rangeStart !== 'number' || typeof rangeEnd !== 'number') return [];
+  if (rangeEnd <= rangeStart) return [];
+  
   const freeTimes = [];
-  let cursor = rangeStart;
-
-  // Om inga upptagna tider, hela intervallet är ledigt
-  if (!mergedBusy.length) {
+  
+  if (!Array.isArray(mergedBusy) || mergedBusy.length === 0) {
     freeTimes.push({ start: new Date(rangeStart), end: new Date(rangeEnd) });
     return freeTimes;
   }
 
+  let cursor = rangeStart;
+
   for (const slot of mergedBusy) {
-    // Ledig tid före första upptagna blocket
-    if (cursor < slot.start) {
-      freeTimes.push({ start: new Date(cursor), end: new Date(slot.start) });
+    if (!slot || typeof slot.start !== 'number' || typeof slot.end !== 'number') continue;
+    if (slot.end <= slot.start) continue;
+    
+    if (slot.end <= rangeStart || slot.start >= rangeEnd) continue;
+    
+    // Använd exakta tider från kalendern - ingen rundning
+    const slotStart = Math.max(slot.start, rangeStart);
+    const slotEnd = Math.min(slot.end, rangeEnd);
+    
+    // Ledig tid före detta upptagna block (exakt tid)
+    if (cursor < slotStart) {
+      const freeSlot = { start: new Date(cursor), end: new Date(slotStart) };
+      const freeDuration = Math.round((slotStart - cursor) / (1000 * 60));
+      console.log(`Free slot: ${freeDuration} minutes`);
+      freeTimes.push(freeSlot);
     }
-    cursor = Math.max(cursor, slot.end);
+    
+    cursor = Math.max(cursor, slotEnd);
+    
+    const busyDuration = Math.round((slotEnd - slotStart) / (1000 * 60));
+    console.log(`Busy slot: ${slot.title} - ${busyDuration} minutes`);
   }
 
-  // Ledig tid efter sista upptagna blocket
   if (cursor < rangeEnd) {
-    freeTimes.push({ start: new Date(cursor), end: new Date(rangeEnd) });
+    const finalFreeSlot = { start: new Date(cursor), end: new Date(rangeEnd) };
+    const finalDuration = Math.round((rangeEnd - cursor) / (1000 * 60));
+    console.log(`Final free slot: ${finalDuration} minutes`);
+    freeTimes.push(finalFreeSlot);
   }
 
-  return freeTimes;
+  return freeTimes.filter(ft => ft.end > ft.start);
 };
 
 // Justera findCommonFreeTimes för att korrekt hitta överlapp mellan lediga block
