@@ -757,8 +757,19 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
           slotDayEnd.setDate(slotDayEnd.getDate() + 1);
         }
 
-        // Blocket måste börja och sluta inom dagens tidsram
-        return start >= slotDayStart && end <= slotDayEnd;
+        // Använd lokal tid för korrekt filtrering
+        const startHour24 = start.getHours();
+        const startMin = start.getMinutes();
+        const endHour24 = end.getHours();
+        const endMin = end.getMinutes();
+        
+        // Kontrollera att hela sloten är inom angivet tidsintervall
+        const startTimeMinutes = startHour24 * 60 + startMin;
+        const endTimeMinutes = endHour24 * 60 + endMin;
+        const dayStartMinutes = startHour * 60 + startMinute;
+        const dayEndMinutes = endHour * 60 + endMinute;
+        
+        return startTimeMinutes >= dayStartMinutes && endTimeMinutes <= dayEndMinutes;
       } catch (error) {
         console.warn('Error filtering slot by day time:', error);
         return false;

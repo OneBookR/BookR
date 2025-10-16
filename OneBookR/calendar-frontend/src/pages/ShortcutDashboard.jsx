@@ -218,7 +218,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
       setLeftMeetings(updatedMeetings);
       
-      setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+      setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
       window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
     } else if (response === 'accept_passive') {
       // Acceptera utan att gå in i kalenderjämföraren - ge direktåtkomst
@@ -292,7 +292,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
           setLeftMeetings(updatedMeetings);
           
-          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
           setToast({ open: true, message: `Du har gett ${invitation.fromEmail} direktåtkomst till din kalender!`, severity: 'success' });
         } else {
           setToast({ open: true, message: 'Kunde inte acceptera inbjudan.', severity: 'error' });
@@ -309,12 +309,12 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ response: 'decline' })
         });
-        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
         setToast({ open: true, message: 'Inbjudan nekad.', severity: 'info' });
       } catch (err) {
         console.log('Failed to decline invite:', err);
         // Ta bort lokalt som fallback
-        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId));
+        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
         setToast({ open: true, message: 'Inbjudan nekad.', severity: 'info' });
       }
     }
@@ -373,6 +373,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     if (proposal) {
       const vote = response === 'accept' ? 'accepted' : 'declined';
       voteSuggestion(proposalId, vote, proposal.groupId);
+      // Ta bort förslaget från listan efter svar
+      setTimeProposals(prev => prev.filter(p => p.id !== proposalId));
     }
   };
 
@@ -745,7 +747,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                             <Button 
                               size="small" 
                               variant="outlined" 
-                              onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'decline')}
+                              onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')}
                               sx={{ fontSize: 10, py: 0.5, px: 1 }}
                             >
                               Neka
@@ -753,7 +755,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                             <Button 
                               size="small" 
                               variant="outlined" 
-                              onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'accept_passive')}
+                              onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept_passive')}
                               sx={{ fontSize: 10, py: 0.5, px: 1, bgcolor: 'rgba(25,118,210,0.1)' }}
                             >
                               Ge tillgång
@@ -761,7 +763,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                             <Button 
                               size="small" 
                               variant="contained" 
-                              onClick={() => handleInviteResponse(invite.groupId, inviteeId, 'accept')}
+                              onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')}
                               sx={{ fontSize: 10, py: 0.5, px: 1 }}
                             >
                               Gå med
@@ -1279,7 +1281,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                             size="small" 
                             variant="contained" 
                             sx={{ fontSize: 12 }}
-                            onClick={() => handleProposalResponse(proposal.id, 'accepted')}
+                            onClick={() => handleProposalResponse(proposal.id, 'accept')}
                           >
                             Acceptera
                           </Button>
@@ -1287,7 +1289,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                             size="small" 
                             variant="outlined" 
                             sx={{ fontSize: 12 }}
-                            onClick={() => handleProposalResponse(proposal.id, 'declined')}
+                            onClick={() => handleProposalResponse(proposal.id, 'decline')}
                           >
                             Neka
                           </Button>
