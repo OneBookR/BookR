@@ -1216,16 +1216,30 @@ app.get('/api/group/:groupId/status', async (req, res) => {
     const invitations = await getInvitationsByGroup(groupId);
     const invitedEmails = invitations.map(inv => inv.email);
     
+    // Separera accepterade och nekade inbjudningar
+    const acceptedInvitations = invitations.filter(inv => inv.responded && inv.accepted);
+    const declinedInvitations = invitations.filter(inv => inv.responded && !inv.accepted);
+    const pendingInvitations = invitations.filter(inv => !inv.responded);
+    
     const expected = 1 + invitedEmails.length;
     const current = group.joinedEmails ? group.joinedEmails.length : 1;
-    const allJoined = current >= expected;
+    const declined = declinedInvitations.length;
+    const allJoined = current >= (expected - declined) && pendingInvitations.length === 0;
 
     res.json({
       allJoined,
       current,
       expected,
+      declined,
       invited: invitedEmails,
       joined: group.joinedEmails || [],
+      declinedInvitations: declinedInvitations.map(inv => ({
+        email: inv.email,
+        respondedAt: inv.respondedAt
+      })),
+      pendingInvitations: pendingInvitations.map(inv => ({
+        email: inv.email
+      })),
       groupName: group.groupName || 'Namnlös grupp',
       creatorEmail: group.creatorEmail,
       directAccess: group.directAccess || false
@@ -1939,7 +1953,8 @@ app.post('/api/invitation/:invitationId/respond', async (req, res) => {
     
     await updateInvitation(invitationId, {
       responded: true,
-      accepted: response === 'accept'
+      accepted: response === 'accept',
+      respondedAt: new Date().toISOString()
     });
     
     res.json({ success: true });

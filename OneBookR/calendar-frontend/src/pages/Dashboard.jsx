@@ -341,8 +341,12 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   // Beräkna vilka som gått med och vilka man väntar på
   const joined = joinedEmails;
+  const declined = groupStatus.declinedInvitations || [];
   const waiting = groupStatus.invited
-    ? groupStatus.invited.filter(email => !joined.includes(email))
+    ? groupStatus.invited.filter(email => 
+        !joined.includes(email) && 
+        !declined.some(inv => inv.email === email)
+      )
     : [];
 
   return (
@@ -449,6 +453,31 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   {groupStatus.invited.map((email, idx) => {
                     const hasJoined = joined.includes(email);
+                    const hasDeclined = groupStatus.declinedInvitations?.some(inv => inv.email === email);
+                    const isPending = !hasJoined && !hasDeclined;
+                    
+                    let bgColor, borderColor, textColor, icon, statusText;
+                    
+                    if (hasJoined) {
+                      bgColor = '#e8f5e8';
+                      borderColor = '#4caf50';
+                      textColor = '#2e7d32';
+                      icon = '✅';
+                      statusText = 'Ansluten';
+                    } else if (hasDeclined) {
+                      bgColor = '#ffebee';
+                      borderColor = '#f44336';
+                      textColor = '#d32f2f';
+                      icon = '❌';
+                      statusText = 'Nekad';
+                    } else {
+                      bgColor = '#fff3e0';
+                      borderColor = '#ffcc02';
+                      textColor = '#bf360c';
+                      icon = '⏳';
+                      statusText = 'Väntar';
+                    }
+                    
                     return (
                       <Box key={idx} sx={{
                         display: 'flex',
@@ -457,33 +486,60 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
                         gap: 2,
                         p: 2,
                         borderRadius: 2,
-                        bgcolor: hasJoined ? '#e8f5e8' : '#fff3e0',
-                        border: hasJoined ? '1px solid #4caf50' : '1px solid #ffcc02'
+                        bgcolor: bgColor,
+                        border: `1px solid ${borderColor}`
                       }}>
                         <span style={{
                           fontSize: 20,
-                          color: hasJoined ? '#2e7d32' : '#e65100'
+                          color: textColor
                         }}>
-                          {hasJoined ? '✅' : '⏳'}
+                          {icon}
                         </span>
                         <Typography sx={{
-                          color: hasJoined ? '#2e7d32' : '#bf360c',
+                          color: textColor,
                           fontWeight: hasJoined ? 600 : 500,
                           fontSize: 15
                         }}>
                           {email}
                         </Typography>
                         <Typography variant="caption" sx={{
-                          color: hasJoined ? '#2e7d32' : '#e65100',
+                          color: textColor,
                           fontWeight: 600,
                           fontSize: 12
                         }}>
-                          {hasJoined ? 'Ansluten' : 'Väntar'}
+                          {statusText}
                         </Typography>
                       </Box>
                     );
                   })}
                 </Box>
+                
+                {/* Visa varning om någon har nekat */}
+                {groupStatus.declinedInvitations && groupStatus.declinedInvitations.length > 0 && (
+                  <Box sx={{
+                    mt: 3,
+                    p: 2,
+                    borderRadius: 2,
+                    bgcolor: '#ffebee',
+                    border: '1px solid #f44336'
+                  }}>
+                    <Typography sx={{
+                      color: '#d32f2f',
+                      fontWeight: 600,
+                      fontSize: 14,
+                      mb: 1
+                    }}>
+                      ⚠️ Nekade inbjudningar:
+                    </Typography>
+                    <Typography sx={{
+                      color: '#d32f2f',
+                      fontSize: 13
+                    }}>
+                      {groupStatus.declinedInvitations.map(inv => inv.email).join(', ')} har nekat inbjudan. 
+                      Kalenderjämförelsen kommer att fortsätta utan dem.
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             )}
           </Box>
