@@ -723,7 +723,7 @@ function generateVenueFreeSlots(busyEvents, startDate, endDate) {
   return freeSlots;
 }
 
-// Säker filtrering av tider inom daglig tidsram
+// Säker filtrering av tider inom daglig tidsram - KORREKT TIDSHANTERING
 function filterSlotsByDayTime(slots, dayStart, dayEnd) {
   if (!Array.isArray(slots) || slots.length === 0) return [];
   if (!dayStart || !dayEnd) return slots;
@@ -745,19 +745,7 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
         
         if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
 
-        // Skapa dagliga gränser för slot-dagen
-        const slotDayStart = new Date(start);
-        slotDayStart.setHours(startHour, startMinute, 0, 0);
-
-        const slotDayEnd = new Date(start);
-        slotDayEnd.setHours(endHour, endMinute, 0, 0);
-
-        // Om sluttiden är tidigare än starttiden, lägg till en dag
-        if (endHour < startHour || (endHour === startHour && endMinute < startMinute)) {
-          slotDayEnd.setDate(slotDayEnd.getDate() + 1);
-        }
-
-        // Använd lokal tid för korrekt filtrering
+        // KORREKT: Använd exakt samma tidszon som kalendern (lokal tid)
         const startHour24 = start.getHours();
         const startMin = start.getMinutes();
         const endHour24 = end.getHours();
@@ -769,6 +757,7 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
         const dayStartMinutes = startHour * 60 + startMinute;
         const dayEndMinutes = endHour * 60 + endMinute;
         
+        // STRIKT: Sloten måste vara helt inom tidsramen
         return startTimeMinutes >= dayStartMinutes && endTimeMinutes <= dayEndMinutes;
       } catch (error) {
         console.warn('Error filtering slot by day time:', error);
@@ -986,11 +975,11 @@ app.post('/api/availability', async (req, res) => {
     const now = Date.now();
     splitBlocks = splitBlocks.filter(slot => new Date(slot.end).getTime() > now);
 
-    // Ta bort CET/UTC+1 justering – skicka tider som de är
+    // Formatera blocken utan tidszonsjustering
     const formattedBlocks = splitBlocks.map(slot => ({
       ...slot,
-      start: new Date(slot.start).toISOString(),
-      end: new Date(slot.end).toISOString()
+      start: slot.start instanceof Date ? slot.start.toISOString() : slot.start,
+      end: slot.end instanceof Date ? slot.end.toISOString() : slot.end
     }));
 
     console.log(`Sending ${formattedBlocks.length} formatted blocks to frontend`);
