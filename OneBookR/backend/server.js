@@ -1893,6 +1893,54 @@ app.post('/api/contact-request', async (req, res) => {
   }
 });
 
+// Skicka team-inbjudningar
+app.post('/api/send-team-invitation', async (req, res) => {
+  const { toEmail, fromEmail, fromName, teamName, groupId, hasDirectAccess } = req.body;
+  
+  if (!toEmail || !fromEmail || !teamName || !groupId) {
+    return res.status(400).json({ error: 'Alla fält krävs för team-inbjudan' });
+  }
+  
+  try {
+    const inviteLink = `https://www.onebookr.se/?group=${groupId}&team=${encodeURIComponent(teamName)}`;
+    const accessType = hasDirectAccess ? 'direktåtkomst' : 'vanlig inbjudan';
+    
+    const emailSubject = `Inbjudan till teammöte: ${teamName}`;
+    const emailText = `Hej!
+
+${fromName || fromEmail} har startat en kalenderjämförelse för teamet "${teamName}" och bjudit in dig.
+
+${hasDirectAccess ? 
+      'Du har direktåtkomst vilket betyder att du kan delta direkt utan att behöva logga in separat.' : 
+      'Klicka på länken nedan för att gå med i kalenderjämförelsen.'}
+
+Länk till kalenderjämförelsen:
+${inviteLink}
+
+I kalenderjämförelsen kan ni:
+✅ Se varandras lediga tider
+✅ Föreslå mötestider
+✅ Rösta på förslag
+✅ Få automatiska Google Meet-länkar
+
+Hälsningar,
+BookR-teamet`;
+    
+    await resend.emails.send({
+      from: 'BookR <info@onebookr.se>',
+      to: toEmail,
+      subject: emailSubject,
+      text: emailText
+    });
+    
+    console.log(`Team invitation sent to ${toEmail} for team ${teamName}`);
+    res.json({ success: true, message: 'Team-inbjudan skickad' });
+  } catch (error) {
+    console.error('Error sending team invitation:', error);
+    res.status(500).json({ error: 'Kunde inte skicka team-inbjudan' });
+  }
+});
+
 // Direktbokning endpoint
 app.post('/api/direct-booking', async (req, res) => {
   const { contactEmail, contactName, userEmail, userToken } = req.body;

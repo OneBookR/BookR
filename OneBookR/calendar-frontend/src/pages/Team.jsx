@@ -155,50 +155,76 @@ export default function Team({ user, onNavigateBack }) {
     setToast({ open: true, message: 'Team borttaget', severity: 'info' });
   };
 
-  const handleStartComparison = (team) => {
+  const handleStartComparison = async (team) => {
     const memberEmails = team.members.map(m => m.email);
     const allHaveDirectAccess = team.members.every(member => {
         const contact = contacts.find(c => c.email === member.email);
         return contact && contact.directAccess;
     });
 
-    if (allHaveDirectAccess) {
-        // Skapa en grupp med direktåtkomst
-        fetch('https://www.onebookr.se/api/invite', {
+    setToast({ open: true, message: 'Startar kalenderjämförelse...', severity: 'info' });
+
+    try {
+      // Skapa grupp och skicka inbjudningar
+      const response = await fetch('https://www.onebookr.se/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emails: memberEmails,
+          fromUser: userEmail,
+          fromToken: user.accessToken || 'mock_token',
+          groupName: `${team.name} - Kalenderjämförelse`,
+          isTeamMeeting: true,
+          teamName: team.name,
+          hasDirectAccessTeam: allHaveDirectAccess
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.groupId) {
+        // Skicka e-postinbjudningar till alla teammedlemmar
+        const invitationPromises = memberEmails.map(email => 
+          fetch('https://www.onebookr.se/api/send-team-invitation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                emails: memberEmails,
-                fromUser: userEmail,
-                fromToken: user.accessToken || 'mock_token',
-                groupName: team.name,
-                isTeamMeeting: true,
-                teamName: team.name,
-                hasDirectAccessTeam: true
+              toEmail: email,
+              fromEmail: userEmail,
+              fromName: user.displayName || userEmail,
+              teamName: team.name,
+              groupId: data.groupId,
+              hasDirectAccess: allHaveDirectAccess
             })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.groupId) {
-                const params = new URLSearchParams();
-                params.append('group', data.groupId);
-                params.append('directAccess', 'true');
-                params.append('teamName', team.name);
-                memberEmails.forEach(email => params.append('contactEmail', email));
-                window.location.href = `/?${params.toString()}`;
-            } else {
-                setToast({ open: true, message: 'Kunde inte skapa direktåtkomst-grupp', severity: 'error' });
-            }
-        })
-        .catch(err => {
-            console.error('Error creating direct access group:', err);
-            setToast({ open: true, message: 'Fel vid skapande av grupp', severity: 'error' });
+          })
+        );
+
+        await Promise.all(invitationPromises);
+        
+        setToast({ 
+          open: true, 
+          message: `Kalenderjämförelse startad! Inbjudningar skickade till ${memberEmails.length} medlemmar.`, 
+          severity: 'success' 
         });
-    } else {
-        // Vanlig gruppinbjudan
-        const prefilledEvent = new CustomEvent('prefilledContacts', { detail: { emails: memberEmails, groupName: team.name } });
-        window.dispatchEvent(prefilledEvent);
-        window.location.href = '/';
+
+        // Navigera till kalenderjämförelsen
+        const params = new URLSearchParams();
+        params.append('group', data.groupId);
+        if (allHaveDirectAccess) {
+          params.append('directAccess', 'true');
+        }
+        params.append('teamName', team.name);
+        memberEmails.forEach(email => params.append('contactEmail', email));
+        
+        setTimeout(() => {
+          window.location.href = `/?${params.toString()}`;
+        }, 1500);
+      } else {
+        setToast({ open: true, message: 'Kunde inte skapa kalenderjämförelse', severity: 'error' });
+      }
+    } catch (err) {
+      console.error('Error starting team comparison:', err);
+      setToast({ open: true, message: 'Fel vid start av kalenderjämförelse', severity: 'error' });
     }
   };
 
