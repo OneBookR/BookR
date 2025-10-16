@@ -122,9 +122,25 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     setHasSearched(true);
     setError(null);
     
-    const tokens = Array.from(new Set([myToken, ...invitedTokens]));
-    if (tokens.length < 2) {
-      setError('Minst två tokens krävs för att jämföra.');
+    let tokens = [myToken, ...invitedTokens];
+    
+    // För team-möten eller grupper, hämta alla tokens från gruppen
+    if (groupId) {
+      try {
+        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
+        if (groupTokensRes.ok) {
+          const groupTokensData = await groupTokensRes.json();
+          tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
+        }
+      } catch (err) {
+        console.log('Could not fetch group tokens, using provided tokens:', err);
+      }
+    }
+    
+    tokens = Array.from(new Set(tokens.filter(Boolean)));
+    
+    if (tokens.length < 1) {
+      setError('Minst en token krävs för att visa kalendrar.');
       setAvailability([]);
       setIsLoadingAvailability(false);
       return;
@@ -656,8 +672,24 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
 
   // Separat fetch-funktion för auto-laddning (utan validering)
   const fetchAvailabilityAuto = async (start, end) => {
-    const tokens = Array.from(new Set([myToken, ...invitedTokens]));
-    if (tokens.length < 2) return;
+    let tokens = [myToken, ...invitedTokens];
+    
+    // För team-möten eller grupper, hämta alla tokens från gruppen
+    if (groupId) {
+      try {
+        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
+        if (groupTokensRes.ok) {
+          const groupTokensData = await groupTokensRes.json();
+          tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
+        }
+      } catch (err) {
+        console.log('Could not fetch group tokens for auto-load:', err);
+      }
+    }
+    
+    tokens = Array.from(new Set(tokens.filter(Boolean)));
+    if (tokens.length < 1) return;
+    
     try {
       const res = await fetch(`${API_BASE_URL}/api/availability`, {
         method: 'POST',

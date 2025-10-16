@@ -607,21 +607,37 @@ const findCommonFreeTimes = (freeTimes1, freeTimes2) => {
   return commonFreeTimes;
 };
 
-// Dela upp långa lediga luckor i mindre block (t.ex. 30 min)
+// Säker uppdelning av lediga tider
 function splitFreeSlots(freeSlots, durationMinutes) {
+  if (!Array.isArray(freeSlots) || freeSlots.length === 0) return [];
+  if (!durationMinutes || durationMinutes <= 0) return [];
+  
   const result = [];
   const durationMs = durationMinutes * 60 * 1000;
+  
   for (const slot of freeSlots) {
-    let start = slot.start.getTime();
-    const end = slot.end.getTime();
-    while (start + durationMs <= end) {
-      result.push({
-        start: new Date(start),
-        end: new Date(start + durationMs),
-      });
-      start += durationMs;
+    if (!slot || !slot.start || !slot.end) continue;
+    
+    try {
+      const startTime = slot.start.getTime();
+      const endTime = slot.end.getTime();
+      
+      if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) continue;
+      
+      let current = startTime;
+      while (current + durationMs <= endTime) {
+        result.push({
+          start: new Date(current),
+          end: new Date(current + durationMs),
+        });
+        current += durationMs;
+      }
+    } catch (error) {
+      console.warn('Error splitting free slot:', error);
+      continue;
     }
   }
+  
   return result;
 }
 
@@ -677,31 +693,51 @@ function generateVenueFreeSlots(busyEvents, startDate, endDate) {
   return freeSlots;
 }
 
-// Hjälpfunktion för att filtrera block inom daglig tidsram
+// Säker filtrering av tider inom daglig tidsram
 function filterSlotsByDayTime(slots, dayStart, dayEnd) {
+  if (!Array.isArray(slots) || slots.length === 0) return [];
   if (!dayStart || !dayEnd) return slots;
-  const [startHour, startMinute] = dayStart.split(':').map(Number);
-  const [endHour, endMinute] = dayEnd.split(':').map(Number);
-
-  return slots.filter(slot => {
-    const start = new Date(slot.start);
-    const end = new Date(slot.end);
-
-    // Skapa dagliga gränser för slot-dagen
-    const slotDayStart = new Date(start);
-    slotDayStart.setHours(startHour, startMinute, 0, 0);
-
-    const slotDayEnd = new Date(start);
-    slotDayEnd.setHours(endHour, endMinute, 0, 0);
-
-    // Om sluttiden är tidigare än starttiden, lägg till en dag
-    if (endHour < startHour || (endHour === startHour && endMinute < startMinute)) {
-      slotDayEnd.setDate(slotDayEnd.getDate() + 1);
+  
+  try {
+    const [startHour, startMinute] = dayStart.split(':').map(Number);
+    const [endHour, endMinute] = dayEnd.split(':').map(Number);
+    
+    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute)) {
+      return slots;
     }
 
-    // Blocket måste börja och sluta inom dagens tidsram
-    return start >= slotDayStart && end <= slotDayEnd;
-  });
+    return slots.filter(slot => {
+      if (!slot || !slot.start || !slot.end) return false;
+      
+      try {
+        const start = new Date(slot.start);
+        const end = new Date(slot.end);
+        
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
+
+        // Skapa dagliga gränser för slot-dagen
+        const slotDayStart = new Date(start);
+        slotDayStart.setHours(startHour, startMinute, 0, 0);
+
+        const slotDayEnd = new Date(start);
+        slotDayEnd.setHours(endHour, endMinute, 0, 0);
+
+        // Om sluttiden är tidigare än starttiden, lägg till en dag
+        if (endHour < startHour || (endHour === startHour && endMinute < startMinute)) {
+          slotDayEnd.setDate(slotDayEnd.getDate() + 1);
+        }
+
+        // Blocket måste börja och sluta inom dagens tidsram
+        return start >= slotDayStart && end <= slotDayEnd;
+      } catch (error) {
+        console.warn('Error filtering slot by day time:', error);
+        return false;
+      }
+    });
+  } catch (error) {
+    console.error('Error in filterSlotsByDayTime:', error);
+    return slots;
+  }
 }
 
 app.post('/api/availability', async (req, res) => {
@@ -719,50 +755,78 @@ app.post('/api/availability', async (req, res) => {
     return res.status(400).json({ error: 'Minst en token krävs.' });
   }
   
-  // För vanliga kalenderjämförelser krävs minst 2 tokens
-  if (tokens.length < 2) {
-    console.log('Single token mode - showing only user calendar (no comparison)');
-  } else {
-    console.log('Multi-token mode - comparing', tokens.length, 'calendars');
-  }
+  console.log(`Processing ${tokens.length} calendar(s) for availability comparison`);
 
   if (!timeMin || !timeMax) {
     return res.status(400).json({ error: 'timeMin och timeMax krävs.' });
   }
 
   try {
-    // Hämta upptagna tider för varje token med tidszoner
+    // Hämta upptagna tider för varje token med tidszoner (parallellt för bättre prestanda)
     const allBusyTimesWithTimezones = await Promise.all(
       tokens.map(async (token, index) => {
         const provider = providers && providers[index] ? providers[index] : 'google';
         console.log(`Fetching calendar events for token ${index + 1}/${tokens.length}, provider: ${provider}`);
-        const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
-        console.log(`Token ${index + 1} returned ${events.length} events`);
-        // Hantera heldagsevent och vanliga event
-        const processedEvents = events.map(e => {
-          // Om det är ett heldagsevent (date, ej dateTime)
-          if (e.start.date && !e.start.dateTime) {
-            // Heldagsevent - lägg till explicit tid för konsistens
-            const startDate = new Date(e.start.date + 'T00:00:00');
-            const endDate = new Date(e.end.date + 'T00:00:00');
-            return {
-              start: startDate.getTime(),
-              end: endDate.getTime(),
-              title: e.summary || 'Upptagen',
-              isAllDay: true
-            };
-          } else {
-            // Vanligt event med dateTime
-            return {
-              start: new Date(e.start.dateTime).getTime(),
-              end: new Date(e.end.dateTime).getTime(),
-              title: e.summary || 'Upptagen',
-              isAllDay: false
-            };
-          }
-        });
-        console.log(`Token ${index + 1} processed ${processedEvents.length} events`);
-        return { events: processedEvents, timezone };
+        
+        try {
+          const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
+          console.log(`Token ${index + 1} returned ${events.length} events`);
+          
+          // Säker hantering av kalenderhändelser
+          const processedEvents = events
+            .filter(e => e && (e.start || {}) && (e.end || {})) // Filtrera ogiltiga events
+            .map(e => {
+              try {
+                let startTime, endTime;
+                
+                // Hantera heldagsevent
+                if (e.start.date && !e.start.dateTime) {
+                  startTime = new Date(e.start.date + 'T00:00:00').getTime();
+                  endTime = new Date(e.end.date + 'T00:00:00').getTime();
+                  
+                  // Säkerhetskontroll för heldagsevent
+                  if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
+                    return null;
+                  }
+                  
+                  return {
+                    start: startTime,
+                    end: endTime,
+                    title: e.summary || 'Upptagen',
+                    isAllDay: true
+                  };
+                } else if (e.start.dateTime && e.end.dateTime) {
+                  // Vanligt event med dateTime
+                  startTime = new Date(e.start.dateTime).getTime();
+                  endTime = new Date(e.end.dateTime).getTime();
+                  
+                  // Säkerhetskontroll
+                  if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
+                    return null;
+                  }
+                  
+                  return {
+                    start: startTime,
+                    end: endTime,
+                    title: e.summary || 'Upptagen',
+                    isAllDay: false
+                  };
+                }
+                
+                return null; // Ogiltigt event
+              } catch (error) {
+                console.warn('Error processing calendar event:', error);
+                return null;
+              }
+            })
+            .filter(Boolean); // Ta bort null-värden
+          console.log(`Token ${index + 1} processed ${processedEvents.length} events`);
+          return { events: processedEvents, timezone };
+        } catch (error) {
+          console.error(`Error fetching calendar for token ${index + 1}:`, error.message);
+          // Returnera tom kalender för tokens som misslyckas
+          return { events: [], timezone: 'Europe/Stockholm' };
+        }
       })
     );
     
@@ -857,14 +921,16 @@ app.post('/api/availability', async (req, res) => {
     // Gemensamma lediga tider mellan ALLA användare
     let commonFreeTimes = allFreeTimes[0] || [];
     
-    // Om bara en användare (direktåtkomst), använd bara deras lediga tider
     if (allFreeTimes.length === 1) {
       console.log('Single user mode - using only their free times');
     } else {
-      // Flera användare - hitta gemensamma tider
+      console.log(`Finding common free times across ${allFreeTimes.length} calendars`);
+      // Flera användare - hitta gemensamma tider genom att iterera genom alla
       for (let i = 1; i < allFreeTimes.length; i++) {
         commonFreeTimes = findCommonFreeTimes(commonFreeTimes, allFreeTimes[i]);
+        console.log(`After comparing with calendar ${i + 1}: ${commonFreeTimes.length} common slots remaining`);
       }
+      console.log(`Final result: ${commonFreeTimes.length} common free time slots found`);
     }
 
     // Dela upp långa luckor i mindre block
@@ -886,9 +952,10 @@ app.post('/api/availability', async (req, res) => {
       end: new Date(slot.end).toISOString()
     }));
 
-    console.log('Sending', formattedBlocks.length, 'formatted blocks to frontend');
+    console.log(`Sending ${formattedBlocks.length} formatted blocks to frontend`);
     if (formattedBlocks.length === 0) {
-      console.log('No free time slots found - this might indicate token issues or very busy calendars');
+      console.log('No free time slots found - this might indicate token issues, very busy calendars, or no overlapping free time');
+      console.log('Individual calendar free times:', allFreeTimes.map((ft, i) => `Calendar ${i + 1}: ${ft.length} slots`));
     }
 
     res.json(formattedBlocks);
@@ -1053,26 +1120,25 @@ app.post('/api/group/join', async (req, res) => {
 
     // Kontrollera om detta är direkttillgång
     if (group.directAccess) {
-      // För direkttillgång, markera gruppen som klar direkt
+      // För direkttillgång, lägg till alla tokens korrekt
+      const allTokens = Array.from(new Set([group.creatorToken, token].filter(Boolean)));
+      const allEmails = Array.from(new Set([group.creatorEmail, email].filter(Boolean)));
+      
       await updateGroup(groupId, {
-        tokens: [group.creatorToken, token],
-        joinedEmails: [group.creatorEmail, email],
+        tokens: allTokens,
+        joinedEmails: allEmails,
         allJoined: true
       });
-      console.log('Direct access group joined:', { groupId, email });
+      console.log('Direct access group joined:', { groupId, email, totalTokens: allTokens.length });
       return res.json({ success: true, directAccess: true });
     }
 
-    // Uppdatera gruppen med ny medlem
-    const updatedTokens = group.tokens || [];
-    const updatedEmails = group.joinedEmails || [];
+    // Uppdatera gruppen med ny medlem - se till att inga dubbletter finns
+    const existingTokens = group.tokens || [];
+    const existingEmails = group.joinedEmails || [];
     
-    if (!updatedTokens.includes(token)) {
-      updatedTokens.push(token);
-    }
-    if (!updatedEmails.includes(email)) {
-      updatedEmails.push(email);
-    }
+    const updatedTokens = Array.from(new Set([...existingTokens, token].filter(Boolean)));
+    const updatedEmails = Array.from(new Set([...existingEmails, email].filter(Boolean)));
 
     // Uppdatera gruppen i Firebase
     await updateGroup(groupId, {
@@ -1080,7 +1146,7 @@ app.post('/api/group/join', async (req, res) => {
       joinedEmails: updatedEmails
     });
 
-    console.log('User joined group:', { groupId, email });
+    console.log('User joined group:', { groupId, email, totalTokens: updatedTokens.length, totalEmails: updatedEmails.length });
     res.json({ success: true });
   } catch (error) {
     console.error('Error joining group:', error);
