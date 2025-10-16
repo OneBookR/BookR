@@ -878,17 +878,7 @@ app.post('/api/availability', async (req, res) => {
       if (userEvents.length > 0) {
         console.log('Sample events:', userEvents.slice(0, 3));
       }
-    });BusyTimes.reduce((sum, events) => sum + events.length, 0);
-    console.log('Total events fetched from all calendars:', totalEvents);
-    
-    if (totalEvents === 0 && tokens.length > 1) {
-      console.warn('No events found for any calendar - tokens might be expired');
-    }BusyTimes.reduce((sum, events) => sum + events.length, 0);
-    console.log('Total events fetched from all calendars:', totalEvents);
-    
-    if (totalEvents === 0 && tokens.length > 1) {
-      console.warn('No events found for any calendar - tokens might be expired');
-    }
+    });
 
     // För flerdagars möten, hantera annorlunda
     if (isMultiDay && multiDayStart && multiDayEnd) {
