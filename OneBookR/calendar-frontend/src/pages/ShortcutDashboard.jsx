@@ -739,19 +739,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         Från: {invite.fromName || invite.fromEmail}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
-                        {new Date(invite.createdAt).toLocaleDateString()}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {invite.groupName || 'Namnlös grupp'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Inbjudan skickad: {new Date(invite.timestamp).toLocaleString('sv-SE', { 
-                          year: 'numeric', 
-                          month: 'numeric', 
-                          day: 'numeric',
-                          hour: '2-digit', 
-                          minute: '2-digit'
-                        })}
+                        {new Date(invite.createdAt).toLocaleDateString() + ' ' + new Date(invite.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Typography>
                       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         {invite.type === 'contact_request' ? (
@@ -1223,14 +1211,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
                           {invitation.fromName || invitation.fromEmail}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', fontWeight: 600 }}>
-                          {invitation.groupName}
-                        </Typography>
                         <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
                           {invitation.type === 'contact_request' ? 'Vill lägga till dig som kontakt' : 'Vill jämföra kalendrar med dig'}
                         </Typography>
                         <Typography variant="caption" sx={{ color: '#999', fontSize: 11 }}>
-                          {new Date(invitation.createdAt).toLocaleDateString()}
+                          {new Date(invitation.createdAt).toLocaleDateString() + ' ' + new Date(invitation.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Typography>
                         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                           {invitation.type === 'contact_request' ? (

@@ -2008,10 +2008,6 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
-});
-
 // Svara på inbjudan (acceptera eller neka)
 app.post('/api/invitation/:invitationId/respond', async (req, res) => {
   try {
@@ -2209,200 +2205,60 @@ app.post('/api/calendar/events', async (req, res) => {
   const { token, timeMin, timeMax } = req.body;
   
   try {
-    const { events } = await fetchCalendarEvents(token, timeMin, timeMax);
-    const formattedEvents = events.map(e => ({
-      title: e.summary || 'Upptagen',
-      start: e.start.dateTime || e.start.date,
-      end: e.end.dateTime || e.end.date
-    }));
-    
-    res.json({ events: formattedEvents });
-  } catch (error) {
-    console.error('Error fetching calendar events:', error);
-    res.status(500).json({ error: 'Kunde inte hämta kalenderhändelser' });
-  }
-});
+    // Validera token först
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.CLIENT_ID,
+      process.env.CLIENT_SECRET,
+      'https://www.onebookr.se/auth/google/callback'
+    );
 
-app.post('/api/task/schedule', async (req, res) => {
-  const { token, taskName, estimatedHours, workStartHour = 9, workEndHour = 18, minSessionHours = 1, maxSessionHours = 4, breakMinutes = 15 } = req.body;
-  
-  if (!token || !taskName || !estimatedHours) {
-    return res.status(400).json({ error: 'Token, uppgiftsnamn och estimerad tid krävs' });
-  }
-  
-  try {
-    const now = new Date();
-    const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    
-    const { events } = await fetchCalendarEvents(token, now.toISOString(), twoWeeksFromNow.toISOString());
-    
-    // Konvertera till upptagna tider
-    const busyTimes = events.map(e => ({
-      start: new Date(e.start.dateTime || e.start.date).getTime(),
-      end: new Date(e.end.dateTime || e.end.date).getTime()
-    })).sort((a, b) => a.start - b.start);
-    
-    // Hitta lediga slots för uppgiften
-    const taskSlots = findTaskSlots(busyTimes, estimatedHours, now, twoWeeksFromNow, workStartHour, workEndHour, minSessionHours, maxSessionHours, breakMinutes);
-    
-    res.json({ taskSlots });
-  } catch (error) {
-    console.error('Error scheduling task:', error);
-    res.status(500).json({ error: 'Kunde inte schemalägga uppgift' });
-  }
-});
-
-// ASAP Task Scheduling med korrekt rast- och tidshantering
-function findTaskSlots(busyTimes, totalHours, startDate, endDate, workStartHour = 9, workEndHour = 18, minSessionHours = 1, maxSessionHours = 4, breakMinutes = 15) {
-  const slots = [];
-  let remainingHours = totalHours;
-  let currentSessionHours = 0;
-  let lastSlotEndTime = null;
-  
-  const allFreeSlots = [];
-  const currentDate = new Date(startDate);
-  
-  while (currentDate < endDate) {
-    if (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
-      currentDate.setDate(currentDate.getDate() + 1);
-      continue;
-    }
-    
-    const dayStart = new Date(currentDate);
-    dayStart.setHours(workStartHour, 0, 0, 0);
-    const dayEnd = new Date(currentDate);
-    dayEnd.setHours(workEndHour, 0, 0, 0);
-    
-    const dayFreeSlots = findFreeSlotsInDay(busyTimes, dayStart, dayEnd);
-    
-    dayFreeSlots.forEach(slot => {
-      const durationHours = (slot.end - slot.start) / (1000 * 60 * 60);
-      if (durationHours >= minSessionHours) {
-        allFreeSlots.push({
-          start: slot.start,
-          end: slot.end,
-          duration: durationHours,
-          date: new Date(currentDate).toDateString()
-        });
-      }
+    oauth2Client.setCredentials({
+      access_token: token,
+      refresh_token: req.body.refreshToken // Vi behöver skicka med refresh token från frontend
     });
-    
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-  
-  allFreeSlots.sort((a, b) => a.start - b.start);
-  
-  for (const freeSlot of allFreeSlots) {
-    if (remainingHours <= 0) break;
-    
-    let sessionStart = freeSlot.start;
-    const now = Date.now();
-    
-    // VIKTIGT: Säkerställ att sessionStart aldrig är i det förflutna
-    if (sessionStart < now) {
-      sessionStart = now;
-    }
-    
-    const isNewDay = !lastSlotEndTime || freeSlot.date !== new Date(lastSlotEndTime).toDateString();
-    const needsBreak = lastSlotEndTime && !isNewDay && currentSessionHours >= maxSessionHours;
-    
-    if (needsBreak) {
-      const minStartWithBreak = lastSlotEndTime + (breakMinutes * 60 * 1000);
-      if (sessionStart < minStartWithBreak) {
-        sessionStart = minStartWithBreak;
-      }
-      currentSessionHours = 0;
-    } else if (isNewDay) {
-      currentSessionHours = 0;
-    }
-    
-    // Dubbelkolla att sessionStart fortfarande är i framtiden efter alla justeringar
-    if (sessionStart < now) {
-      sessionStart = now;
-    }
-    
-    if (sessionStart >= freeSlot.end) continue;
-    
-    const availableDurationMs = freeSlot.end - sessionStart;
-    const availableDurationHours = availableDurationMs / (1000 * 60 * 60);
-    
-    if (availableDurationHours >= minSessionHours) {
-      const hoursUntilBreak = maxSessionHours - currentSessionHours;
-      const hoursToUse = Math.min(remainingHours, availableDurationHours, hoursUntilBreak);
-      
-      if (hoursToUse >= minSessionHours) {
-        const slotEndTime = sessionStart + (hoursToUse * 60 * 60 * 1000);
-        
-        slots.push({
-          start: new Date(sessionStart).toISOString(),
-          end: new Date(slotEndTime).toISOString(),
-          duration: hoursToUse
-        });
-        
-        remainingHours -= hoursToUse;
-        currentSessionHours += hoursToUse;
-        lastSlotEndTime = slotEndTime;
-        
-        if (remainingHours > 0 && availableDurationHours > hoursToUse && currentSessionHours >= maxSessionHours) {
-          let afterBreakStart = slotEndTime + (breakMinutes * 60 * 1000);
-          
-          // Säkerställ att tiden efter rast inte är i det förflutna
-          if (afterBreakStart < now) {
-            afterBreakStart = now;
-          }
-          
-          if (afterBreakStart < freeSlot.end) {
-            const remainingSlotMs = freeSlot.end - afterBreakStart;
-            const remainingSlotHours = remainingSlotMs / (1000 * 60 * 60);
-            
-            if (remainingSlotHours >= minSessionHours) {
-              const additionalHours = Math.min(remainingHours, remainingSlotHours, maxSessionHours);
-              const additionalEndTime = afterBreakStart + (additionalHours * 60 * 60 * 1000);
-              
-              slots.push({
-                start: new Date(afterBreakStart).toISOString(),
-                end: new Date(additionalEndTime).toISOString(),
-                duration: additionalHours
-              });
-              
-              remainingHours -= additionalHours;
-              currentSessionHours = additionalHours;
-              lastSlotEndTime = additionalEndTime;
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  return slots;
-}
 
-function findFreeSlotsInDay(busyTimes, dayStart, dayEnd) {
-  const freeSlots = [];
-  const dayStartMs = dayStart.getTime();
-  const dayEndMs = dayEnd.getTime();
-  
-  // Filtrera upptagna tider som överlappar med dagen
-  const dayBusyTimes = busyTimes.filter(busy => 
-    busy.start < dayEndMs && busy.end > dayStartMs
-  ).map(busy => ({
-    start: Math.max(busy.start, dayStartMs),
-    end: Math.min(busy.end, dayEndMs)
-  }));
-  
-  let cursor = dayStartMs;
-  
-  for (const busy of dayBusyTimes) {
-    if (cursor < busy.start) {
-      freeSlots.push({ start: cursor, end: busy.start });
+    try {
+      // Försök validera token
+      await oauth2Client.getTokenInfo(token);
+    } catch (error) {
+      // Token är ogiltig, försök refresh om vi har refresh token
+      if (req.body.refreshToken) {
+        try {
+          const { tokens } = await oauth2Client.refreshToken(req.body.refreshToken);
+          // Skicka tillbaka ny token till frontend
+          return res.status(401).json({ 
+            error: 'Token expired',
+            newToken: tokens.access_token,
+            requiresReauth: false
+          });
+        } catch (refreshError) {
+          // Refresh misslyckades, användaren måste logga in igen
+          return res.status(401).json({ 
+            error: 'Token refresh failed',
+            requiresReauth: true
+          });
+        }
+      } else {
+        // Ingen refresh token, användaren måste logga in igen
+        return res.status(401).json({ 
+          error: 'Token invalid and no refresh token',
+          requiresReauth: true
+        });
+      }
     }
-    cursor = Math.max(cursor, busy.end);
+
+    // Fortsätt med kalenderhämtning som vanligt...
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: timeMin,
+      timeMax: timeMax,
+      singleEvents: true
+    });
+
+    res.json({ events: response.data.items });
+  } catch (error) {
+    console.error('Error fetching calendar:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar data' });
   }
-  
-  if (cursor < dayEndMs) {
-    freeSlots.push({ start: cursor, end: dayEndMs });
-  }
-  
-  return freeSlots;
-}
+});

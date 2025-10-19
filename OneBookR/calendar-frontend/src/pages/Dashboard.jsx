@@ -293,14 +293,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       console.log('All joined! Showing calendar comparison...');
       // Remove hash-based navigation and page reload
       setStatusLoaded(true);
-      // Force re-render of calendar component by fetching tokens again
-      fetch(`https://www.onebookr.se/api/group/${groupId}/tokens`)
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.tokens) {
-            setGroupTokens(data.tokens);
-          }
-        });
+      // Force re-render of calendar component
+      setGroupTokens(prevTokens => [...prevTokens]);
     }
   }, [groupId, groupStatus.allJoined]);
 
@@ -563,7 +557,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       )}
 
       {/* Visa kalendern när det inte är en grupp, eller när alla har anslutit */}
-      {tokens.length > 0 && (!groupId || directAccess === 'true' || groupStatus.allJoined) && (
+      {(!groupId || directAccess === 'true' || groupStatus.allJoined) && (
         <CompareCalendar
           myToken={user.accessToken}
           invitedTokens={invitedTokens}
@@ -580,3 +574,75 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     </>
   );
 }
+
+// Add after useEffect hooks
+
+const handleTokenError = async (error, userEmail) => {
+  if (error.response?.status === 401) {
+    const data = error.response.data;
+    
+    if (data.newToken) {
+      // Uppdatera token i localStorage
+      const savedUser = JSON.parse(localStorage.getItem('bookr_user'));
+      savedUser.accessToken = data.newToken;
+      localStorage.setItem('bookr_user', JSON.stringify(savedUser));
+      // Uppdatera user state
+      window.location.reload();
+      return;
+    }
+    
+    if (data.requiresReauth) {
+      // Användaren måste logga in igen
+      localStorage.removeItem('bookr_user');
+      const state = btoa(JSON.stringify({ 
+        groupId, 
+        inviteeId, 
+        hash: window.location.hash 
+      }));
+      window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
+      return;
+    }
+  }
+  
+  setError('Ett fel uppstod vid hämtning av kalenderdata. Försök igen.');
+};
+
+// Modify fetchAvailability to use new error handling
+const fetchAvailability = async () => {
+  setIsLoadingAvailability(true);
+  setError(null);
+  
+  try {
+    const allTokens = [...invitedTokens, myToken].filter(Boolean);
+    const response = await fetch('https://www.onebookr.se/api/availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tokens: allTokens,
+        refreshTokens: allTokens.map(token => {
+          const user = JSON.parse(localStorage.getItem('bookr_user'));
+          return user?.refreshToken;
+        }),
+        timeMin: isMultiDay ? multiDayStart : timeMin || new Date().toISOString(),
+        timeMax: isMultiDay ? multiDayEnd : timeMax || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        duration: parseInt(meetingDuration) || 60,
+        dayStart,
+        dayEnd
+      })
+    });
+
+    if (!response.ok) {
+      const error = new Error('API request failed');
+      error.response = response;
+      throw error;
+    }
+
+    const data = await response.json();
+    setAvailability(data.availability || []);
+    setHasSearched(true);
+  } catch (error) {
+    await handleTokenError(error, user.email);
+  } finally {
+    setIsLoadingAvailability(false);
+  }
+};
