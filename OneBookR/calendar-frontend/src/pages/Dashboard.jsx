@@ -83,10 +83,14 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           const currentUrl = window.location.href;
           localStorage.setItem('bookr_return_url', currentUrl);
           
-          // Omdirigera till logout som rensar allt och sedan tillbaka till login
+          // Rensa användardata
+          localStorage.removeItem('bookr_user');
+          sessionStorage.removeItem('hasTriedSession');
+          
+          // Omdirigera omedelbart till logout
           setTimeout(() => {
             window.location.href = 'https://www.onebookr.se/auth/logout';
-          }, 2000);
+          }, 100); // Mycket kortare timeout för snabbare omdirigering
         } else {
           console.log('Token is valid');
           setTokenExpired(false);
@@ -395,11 +399,31 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Typography>
           <Typography variant="body1" sx={{ color: '#666', mb: 3 }}>
             För säkerhets skull behöver du logga in igen för att fortsätta.
-            Du omdirigeras automatiskt...
           </Typography>
-          <Typography variant="caption" sx={{ color: '#999' }}>
-            Om inget händer, klicka här för att logga in manuellt
-          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => {
+              localStorage.setItem('bookr_return_url', window.location.href);
+              window.location.href = 'https://www.onebookr.se/auth/logout';
+            }}
+            sx={{
+              py: 1.5,
+              px: 4,
+              borderRadius: 3,
+              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+              fontWeight: 600,
+              fontSize: '1.1rem',
+              boxShadow: '0 4px 20px rgba(99,91,255,0.4)',
+              '&:hover': {
+                background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                transform: 'translateY(-2px)',
+                boxShadow: '0 8px 32px rgba(99,91,255,0.5)',
+              }
+            }}
+          >
+            Logga in igen
+          </Button>
         </Box>
       </Container>
     );
