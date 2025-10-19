@@ -211,9 +211,11 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
       const data = await res.json();
 
       if (res.ok) {
-        setAvailability(data);
+        console.log('Received availability from backend:', data);
+        // Säkerställ att vi endast använder de gemensamma lediga tiderna från backend
+        setAvailability(Array.isArray(data) ? data : []);
         setError(null);
-        setToast({ open: true, message: `Hittade ${data.length} lediga tider`, severity: 'success' });
+        setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} lediga tider`, severity: 'success' });
       } else {
         setAvailability([]);
         setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
