@@ -1134,7 +1134,7 @@ app.get('/api/group/:groupId/status', async (req, res) => {
     const invitedEmails = invitations.map(inv => inv.email);
     
     // Separera accepterade och nekade inbjudningar
-    const acceptedInvitations
+    const acceptedInvitations = invitations.filter(inv => inv.responded && inv.accepted);
     const declinedInvitations = invitations.filter(inv => inv.responded && !inv.accepted);
     const pendingInvitations = invitations.filter(inv => !inv.responded);
     
