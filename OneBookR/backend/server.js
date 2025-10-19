@@ -796,67 +796,40 @@ app.post('/api/availability', async (req, res) => {
     const allBusyTimesWithTimezones = await Promise.all(
       tokens.map(async (token, index) => {
         const provider = providers && providers[index] ? providers[index] : 'google';
-        console.log(`Fetching calendar events for token ${index + 1}/${tokens.length}, provider: ${provider}`);
+        console.log(`Fetching events for token ${index} with provider: ${provider}`);
+        const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
         
-        try {
-          const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
-          console.log(`Token ${index + 1} returned ${events.length} events`);
+        // Konvertera events till upptagna tider
+        const busyTimes = (events || []).map(event => {
+          // Se till att start och end är giltiga objekt
+          if (!event.start || !event.end) {
+            return null;
+          }
           
-          // Säker hantering av kalenderhändelser
-          const processedEvents = events
-            .filter(e => e && (e.start || {}) && (e.end || {})) // Filtrera ogiltiga events
-            .map(e => {
-              try {
-                let startTime, endTime;
-                
-                // Hantera heldagsevent
-                if (e.start.date && !e.start.dateTime) {
-                  startTime = new Date(e.start.date + 'T00:00:00').getTime();
-                  endTime = new Date(e.end.date + 'T00:00:00').getTime();
-                  
-                  // Säkerhetskontroll för heldagsevent
-                  if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
-                    return null;
-                  }
-                  
-                  return {
-                    start: startTime,
-                    end: endTime,
-                    title: e.summary || 'Upptagen',
-                    isAllDay: true
-                  };
-                } else if (e.start.dateTime && e.end.dateTime) {
-                  // Vanligt event med dateTime
-                  startTime = new Date(e.start.dateTime).getTime();
-                  endTime = new Date(e.end.dateTime).getTime();
-                  
-                  // Säkerhetskontroll
-                  if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
-                    return null;
-                  }
-                  
-                  return {
-                    start: startTime,
-                    end: endTime,
-                    title: e.summary || 'Upptagen',
-                    isAllDay: false
-                  };
-                }
-                
-                return null; // Ogiltigt event
-              } catch (error) {
-                console.warn('Error processing calendar event:', error);
-                return null;
-              }
-            })
-            .filter(Boolean); // Ta bort null-värden
-          console.log(`Token ${index + 1} processed ${processedEvents.length} events`);
-          return { events: processedEvents, timezone };
-        } catch (error) {
-          console.error(`Error fetching calendar for token ${index + 1}:`, error.message);
-          // Returnera tom kalender för tokens som misslyckas
-          return { events: [], timezone: 'Europe/Stockholm' };
-        }
+          // Hantera heldagsevent
+          if (event.isAllDay || event.start.date) {
+            const startOfDay = new Date(event.start.date || event.start.dateTime);
+            startOfDay.setHours(0, 0, 0, 0);
+            
+            // End date for all-day events is exclusive, so it's the start of the next day
+            const endOfDay = new Date(event.end.date || event.end.dateTime);
+            
+            return {
+              start: startOfDay.getTime(),
+              end: endOfDay.getTime(),
+              title: event.summary || 'Upptagen (heldag)'
+            };
+          }
+          
+          // Hantera vanliga events
+          return {
+            start: new Date(event.start.dateTime).getTime(),
+            end: new Date(event.end.dateTime).getTime(),
+            title: event.summary || 'Upptagen'
+          };
+        }).filter(Boolean); // Ta bort null-värden
+        
+        return { events: busyTimes, timezone };
       })
     );
     
@@ -2006,10 +1979,6 @@ app.get('/api/venues/:venueId', async (req, res) => {
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
 
 // Svara på inbjudan (acceptera eller neka)
