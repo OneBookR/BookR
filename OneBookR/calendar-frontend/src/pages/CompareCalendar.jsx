@@ -86,7 +86,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
       const fetchSuggestions = () => {
         fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
           .then(res => res.json())
-          .then data => {
+          .then((data) => {
             setSuggestions(data.suggestions || []);
             // Kontrollera om något förslag blev finalized
             const finalizedSuggestions = (data.suggestions || []).filter(s => s.finalized);
