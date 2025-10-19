@@ -621,9 +621,13 @@ const fetchAvailability = async () => {
       return;
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 sekunder timeout
+    
     const response = await fetch('https://www.onebookr.se/api/availability', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         tokens: allTokens,
         refreshTokens: allTokens.map(token => {

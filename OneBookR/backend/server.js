@@ -20,6 +20,14 @@ const app = express();
 app.set('trust proxy', 1); // NYTT: Behövs för secure cookies bakom proxy (Railway/Heroku/Render)
 app.use(express.json());
 app.use(bodyParser.json());
+
+// Öka timeout för server
+app.use((req, res, next) => {
+  // Sätt server timeout till 120 sekunder
+  req.setTimeout(120000);
+  res.setTimeout(120000);
+  next();
+});
 const PORT = process.env.PORT || 3000;
 
 // Maintenance mode
@@ -771,6 +779,10 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
 }
 
 app.post('/api/availability', async (req, res) => {
+  // Sätt timeout för denna request till 30 sekunder
+  req.setTimeout(30000);
+  res.setTimeout(30000);
+
   const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd, providers } = req.body;
 
   console.log('=== AVAILABILITY API DEBUG ===');
