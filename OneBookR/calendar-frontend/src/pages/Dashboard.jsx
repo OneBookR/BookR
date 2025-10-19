@@ -252,26 +252,40 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   useEffect(() => {
     if (groupId) {
       // Hämta status för gruppen
-      const pollStatus = () => {
-        fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
-          .then(res => res.json())
-          .then(status => {
+      const pollStatus = async () => {
+        try {
+          const [statusRes, joinedRes] = await Promise.all([
+            fetch(`https://www.onebookr.se/api/group/${groupId}/status`),
+            fetch(`https://www.onebookr.se/api/group/${groupId}/joined`)
+          ]);
+
+          if (statusRes.ok) {
+            const status = await statusRes.json();
             console.log('Group status updated:', status);
+            
+            // Kontrollera explicit om alla har anslutit
+            if (status.current >= status.expected) {
+              status.allJoined = true;
+            }
+            
             setGroupStatus(status);
             setStatusLoaded(true);
-          })
-          .catch(err => console.log('Status poll failed:', err));
-        // Hämta anslutna e-postadresser (om backend stödjer det)
-        fetch(`https://www.onebookr.se/api/group/${groupId}/joined`)
-          .then(res => res.json())
-          .then(data => setJoinedEmails(data.joined || []))
-          .catch(() => setJoinedEmails([]));
+          }
+
+          if (joinedRes.ok) {
+            const data = await joinedRes.json();
+            setJoinedEmails(data.joined || []);
+          }
+        } catch (err) {
+          console.error('Status poll failed:', err);
+        }
       };
+
       pollStatus();
-      const interval = setInterval(pollStatus, 5000); // Kortare intervall för snabbare uppdatering
+      const interval = setInterval(pollStatus, 3000); // Snabbare polling
       return () => clearInterval(interval);
     }
-  }, [groupId, user.accessToken]);
+  }, [groupId]);
 
   // Navigera automatiskt till jämförelse när alla är inne
   useEffect(() => {
@@ -301,8 +315,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     ? `${window.location.origin}${window.location.pathname}?group=${groupId}`
     : '';
 
-  // NYTT: Visa väntrum om vi väntar på andra och inte alla har anslutit
-  const waitingForOthers = groupId && !groupStatus.allJoined && statusLoaded && directAccess !== 'true';
+  // NYTT: Visa väntrum endast om vi aktivt väntar på andra att ansluta
+  const waitingForOthers = groupId && !groupStatus.allJoined && statusLoaded && !directAccess && groupStatus.expected > 1;
 
   if (!user) {
     return (
@@ -542,8 +556,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         </Box>
       )}
 
-      {/* Visa kalendern först när alla är inne */}
-      {((!groupId && directAccess !== 'true') || groupStatus.allJoined) && (
+      {/* Visa kalendern när det inte är en grupp, eller när alla har anslutit */}
+      {(!groupId || directAccess === 'true' || groupStatus.allJoined) && (
         <CompareCalendar
           myToken={user.accessToken}
           invitedTokens={invitedTokens}
