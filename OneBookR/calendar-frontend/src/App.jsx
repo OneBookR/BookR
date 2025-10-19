@@ -118,8 +118,11 @@ function App() {
     }
 
     // Om vi redan har en användare, validera token först
-    if (user && user.accessToken) {
-      // Validera token asynkront
+    // MEN - om det finns en grupplänk, låt Dashboard hantera token-validering istället
+    const hasGroupLink = urlParams.get('group');
+    
+    if (user && user.accessToken && !hasGroupLink) {
+      // Validera token asynkront (endast för icke-grupplänkar)
       fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
         headers: {
           Authorization: `Bearer ${user.accessToken}`,
@@ -145,6 +148,10 @@ function App() {
       .catch(() => {
         setLoading(false);
       });
+      return;
+    } else if (user && user.accessToken && hasGroupLink) {
+      // För grupplänkar, skippa validering här och låt Dashboard hantera det
+      setLoading(false);
       return;
     }
 
