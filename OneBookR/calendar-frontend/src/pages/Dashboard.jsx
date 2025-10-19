@@ -263,29 +263,13 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     }
   }, [groupId, user.accessToken]);
 
-  // Ta bort reload vid allJoined!
-  // useEffect(() => {
-  //   if (groupId && groupStatus.allJoined) {
-  //     if (!window.location.hash.includes('#joined')) {
-  //       window.location.hash = '#joined';
-  //       window.location.reload();
-  //     }
-  //   }
-  // }, [groupId, groupStatus.allJoined]);
-
-  // NYTT: Navigera automatiskt till jämförelse när alla är inne (även för hosten)
+  // Navigera automatiskt till jämförelse när alla är inne
   useEffect(() => {
-    let refreshTimeout;
-    if (groupId && groupStatus.allJoined && window.location.hash !== '#joined') {
-      // Vänta 2 sekunder innan refresh för att undvika race conditions
-      refreshTimeout = setTimeout(() => {
-        window.location.hash = '#joined';
-        window.location.reload();
-      }, 2000);
+    if (groupId && groupStatus.allJoined && !window.location.hash.includes('#joined')) {
+      console.log('All joined! Reloading to show calendar comparison...');
+      window.location.hash = '#joined';
+      window.location.reload();
     }
-    return () => {
-      if (refreshTimeout) clearTimeout(refreshTimeout);
-    };
   }, [groupId, groupStatus.allJoined]);
 
   // Om ingen grupp, använd bara din egen token

@@ -1081,39 +1081,72 @@ app.post('/api/invite', async (req, res) => {
         // Extra loggning för felsökning
         console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
 
-        // Skicka mejl till alla inbjudna (en och en, så att to: är korrekt)
+        // Skicka mejl till alla inbjudna med retry-logik
+        const emailResults = [];
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
           // Skicka inte till samma adress som avsändaren
           if (inv.email && inv.email !== creatorEmail) {
-            try {
-              const emailSubject = isTeamMeeting ? `Inbjudan till teammöte: ${teamName}` : 'Inbjudan till Kalenderjämförelse';
-              const emailText = isTeamMeeting 
-                ? `Hej!\n\n${creatorEmail} har bjudit in dig till ett teammöte för "${teamName}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
-                : `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`;
-              
-              await resend.emails.send({
-                from: 'BookR <info@onebookr.se>',
-                to: inv.email,
-                subject: emailSubject,
-                text: emailText
-              });
-              console.log('Inbjudningsmejl skickat till:', inv.email);
-            } catch (sendErr) {
-              console.error('Fel vid utskick till', inv.email, sendErr);
+            let emailSent = false;
+            let attempts = 0;
+            const maxAttempts = 3;
+            
+            while (!emailSent && attempts < maxAttempts) {
+              attempts++;
+              try {
+                const emailSubject = isTeamMeeting ? `Inbjudan till teammöte: ${teamName}` : 'Inbjudan till Kalenderjämförelse';
+                const emailText = isTeamMeeting 
+                  ? `Hej!\n\n${creatorEmail} har bjudit in dig till ett teammöte för "${teamName}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
+                  : `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`;
+                
+                const result = await resend.emails.send({
+                  from: 'BookR <info@onebookr.se>',
+                  to: inv.email,
+                  subject: emailSubject,
+                  text: emailText
+                });
+                
+                console.log(`Inbjudningsmejl skickat till ${inv.email} (försök ${attempts}/${maxAttempts}), ID: ${result.id}`);
+                emailResults.push({ email: inv.email, success: true, attempts, id: result.id });
+                emailSent = true;
+              } catch (sendErr) {
+                console.error(`Fel vid utskick till ${inv.email} (försök ${attempts}/${maxAttempts}):`, sendErr.message);
+                if (attempts === maxAttempts) {
+                  emailResults.push({ email: inv.email, success: false, attempts, error: sendErr.message });
+                } else {
+                  // Vänta 1 sekund innan nästa försök
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+              }
             }
           } else {
             console.log('Hoppar över att skicka inbjudan till skaparen:', inv.email);
           }
         }
+        
+        // Logga resultat
+        const successfulEmails = emailResults.filter(r => r.success);
+        const failedEmails = emailResults.filter(r => !r.success);
+        console.log(`Mejlutskick slutfört: ${successfulEmails.length} lyckades, ${failedEmails.length} misslyckades`);
+        if (failedEmails.length > 0) {
+          console.error('Misslyckade mejl:', failedEmails);
+        }
 
-        // Skicka mejl till skaparen (creatorEmail) om att inbjudan har skickats
+        // Skicka bekräftelsemejl till skaparen
         try {
-          const invitedList = invitees.map((inv, i) => `${inv.email}: ${inviteLinks[i]}`).join('\n');
+          const successfulEmails = emailResults.filter(r => r.success);
+          const failedEmails = emailResults.filter(r => !r.success);
+          
+          const invitedList = invitees.map((inv, i) => {
+            const result = emailResults.find(r => r.email === inv.email);
+            const status = result ? (result.success ? '✅ Skickat' : '❌ Misslyckades') : '⏭️ Hoppades över';
+            return `${inv.email}: ${inviteLinks[i]} (${status})`;
+          }).join('\n');
+          
           const creatorSubject = isTeamMeeting ? `Du har bjudit in personer till teammöte: ${teamName}` : 'Du har bjudit in personer till din kalendergrupp';
           const creatorText = isTeamMeeting
-            ? `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till teammötet "${teamName}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`
-            : `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\nDe har fått varsin unik länk för att gå med.\n\nHälsningar,\nBookR-teamet`;
+            ? `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till teammötet "${teamName}":\n\n${invitedList}\n\n📊 Resultat: ${successfulEmails.length} mejl skickade, ${failedEmails.length} misslyckades\n\nHälsningar,\nBookR-teamet`
+            : `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\n📊 Resultat: ${successfulEmails.length} mejl skickade, ${failedEmails.length} misslyckades\n\nHälsningar,\nBookR-teamet`;
           
           await resend.emails.send({
             from: 'BookR <info@onebookr.se>',
@@ -1121,9 +1154,9 @@ app.post('/api/invite', async (req, res) => {
             subject: creatorSubject,
             text: creatorText
           });
-          console.log('Mejl skickat till skaparen:', creatorEmail);
+          console.log('Bekräftelsemejl skickat till skaparen:', creatorEmail);
         } catch (creatorMailErr) {
-          console.error('Fel vid mejlutskick till skaparen:', creatorMailErr);
+          console.error('Fel vid bekräftelsemejl till skaparen:', creatorMailErr);
         }
 
         console.log('Mejl skickade till:', invitees.map(inv => inv.email));
@@ -1178,13 +1211,20 @@ app.post('/api/group/join', async (req, res) => {
     const updatedTokens = Array.from(new Set([...existingTokens, token].filter(Boolean)));
     const updatedEmails = Array.from(new Set([...existingEmails, email].filter(Boolean)));
 
+    // Kontrollera om alla har gått med genom att jämföra med inbjudningar
+    const invitations = await getInvitationsByGroup(groupId);
+    const invitedEmails = invitations.map(inv => inv.email);
+    const expected = 1 + invitedEmails.length; // Skapare + inbjudna
+    const allJoined = updatedEmails.length >= expected;
+
     // Uppdatera gruppen i Firebase
     await updateGroup(groupId, {
       tokens: updatedTokens,
-      joinedEmails: updatedEmails
+      joinedEmails: updatedEmails,
+      allJoined
     });
 
-    console.log('User joined group:', { groupId, email, totalTokens: updatedTokens.length, totalEmails: updatedEmails.length });
+    console.log('User joined group:', { groupId, email, totalTokens: updatedTokens.length, totalEmails: updatedEmails.length, allJoined });
     res.json({ success: true });
   } catch (error) {
     console.error('Error joining group:', error);
@@ -1225,6 +1265,11 @@ app.get('/api/group/:groupId/status', async (req, res) => {
     const current = group.joinedEmails ? group.joinedEmails.length : 1;
     const declined = declinedInvitations.length;
     const allJoined = current >= (expected - declined) && pendingInvitations.length === 0;
+
+    // Uppdatera allJoined i gruppen om det har ändrats
+    if (group.allJoined !== allJoined) {
+      await updateGroup(groupId, { allJoined });
+    }
 
     res.json({
       allJoined,
@@ -1545,17 +1590,43 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         mailText += `\nDeltagare:\n${allEmails.join('\n')}\n`;
         mailText += `\nDu hittar även mötet i din Google Kalender.\n\nHälsningar,\nBookR-teamet`;
 
-        // Skicka mejl till ALLA (en och en, så att alla får ett eget mejl)
+        // Skicka mejl till ALLA med retry-logik
+        const meetingEmailResults = [];
         for (const email of allEmails) {
-          await resend.emails.send({
-            from: 'BookR <info@onebookr.se>',
-            to: email,
-            subject: 'Möte bokat!',
-            text: mailText,
-          });
+          let emailSent = false;
+          let attempts = 0;
+          const maxAttempts = 3;
+          
+          while (!emailSent && attempts < maxAttempts) {
+            attempts++;
+            try {
+              const result = await resend.emails.send({
+                from: 'BookR <info@onebookr.se>',
+                to: email,
+                subject: 'Möte bokat!',
+                text: mailText,
+              });
+              
+              console.log(`Mötesmejl skickat till ${email} (försök ${attempts}/${maxAttempts}), ID: ${result.id}`);
+              meetingEmailResults.push({ email, success: true, attempts, id: result.id });
+              emailSent = true;
+            } catch (emailErr) {
+              console.error(`Fel vid mötesmejl till ${email} (försök ${attempts}/${maxAttempts}):`, emailErr.message);
+              if (attempts === maxAttempts) {
+                meetingEmailResults.push({ email, success: false, attempts, error: emailErr.message });
+              } else {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            }
+          }
         }
-
-        console.log('Verifieringsmejl skickat till:', allEmails);
+        
+        const successfulMeetingEmails = meetingEmailResults.filter(r => r.success);
+        const failedMeetingEmails = meetingEmailResults.filter(r => !r.success);
+        console.log(`Mötesmejl slutfört: ${successfulMeetingEmails.length} lyckades, ${failedMeetingEmails.length} misslyckades`);
+        if (failedMeetingEmails.length > 0) {
+          console.error('Misslyckade mötesmejl:', failedMeetingEmails);
+        }
 
     } catch (err) {
       console.error('Fel vid Google Calendar-bokning eller mejl:', err, err?.response?.data);
