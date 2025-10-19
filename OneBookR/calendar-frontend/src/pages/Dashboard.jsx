@@ -275,10 +275,12 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   // Navigera automatiskt till jämförelse när alla är inne
   useEffect(() => {
-    if (groupId && groupStatus.allJoined && !window.location.hash.includes('#joined')) {
-      console.log('All joined! Reloading to show calendar comparison...');
-      window.location.hash = '#joined';
-      window.location.reload();
+    if (groupId && groupStatus.allJoined) {
+      console.log('All joined! Showing calendar comparison...');
+      // Remove hash-based navigation and page reload
+      setStatusLoaded(true);
+      // Force re-render of calendar component
+      setGroupTokens(prevTokens => [...prevTokens]);
     }
   }, [groupId, groupStatus.allJoined]);
 
@@ -299,8 +301,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     ? `${window.location.origin}${window.location.pathname}?group=${groupId}`
     : '';
 
-  // NYTT: Visa väntrum om bara en token finns OCH vi inte väntar på att tokens ska laddas
-  const waitingForOthers = groupId && tokens.length < 2 && directAccess !== 'true' && !groupStatus.allJoined;
+  // NYTT: Visa väntrum om vi väntar på andra och inte alla har anslutit
+  const waitingForOthers = groupId && !groupStatus.allJoined && statusLoaded && directAccess !== 'true';
 
   if (!user) {
     return (
