@@ -15,12 +15,13 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   const [groupTokens, setGroupTokens] = useState([]);
   const [showCompare, setShowCompare] = useState(false);
   const [groupStatus, setGroupStatus] = useState({
-    allJoined: true,
+    allJoined: false,
     current: 1,
     expected: 1,
     invited: [],
   });
   const [joinedEmails, setJoinedEmails] = useState([]);
+  const [statusLoaded, setStatusLoaded] = useState(false);
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
@@ -80,6 +81,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         invited: contactEmails,
         groupName: teamName || `Möte med ${contactName || contactEmails[0]}`
       });
+      setStatusLoaded(true);
       
       console.log('Direct access setup complete - using only user token');
       return; // Stop further execution in this effect
@@ -97,6 +99,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           invited: contactEmails,
           groupName: `Möte med ${contactName || contactEmails[0]}`
         });
+        setStatusLoaded(true);
         return;
       }
       
@@ -119,6 +122,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
             invited: [email],
             groupName: `Möte med ${email}`
           });
+          setStatusLoaded(true);
           return;
         }
       }
@@ -158,6 +162,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
                     invited: [groupData.creatorEmail],
                     groupName: groupData.groupName || 'Direktåtkomst-möte'
                   });
+                  setStatusLoaded(true);
                   console.log('Direktåtkomst aktiverat för grupp:', groupId);
                 }
               })
@@ -188,6 +193,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           invited: memberEmails,
           groupName: `${teamName} - Teammöte`
         });
+        setStatusLoaded(true);
         // Fortsätt med vanlig grupplogik för team-möten
       }
       
@@ -252,6 +258,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           .then(status => {
             console.log('Group status updated:', status);
             setGroupStatus(status);
+            setStatusLoaded(true);
           })
           .catch(err => console.log('Status poll failed:', err));
         // Hämta anslutna e-postadresser (om backend stödjer det)
@@ -393,8 +400,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Box>
         )}
       
-      {/* Visa "väntar på andra" om inte alla är inne OCH vi inte väntar på tokens */}
-      {groupId && !groupStatus.allJoined && tokens.length > 0 && (
+      {/* Visa "väntar på andra" om inte alla är inne OCH status har laddats */}
+      {groupId && !groupStatus.allJoined && statusLoaded && (
         <Box sx={{ my: 5, display: 'flex', justifyContent: 'center' }}>
           <Box sx={{
             maxWidth: 500,
