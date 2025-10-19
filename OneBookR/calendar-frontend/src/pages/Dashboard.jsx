@@ -249,7 +249,10 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       const pollStatus = () => {
         fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
           .then(res => res.json())
-          .then(status => setGroupStatus(status))
+          .then(status => {
+            console.log('Group status updated:', status);
+            setGroupStatus(status);
+          })
           .catch(err => console.log('Status poll failed:', err));
         // Hämta anslutna e-postadresser (om backend stödjer det)
         fetch(`https://www.onebookr.se/api/group/${groupId}/joined`)
@@ -258,7 +261,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           .catch(() => setJoinedEmails([]));
       };
       pollStatus();
-      const interval = setInterval(pollStatus, 15000);
+      const interval = setInterval(pollStatus, 5000); // Kortare intervall för snabbare uppdatering
       return () => clearInterval(interval);
     }
   }, [groupId, user.accessToken]);
@@ -289,8 +292,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     ? `${window.location.origin}${window.location.pathname}?group=${groupId}`
     : '';
 
-  // NYTT: Visa väntrum om bara en token finns
-  const waitingForOthers = groupId && tokens.length < 2 && directAccess !== 'true';
+  // NYTT: Visa väntrum om bara en token finns OCH vi inte väntar på att tokens ska laddas
+  const waitingForOthers = groupId && tokens.length < 2 && directAccess !== 'true' && !groupStatus.allJoined;
 
   if (!user) {
     return (
@@ -335,7 +338,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   return (
     <>
-      {((!groupId && directAccess !== 'true') || groupStatus.allJoined) && !waitingForOthers && (
+      {((!groupId && directAccess !== 'true') || groupStatus.allJoined) && (
         <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: 4, px: { xs: 1, sm: 2, md: 3 } }}>
           {/* Clean Banner */}
           <Box sx={{
@@ -390,8 +393,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Box>
         )}
       
-      {/* Visa "väntar på andra" om inte alla är inne */}
-      {groupId && !groupStatus.allJoined && (
+      {/* Visa "väntar på andra" om inte alla är inne OCH vi inte väntar på tokens */}
+      {groupId && !groupStatus.allJoined && tokens.length > 0 && (
         <Box sx={{ my: 5, display: 'flex', justifyContent: 'center' }}>
           <Box sx={{
             maxWidth: 500,
@@ -529,37 +532,9 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Box>
         </Box>
       )}
-      {waitingForOthers && (
-        <Box sx={{ my: 5, display: 'flex', justifyContent: 'center' }}>
-          <Box sx={{
-            maxWidth: 500,
-            width: '100%',
-            bgcolor: '#fff',
-            borderRadius: 3,
-            boxShadow: '0 2px 8px rgba(60,64,67,.06)',
-            border: '1px solid #e0e3e7',
-            p: 4,
-            textAlign: 'center'
-          }}>
-            <Typography variant="h5" gutterBottom sx={{
-              fontWeight: 600,
-              color: '#0a2540',
-              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-              mb: 2
-            }}>
-              👥 Väntar på fler deltagare
-            </Typography>
-            <Typography variant="body1" sx={{
-              color: '#425466',
-              fontSize: 16
-            }}>
-              Minst en person till behöver ansluta innan kalenderjämförelse kan börja
-            </Typography>
-          </Box>
-        </Box>
-      )}
+
       {/* Visa kalendern först när alla är inne */}
-      {((!groupId && directAccess !== 'true') || groupStatus.allJoined) && !waitingForOthers && (
+      {((!groupId && directAccess !== 'true') || groupStatus.allJoined) && (
         <CompareCalendar
           myToken={user.accessToken}
           invitedTokens={invitedTokens}
