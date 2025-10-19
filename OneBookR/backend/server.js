@@ -364,13 +364,14 @@ const fetchMicrosoftCalendarEvents = async (token, min, max) => {
     }
 
     const data = await response.json();
+    // Konvertera Microsoft-events till standardformat
     return data.value.map(event => ({
       id: event.id,
       title: event.subject || 'Upptagen',
-      start: { dateTime: event.start.dateTime },
-      end: { dateTime: event.end.dateTime },
+      start: new Date(event.start.dateTime).getTime(),
+      end: new Date(event.end.dateTime).getTime(),
       transparency: event.showAs === 'free' ? 'transparent' : 'opaque'
-    }));
+    })).filter(event => event.transparency !== 'transparent');
   } catch (err) {
     console.error('Error fetching Microsoft calendar:', err);
     throw err;
@@ -406,7 +407,15 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
     }
 
     const data = await response.json();
-    return data.items;
+    // Konvertera Google Calendar events till standardformat
+    return data.items
+      .filter(event => event.transparency !== 'transparent')
+      .map(event => ({
+        id: event.id,
+        title: event.summary || 'Upptagen',
+        start: new Date(event.start.dateTime || event.start.date).getTime(),
+        end: new Date(event.end.dateTime || event.end.date).getTime()
+      }));
   } catch (err) {
     console.error('Error fetching Google calendar:', err);
     throw err;
@@ -417,8 +426,15 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
 const mergeBusyTimes = (busyTimes) => {
   if (!Array.isArray(busyTimes) || busyTimes.length === 0) return [];
   
-  const filtered = busyTimes
-    .filter(t => typeof t.start === 'number' && typeof t.end === 'number' && t.end > t.start)
+  // Konvertera alla tider till millisekunder om de inte redan är det
+  const normalized = busyTimes.map(event => ({
+    ...event,
+    start: typeof event.start === 'number' ? event.start : new Date(event.start).getTime(),
+    end: typeof event.end === 'number' ? event.end : new Date(event.end).getTime()
+  }));
+  
+  const filtered = normalized
+    .filter(t => t.end > t.start) // Validera att sluttid är efter starttid
     .sort((a, b) => a.start - b.start);
 
   if (filtered.length === 0) return [];
