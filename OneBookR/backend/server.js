@@ -26,16 +26,8 @@ const PORT = process.env.PORT || 3000;
 const MAINTENANCE_MODE = process.env.MAINTENANCE_MODE === 'true';
 console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist)' : 'OFF (full app available)');
 
-// Servera frontend static files med förbättrad felhantering
-app.use((req, res, next) => {
-  express.static('OneBookR/calendar-frontend/dist')(req, res, err => {
-    if (err) {
-      console.error('Static file error:', err);
-      return res.status(500).json({ error: 'Error serving static files' });
-    }
-    next();
-  });
-});
+// Servera frontend static files
+app.use(express.static('OneBookR/calendar-frontend/dist'));
 
 // Dashboard route
 app.get('/dashboard', (req, res) => {
@@ -56,24 +48,19 @@ app.get('/terms-of-service', (req, res) => {
 
 // Middleware
 app.use(cors({
-  origin: ['https://www.onebookr.se', 'http://localhost:5173'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key']
+  origin: 'https://www.onebookr.se',
+  credentials: true
 }));
-
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'default-secret-key',
+  secret: process.env.SESSION_SECRET,
   resave: false,
-  saveUninitialized: false,
-  rolling: true,
+  saveUninitialized: true,
   cookie: {
     sameSite: 'none',
     secure: true,
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  },
-  name: 'bookr_session'
+    httpOnly: true
+    // Ta bort maxAge för att göra cookien till en session-cookie (försvinner när webbläsaren stängs)
+  }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -2419,26 +2406,3 @@ function findFreeSlotsInDay(busyTimes, dayStart, dayEnd) {
   
   return freeSlots;
 }
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('Global error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-// Request timeout handler
-app.use((req, res, next) => {
-  res.setTimeout(30000, () => {
-    res.status(503).json({ error: 'Request timeout' });
-  });
-  next();
-});
-
-// Catch all unhandled errors
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception:', err);
-});
-
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled rejection:', err);
-});

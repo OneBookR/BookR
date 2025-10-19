@@ -293,8 +293,14 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       console.log('All joined! Showing calendar comparison...');
       // Remove hash-based navigation and page reload
       setStatusLoaded(true);
-      // Force re-render of calendar component
-      setGroupTokens(prevTokens => [...prevTokens]);
+      // Force re-render of calendar component by fetching tokens again
+      fetch(`https://www.onebookr.se/api/group/${groupId}/tokens`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.tokens) {
+            setGroupTokens(data.tokens);
+          }
+        });
     }
   }, [groupId, groupStatus.allJoined]);
 
@@ -557,7 +563,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       )}
 
       {/* Visa kalendern när det inte är en grupp, eller när alla har anslutit */}
-      {(!groupId || directAccess === 'true' || groupStatus.allJoined) && (
+      {tokens.length > 0 && (!groupId || directAccess === 'true' || groupStatus.allJoined) && (
         <CompareCalendar
           myToken={user.accessToken}
           invitedTokens={invitedTokens}

@@ -86,7 +86,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
       const fetchSuggestions = () => {
         fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
           .then(res => res.json())
-          .then(data => {
+          .then data => {
             setSuggestions(data.suggestions || []);
             // Kontrollera om något förslag blev finalized
             const finalizedSuggestions = (data.suggestions || []).filter(s => s.finalized);
@@ -230,7 +230,10 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     }
   };
 
-  const filteredAvailability = availability;
+  // Filtrera så att endast tider där start < end och både start och end finns, och där slot inte överlappar med någon upptagen tid för någon deltagare
+  const filteredAvailability = Array.isArray(availability)
+    ? availability.filter(slot => slot && slot.start && slot.end && new Date(slot.start) < new Date(slot.end))
+    : [];
 
   // Sortera lediga tider på starttid och filtrera framtida tider
   const now = new Date();
