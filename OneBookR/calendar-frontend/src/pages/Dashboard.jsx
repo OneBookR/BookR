@@ -530,159 +530,172 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Box>
         )}
       
-      {/* Visa "väntar på andra" om inte alla är inne OCH status har laddats */}
-      {groupId && !groupStatus.allJoined && statusLoaded && (
-        <Box sx={{ my: 5, display: 'flex', justifyContent: 'center' }}>
-          <Box sx={{
-            maxWidth: 500,
-            width: '100%',
-            bgcolor: '#fff',
-            borderRadius: 3,
-            boxShadow: '0 2px 8px rgba(60,64,67,.06)',
-            border: '1px solid #e0e3e7',
-            p: 4,
-            textAlign: 'center'
+      {/* VIKTIG FIX: Rendera alltid CompareCalendar (för att React hooks ska vara konsistenta) */}
+      {/* Men visa väntrum OVANPÅ om inte alla är inne */}
+      <Box sx={{ position: 'relative' }}>
+        {/* Visa väntrum som overlay om inte alla är inne */}
+        {groupId && !groupStatus.allJoined && statusLoaded && (
+          <Box sx={{ 
+            position: 'relative',
+            zIndex: 10,
+            my: 5, 
+            display: 'flex', 
+            justifyContent: 'center' 
           }}>
-            <Typography variant="h5" gutterBottom sx={{
-              fontWeight: 600,
-              color: '#0a2540',
-              fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-              mb: 2
+            <Box sx={{
+              maxWidth: 500,
+              width: '100%',
+              bgcolor: '#fff',
+              borderRadius: 3,
+              boxShadow: '0 2px 8px rgba(60,64,67,.06)',
+              border: '1px solid #e0e3e7',
+              p: 4,
+              textAlign: 'center'
             }}>
-              ⏳ Väntar på att alla ska ansluta
-            </Typography>
-            {(groupStatus.groupName || teamName) && (
-              <Typography variant="h6" sx={{ color: '#1976d2', mb: 2 }}>
-                {groupStatus.groupName || `${teamName} - Teammöte`}
+              <Typography variant="h5" gutterBottom sx={{
+                fontWeight: 600,
+                color: '#0a2540',
+                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+                mb: 2
+              }}>
+                ⏳ Väntar på att alla ska ansluta
               </Typography>
-            )}
-            <Typography variant="body1" sx={{
-              color: '#425466',
-              mb: 3,
-              fontSize: 16
-            }}>
-              {groupStatus.current} av {groupStatus.expected} personer har anslutit
-            </Typography>
-            {/* Visa inbjudna e-postadresser med status */}
-            {groupStatus.invited && groupStatus.invited.length > 0 && (
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="subtitle1" sx={{
-                  color: '#1976d2',
-                  fontWeight: 600,
-                  mb: 2,
-                  fontSize: 16
-                }}>
-                  Status för deltagare:
+              {(groupStatus.groupName || teamName) && (
+                <Typography variant="h6" sx={{ color: '#1976d2', mb: 2 }}>
+                  {groupStatus.groupName || `${teamName} - Teammöte`}
                 </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  {groupStatus.invited.map((email, idx) => {
-                    const hasJoined = joined.includes(email);
-                    const hasDeclined = groupStatus.declinedInvitations?.some(inv => inv.email === email);
-                    const isPending = !hasJoined && !hasDeclined;
-                    
-                    let bgColor, borderColor, textColor, icon, statusText;
-                    
-                    if (hasJoined) {
-                      bgColor = '#e8f5e8';
-                      borderColor = '#4caf50';
-                      textColor = '#2e7d32';
-                      icon = '✅';
-                      statusText = 'Ansluten';
-                    } else if (hasDeclined) {
-                      bgColor = '#ffebee';
-                      borderColor = '#f44336';
-                      textColor = '#d32f2f';
-                      icon = '❌';
-                      statusText = 'Nekad';
-                    } else {
-                      bgColor = '#fff3e0';
-                      borderColor = '#ffcc02';
-                      textColor = '#bf360c';
-                      icon = '⏳';
-                      statusText = 'Väntar';
-                    }
-                    
-                    return (
-                      <Box key={idx} sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 2,
-                        p: 2,
-                        borderRadius: 2,
-                        bgcolor: bgColor,
-                        border: `1px solid ${borderColor}`
-                      }}>
-                        <span style={{
-                          fontSize: 20,
-                          color: textColor
-                        }}>
-                          {icon}
-                        </span>
-                        <Typography sx={{
-                          color: textColor,
-                          fontWeight: hasJoined ? 600 : 500,
-                          fontSize: 15
-                        }}>
-                          {email}
-                        </Typography>
-                        <Typography variant="caption" sx={{
-                          color: textColor,
-                          fontWeight: 600,
-                          fontSize: 12
-                        }}>
-                          {statusText}
-                        </Typography>
-                      </Box>
-                    );
-                  })}
-                </Box>
-                
-                {/* Visa varning om någon har nekat */}
-                {groupStatus.declinedInvitations && groupStatus.declinedInvitations.length > 0 && (
-                  <Box sx={{
-                    mt: 3,
-                    p: 2,
-                    borderRadius: 2,
-                    bgcolor: '#ffebee',
-                    border: '1px solid #f44336'
+              )}
+              <Typography variant="body1" sx={{
+                color: '#425466',
+                mb: 3,
+                fontSize: 16
+              }}>
+                {groupStatus.current} av {groupStatus.expected} personer har anslutit
+              </Typography>
+              {/* Visa inbjudna e-postadresser med status */}
+              {groupStatus.invited && groupStatus.invited.length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="subtitle1" sx={{
+                    color: '#1976d2',
+                    fontWeight: 600,
+                    mb: 2,
+                    fontSize: 16
                   }}>
-                    <Typography sx={{
-                      color: '#d32f2f',
-                      fontWeight: 600,
-                      fontSize: 14,
-                      mb: 1
-                    }}>
-                      ⚠️ Nekade inbjudningar:
-                    </Typography>
-                    <Typography sx={{
-                      color: '#d32f2f',
-                      fontSize: 13
-                    }}>
-                      {groupStatus.declinedInvitations.map(inv => inv.email).join(', ')} har nekat inbjudan. 
-                      Kalenderjämförelsen kommer att fortsätta utan dem.
-                    </Typography>
+                    Status för deltagare:
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {groupStatus.invited.map((email, idx) => {
+                      const hasJoined = joined.includes(email);
+                      const hasDeclined = groupStatus.declinedInvitations?.some(inv => inv.email === email);
+                      const isPending = !hasJoined && !hasDeclined;
+                      
+                      let bgColor, borderColor, textColor, icon, statusText;
+                      
+                      if (hasJoined) {
+                        bgColor = '#e8f5e8';
+                        borderColor = '#4caf50';
+                        textColor = '#2e7d32';
+                        icon = '✅';
+                        statusText = 'Ansluten';
+                      } else if (hasDeclined) {
+                        bgColor = '#ffebee';
+                        borderColor = '#f44336';
+                        textColor = '#d32f2f';
+                        icon = '❌';
+                        statusText = 'Nekad';
+                      } else {
+                        bgColor = '#fff3e0';
+                        borderColor = '#ffcc02';
+                        textColor = '#bf360c';
+                        icon = '⏳';
+                        statusText = 'Väntar';
+                      }
+                      
+                      return (
+                        <Box key={idx} sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 2,
+                          p: 2,
+                          borderRadius: 2,
+                          bgcolor: bgColor,
+                          border: `1px solid ${borderColor}`
+                        }}>
+                          <span style={{
+                            fontSize: 20,
+                            color: textColor
+                          }}>
+                            {icon}
+                          </span>
+                          <Typography sx={{
+                            color: textColor,
+                            fontWeight: hasJoined ? 600 : 500,
+                            fontSize: 15
+                          }}>
+                            {email}
+                          </Typography>
+                          <Typography variant="caption" sx={{
+                            color: textColor,
+                            fontWeight: 600,
+                            fontSize: 12
+                          }}>
+                            {statusText}
+                          </Typography>
+                        </Box>
+                      );
+                    })}
                   </Box>
-                )}
-              </Box>
-            )}
+                  
+                  {/* Visa varning om någon har nekat */}
+                  {groupStatus.declinedInvitations && groupStatus.declinedInvitations.length > 0 && (
+                    <Box sx={{
+                      mt: 3,
+                      p: 2,
+                      borderRadius: 2,
+                      bgcolor: '#ffebee',
+                      border: '1px solid #f44336'
+                    }}>
+                      <Typography sx={{
+                        color: '#d32f2f',
+                        fontWeight: 600,
+                        fontSize: 14,
+                        mb: 1
+                      }}>
+                        ⚠️ Nekade inbjudningar:
+                      </Typography>
+                      <Typography sx={{
+                        color: '#d32f2f',
+                        fontSize: 13
+                      }}>
+                        {groupStatus.declinedInvitations.map(inv => inv.email).join(', ')} har nekat inbjudan. 
+                        Kalenderjämförelsen kommer att fortsätta utan dem.
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              )}
+            </Box>
           </Box>
-        </Box>
-      )}
+        )}
 
-      {/* Visa kalendern när det inte är en grupp, eller när alla har anslutit */}
-      {(!groupId || directAccess === 'true' || groupStatus.allJoined) && (
-        <CompareCalendar
-          myToken={user.accessToken}
-          invitedTokens={invitedTokens}
-          user={user}
-          groupId={groupId}
-          directAccess={directAccess === 'true'}
-          contactEmails={contactEmails}
-          contactName={contactName}
-          teamName={teamName}
-        />
-      )}
+        {/* ALLTID rendera CompareCalendar (även om väntrum visas) för att undvika React hooks-fel */}
+        {/* Men dölj den visuellt tills alla har anslutit */}
+        <Box sx={{ 
+          display: (groupId && !groupStatus.allJoined && statusLoaded) ? 'none' : 'block'
+        }}>
+          <CompareCalendar
+            myToken={user.accessToken}
+            invitedTokens={invitedTokens}
+            user={user}
+            groupId={groupId}
+            directAccess={directAccess === 'true'}
+            contactEmails={contactEmails}
+            contactName={contactName}
+            teamName={teamName}
+          />
+        </Box>
+      </Box>
 
       </Container>
     </>
