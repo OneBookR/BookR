@@ -109,15 +109,19 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   }, [user?.accessToken]);
  
   useEffect(() => {
-    // Hämta e-post på säkert sätt
-    let email = user.email;
-    if (!email && user.emails && user.emails.length > 0) {
-      email = user.emails[0].value || user.emails[0];
+    // VIKTIGT: Hämta ALLTID den inloggade användarens e-post (INTE fromUser!)
+    let email = user?.email;
+    if (!email && user?.emails && user.emails.length > 0) {
+      email = user.emails[0]?.value || user.emails[0];
     }
-    if (!email) {
-      alert('Kunde inte hitta din e-postadress. Logga ut och logga in igen med ett Google-konto som har e-post.');
+    
+    // Om användaren inte har en giltig email ännu, vänta
+    if (!email || !email.includes('@')) {
+      console.log('⚠️ Waiting for valid user email...', { user, hasEmail: !!user?.email });
       return;
     }
+    
+    console.log('✅ Dashboard useEffect - Logged in user email:', email, 'GroupId:', groupId, 'InviteeId:', inviteeId);
 
     // Hantera direktåtkomst för team eller enskilda kontakter
     if (directAccess === 'true' && contactEmails.length > 0) {
@@ -273,7 +277,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
                 groupId,
                 token: user.accessToken,
                 invitee: inviteeId,
-                email: email,
+                email: email, // <-- DENNA email är från user-objektet (den inloggade användaren)
               }),
             });
           })
