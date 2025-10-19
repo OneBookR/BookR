@@ -181,20 +181,22 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         });
       
       const continueNormalGroupJoin = () => {
-        // Hantera team-möten
-        if (teamName && teamMembers) {
-          const memberEmails = teamMembers.split(',');
-          setGroupStatus({
-            allJoined: false,
-            current: 1,
-            expected: memberEmails.length + 1,
-            invited: memberEmails,
-            groupName: `${teamName} - Teammöte`
-          });
-          setStatusLoaded(true);
-          // Fortsätt med vanlig grupplogik för team-möten
-        }
-        
+
+
+      // Hantera team-möten
+      if (teamName && teamMembers) {
+        const memberEmails = teamMembers.split(',');
+        setGroupStatus({
+          allJoined: false,
+          current: 1,
+          expected: memberEmails.length + 1,
+          invited: memberEmails,
+          groupName: `${teamName} - Teammöte`
+        });
+        setStatusLoaded(true);
+        // Fortsätt med vanlig grupplogik för team-möten
+      }
+      
         console.log('Joining group normally:', { groupId, email, inviteeId });
         
         // Kontrollera om gruppen existerar först
@@ -211,7 +213,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
             if (!statusData) return;
             console.log('Group exists, joining...');
             
-            // Gruppen finns, fortsätt med join. Skicka även provider & refreshToken om tillgängligt
+            // Gruppen finns, fortsätt med join
             return fetch('https://www.onebookr.se/api/group/join', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -220,8 +222,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
                 token: user.accessToken,
                 invitee: inviteeId,
                 email: email,
-                refreshToken: user.refreshToken || null,
-                provider: user.provider || (user.id && String(user.id).includes('microsoft') ? 'microsoft' : 'google')
               }),
             });
           })

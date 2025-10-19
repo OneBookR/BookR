@@ -207,13 +207,8 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
       setMessage(
         'Kunde inte hitta din e-postadress. Logga ut och logga in igen med ett Google-konto som har e-postadress. Om du är inloggad, kontrollera att du gett kalendern tillgång till din e-post.'
       );
-      setIsLoading(false);
       return;
     }
-
-    // NYTT: Skicka med provider och refreshToken om de finns på fromUser
-    const fromProvider = fromUser?.provider || (fromUser?.id && String(fromUser.id).includes('microsoft') ? 'microsoft' : 'google');
-    const fromRefreshToken = fromUser?.refreshToken || window.user?.refreshToken || null;
 
     try {
       const res = await fetch('https://www.onebookr.se/api/invite', {
@@ -227,8 +222,6 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
           fromToken,
           groupName: groupName.trim() || 'Namnlös grupp',
           directAccessEmails, // Skicka med e-postadresser som har gett direktåtkomst
-          fromProvider,
-          fromRefreshToken,
         }),
       });
 

@@ -771,105 +771,106 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
 }
 
 app.post('/api/availability', async (req, res) => {
-  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd, providers, groupId } = req.body;
+  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd, providers } = req.body;
 
   console.log('=== AVAILABILITY API DEBUG ===');
-  console.log('Tokens mottagna av backend:', Array.isArray(tokens) ? tokens.length : 0, 'tokens');
+  console.log('Tokens mottagna av backend:', tokens.length, 'tokens');
+  console.log('First token preview:', tokens[0] ? tokens[0].substring(0, 20) + '...' : 'None');
   console.log('Providers:', providers);
+  console.log('Request body providers:', req.body.providers);
   console.log('TimeMin:', timeMin);
   console.log('TimeMax:', timeMax);
 
   if (!tokens || tokens.length < 1) {
     return res.status(400).json({ error: 'Minst en token krävs.' });
   }
+  
+  console.log(`Processing ${tokens.length} calendar(s) for availability comparison`);
+
   if (!timeMin || !timeMax) {
     return res.status(400).json({ error: 'timeMin och timeMax krävs.' });
   }
 
   try {
-    // Normalize tokens: support either raw string or structured object {accessToken, refreshToken, provider, email}
-    const normalized = tokens.map((t, idx) => {
-      if (typeof t === 'string') {
-        return { accessToken: t, refreshToken: null, provider: (providers && providers[idx]) || 'google', email: null };
-      }
-      return {
-        accessToken: t.accessToken || t.token || '',
-        refreshToken: t.refreshToken || null,
-        provider: t.provider || ((providers && providers[idx]) || 'google'),
-        email: t.email || null
-      };
-    });
-
-    // Validate/refresh each token before fetching events
-    const refreshedOrValidated = await Promise.all(normalized.map(async (entry, idx) => {
-      let { accessToken, refreshToken, provider } = entry;
-
-      // Quick probe per provider to detect expiry
-      const probeUrl = provider === 'microsoft' ? 'https://graph.microsoft.com/v1.0/me' : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
-      let probe = await fetch(probeUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-
-      if (probe.status === 401) {
-        console.warn(`Token expired for participant #${idx + 1} (${provider}). Attempting refresh...`);
-        if (refreshToken) {
-          const newAccess = provider === 'microsoft'
-            ? await refreshMicrosoftAccessToken(refreshToken)
-            : await refreshGoogleAccessToken(refreshToken);
-          if (newAccess) {
-            accessToken = newAccess;
-            // Optional: persist the refreshed token back to group storage if groupId present
-            try {
-              if (groupId) {
-                const group = await getGroup(groupId);
-                if (group && Array.isArray(group.tokens)) {
-                  const updated = group.tokens.map((tok) => {
-                    if (typeof tok === 'string') return tok; // legacy, leave as-is
-                    // Match by email if present, else by refreshToken if matches
-                    if ((tok.email && tok.email === entry.email) || (tok.refreshToken && tok.refreshToken === refreshToken)) {
-                      return { ...tok, accessToken: newAccess };
-                    }
-                    return tok;
-                  });
-                  await updateGroup(groupId, { tokens: updated });
-                }
-              }
-            } catch (e) {
-              console.warn('Could not persist refreshed token to group:', e?.message || e);
-            }
-          } else {
-            return { ...entry, accessToken, tokenExpired: true };
-          }
-        } else {
-          return { ...entry, accessToken, tokenExpired: true };
-        }
-      }
-
-      return { ...entry, accessToken, tokenExpired: false };
-    }));
-
-    const expiredCount = refreshedOrValidated.filter(e => e.tokenExpired).length;
-    if (expiredCount > 0) {
-      console.error(`Token expired for ${expiredCount} participant(s).`);
-      return res.status(401).json({ error: 'TOKEN_EXPIRED', message: 'En eller flera deltagares kalender-token har gått ut. Be dem logga in igen.', expiredCount });
-    }
-
-    // Fetch busy times for each validated token with timezone
+    // Hämta upptagna tider för varje token med tidszoner (parallellt för bättre prestanda)
     const allBusyTimesWithTimezones = await Promise.all(
-      refreshedOrValidated.map(async (entry, index) => {
-        const { accessToken, provider } = entry;
+      tokens.map(async (token, index) => {
+        const provider = providers && providers[index] ? providers[index] : 'google';
+        console.log(`Fetching calendar events for token ${index + 1}/${tokens.length}, provider: ${provider}`);
+        
         try {
-          const data = await fetchCalendarEvents(accessToken, timeMin, timeMax, provider);
-          return { events: data.events || [], timezone: data.timezone || 'Europe/Stockholm' };
-        } catch (e) {
-          console.error(`Failed to fetch events for participant #${index + 1}:`, e?.message || e);
+          const { events, timezone } = await fetchCalendarEvents(token, timeMin, timeMax, provider);
+          console.log(`Token ${index + 1} returned ${events.length} events`);
+          
+          // Säker hantering av kalenderhändelser
+          const processedEvents = events
+            .filter(e => e && (e.start || {}) && (e.end || {})) // Filtrera ogiltiga events
+            .map(e => {
+              try {
+                let startTime, endTime;
+                
+                // Hantera heldagsevent
+                if (e.start.date && !e.start.dateTime) {
+                  startTime = new Date(e.start.date + 'T00:00:00').getTime();
+                  endTime = new Date(e.end.date + 'T00:00:00').getTime();
+                  
+                  // Säkerhetskontroll för heldagsevent
+                  if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
+                    return null;
+                  }
+                  
+                  return {
+                    start: startTime,
+                    end: endTime,
+                    title: e.summary || 'Upptagen',
+                    isAllDay: true
+                  };
+                } else if (e.start.dateTime && e.end.dateTime) {
+                  // Vanligt event med dateTime
+                  startTime = new Date(e.start.dateTime).getTime();
+                  endTime = new Date(e.end.dateTime).getTime();
+                  
+                  // Säkerhetskontroll
+                  if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) {
+                    return null;
+                  }
+                  
+                  return {
+                    start: startTime,
+                    end: endTime,
+                    title: e.summary || 'Upptagen',
+                    isAllDay: false
+                  };
+                }
+                
+                return null; // Ogiltigt event
+              } catch (error) {
+                console.warn('Error processing calendar event:', error);
+                return null;
+              }
+            })
+            .filter(Boolean); // Ta bort null-värden
+          console.log(`Token ${index + 1} processed ${processedEvents.length} events`);
+          return { events: processedEvents, timezone };
+        } catch (error) {
+          console.error(`Error fetching calendar for token ${index + 1}:`, error.message);
+          // Returnera tom kalender för tokens som misslyckas
           return { events: [], timezone: 'Europe/Stockholm' };
         }
       })
     );
-
-    // Extract only events
+    
+    // Extrahera bara events för bakåtkompatibilitet
     const allBusyTimes = allBusyTimesWithTimezones.map(item => item.events);
+    const userTimezones = allBusyTimesWithTimezones.map(item => item.timezone);
+    
+    // Kontrollera om alla tokens returnerade tomma resultat (kan betyda ogiltiga tokens)
     const totalEvents = allBusyTimes.reduce((sum, events) => sum + events.length, 0);
     console.log('Total events fetched from all calendars:', totalEvents);
+    
+    if (totalEvents === 0 && tokens.length > 1) {
+      console.warn('No events found for any calendar - tokens might be expired');
+    }
 
     // Debug: Logga varje användares upptagna tider
     allBusyTimes.forEach((userEvents, index) => {
@@ -995,10 +996,10 @@ app.post('/api/availability', async (req, res) => {
       console.log('Individual calendar free times:', allFreeTimes.map((ft, i) => `Calendar ${i + 1}: ${ft.length} slots`));
     }
 
-    return res.json(formattedBlocks);
+    res.json(formattedBlocks);
   } catch (err) {
     console.error('Error fetching availability:', err.message, err.stack);
-    return res.status(500).json({ error: 'Kunde inte hämta tillgänglighet.' });
+    res.status(500).json({ error: 'Kunde inte hämta tillgänglighet.' });
   }
 });
 
@@ -1006,7 +1007,7 @@ app.post('/api/availability', async (req, res) => {
 
 // Skapa grupp och skicka inbjudan
 app.post('/api/invite', async (req, res) => {
-  const { emails, fromUser, fromToken, groupName, isTeamMeeting, teamName, directAccess, hasDirectAccessTeam, fromRefreshToken, fromProvider } = req.body;
+  const { emails, fromUser, fromToken, groupName, isTeamMeeting, teamName, directAccess, hasDirectAccessTeam } = req.body;
   // SÄKER: Hämta alltid e-post från fromUser-objekt om det är ett objekt
   let creatorEmail = fromUser;
   if (
@@ -1027,15 +1028,16 @@ app.post('/api/invite', async (req, res) => {
   }
 
   try {
-    const creatorProvider = fromProvider || 'google';
-
-    // Skapa grupp i Firebase med strukturerade tokens (bakåtkompatibel lagring)
+    // Bestäm provider baserat på användarens inloggningsmetod (kan utvidgas senare)
+    const creatorProvider = 'google'; // Standard, kan uppdateras när vi har mer info
+    
+    // Skapa grupp i Firebase
     const groupId = await createGroup({
       creatorEmail,
       creatorToken: fromToken,
       creatorProvider,
       groupName: groupName || teamName || 'Namnlös grupp',
-      tokens: [{ accessToken: fromToken, refreshToken: fromRefreshToken || null, provider: creatorProvider, email: creatorEmail }],
+      tokens: [fromToken],
       joinedEmails: [creatorEmail],
       isTeamMeeting: isTeamMeeting || false,
       teamName: teamName || null,
@@ -1175,18 +1177,19 @@ app.post('/api/invite', async (req, res) => {
 // När någon öppnar länken och loggar in
 app.post('/api/group/join', async (req, res) => {
   try {
-    const { groupId, token, invitee, email: frontendEmail, refreshToken, provider } = req.body;
+    const { groupId, token, invitee, email: frontendEmail } = req.body;
     if (!groupId || !token) return res.status(400).json({ error: 'groupId och token krävs' });
-
+    
     const group = await getGroup(groupId);
     if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
 
+    // Använd frontendEmail direkt
     const email = frontendEmail;
     if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'Ogiltig e-postadress vid join' });
+      return res.status(400).json({ error: 'Giltig e-postadress krävs' });
     }
 
-    // Direkttillgång
+    // Kontrollera om detta är direkttillgång
     if (group.directAccess) {
       // För direkttillgång, lägg till alla tokens korrekt
       const allTokens = Array.from(new Set([group.creatorToken, token].filter(Boolean)));
@@ -1201,27 +1204,11 @@ app.post('/api/group/join', async (req, res) => {
       return res.json({ success: true, directAccess: true });
     }
 
-    // Uppdatera gruppen med ny medlem - undvik dubbletter (matcha per email)
+    // Uppdatera gruppen med ny medlem - se till att inga dubbletter finns
     const existingTokens = group.tokens || [];
-    const newTokenObj = { accessToken: token, refreshToken: refreshToken || null, provider: provider || 'google', email };
-
-    const updatedTokens = (() => {
-      // Om legacy (strängar) finns, behåll dem, men ersätt/addera strukturerad token för denna email
-      const mapped = Array.isArray(existingTokens) ? existingTokens.slice() : [];
-      let replaced = false;
-      for (let i = 0; i < mapped.length; i++) {
-        const t = mapped[i];
-        if (typeof t !== 'string' && t.email === email) {
-          mapped[i] = { ...t, ...newTokenObj };
-          replaced = true;
-          break;
-        }
-      }
-      if (!replaced) mapped.push(newTokenObj);
-      return mapped;
-    })();
-
     const existingEmails = group.joinedEmails || [];
+    
+    const updatedTokens = Array.from(new Set([...existingTokens, token].filter(Boolean)));
     const updatedEmails = Array.from(new Set([...existingEmails, email].filter(Boolean)));
 
     // Kontrollera om alla har gått med genom att jämföra med inbjudningar
@@ -1230,6 +1217,7 @@ app.post('/api/group/join', async (req, res) => {
     const expected = 1 + invitedEmails.length; // Skapare + inbjudna
     const allJoined = updatedEmails.length >= expected;
 
+    // Uppdatera gruppen i Firebase
     await updateGroup(groupId, {
       tokens: updatedTokens,
       joinedEmails: updatedEmails,
@@ -1745,7 +1733,6 @@ app.post('/api/waitlist', async (req, res) => {
     // Kolla om redan registrerad i Firestore
     const existing = await checkEmailInWaitlist(email);
     if (existing) {
-     
       return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
     }
     
@@ -2019,6 +2006,10 @@ app.get('/api/venues/:venueId', async (req, res) => {
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
 
 // Svara på inbjudan (acceptera eller neka)
@@ -2414,57 +2405,4 @@ function findFreeSlotsInDay(busyTimes, dayStart, dayEnd) {
   }
   
   return freeSlots;
-}
-
-// Helper: Refresh Google access token using refresh_token
-async function refreshGoogleAccessToken(refreshToken) {
-  try {
-    const params = new URLSearchParams();
-    params.append('client_id', process.env.CLIENT_ID || '');
-    params.append('client_secret', process.env.CLIENT_SECRET || '');
-    params.append('refresh_token', refreshToken);
-    params.append('grant_type', 'refresh_token');
-
-    const resp = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.access_token) {
-      console.error('Google token refresh failed:', data);
-      return null;
-    }
-    return data.access_token;
-  } catch (err) {
-    console.error('Google token refresh error:', err);
-    return null;
-  }
-}
-
-// Helper: Refresh Microsoft access token using refresh_token
-async function refreshMicrosoftAccessToken(refreshToken) {
-  try {
-    const params = new URLSearchParams();
-    params.append('client_id', process.env.MICROSOFT_CLIENT_ID || '');
-    params.append('client_secret', process.env.MICROSOFT_CLIENT_SECRET || '');
-    params.append('refresh_token', refreshToken);
-    params.append('grant_type', 'refresh_token');
-    params.append('scope', 'offline_access user.read calendars.read calendars.readwrite');
-
-    const resp = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.access_token) {
-      console.error('Microsoft token refresh failed:', data);
-      return null;
-    }
-    return data.access_token;
-  } catch (err) {
-    console.error('Microsoft token refresh error:', err);
-    return null;
-  }
 }
