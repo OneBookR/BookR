@@ -117,9 +117,34 @@ function App() {
       sessionStorage.removeItem('currentGroupMembers');
     }
 
-    // Om vi redan har en användare, gör inget mer
-    if (user) {
-      setLoading(false);
+    // Om vi redan har en användare, validera token först
+    if (user && user.accessToken) {
+      // Validera token asynkront
+      fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+        headers: {
+          Authorization: `Bearer ${user.accessToken}`,
+        },
+      })
+      .then(res => {
+        if (res.status === 401) {
+          console.log('Token expired in App.jsx, clearing user and redirecting...');
+          // Token är utgången - rensa allt
+          setUser(null);
+          localStorage.removeItem('bookr_user');
+          sessionStorage.removeItem('hasTriedSession');
+          localStorage.setItem('bookr_return_url', window.location.href);
+          
+          // Omdirigera efter en kort delay
+          setTimeout(() => {
+            window.location.href = 'https://www.onebookr.se/auth/logout';
+          }, 100);
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        setLoading(false);
+      });
       return;
     }
 

@@ -63,6 +63,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     const validateToken = async () => {
       if (!user || !user.accessToken) {
         setIsValidatingToken(false);
+        setTokenExpired(false);
         return;
       }
 
@@ -75,7 +76,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         });
 
         if (response.status === 401) {
-          console.log('Token has expired, redirecting to login...');
+          console.log('Token has expired in Dashboard, clearing and redirecting...');
           setTokenExpired(true);
           setIsValidatingToken(false);
           
@@ -90,14 +91,16 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           // Omdirigera omedelbart till logout
           setTimeout(() => {
             window.location.href = 'https://www.onebookr.se/auth/logout';
-          }, 100); // Mycket kortare timeout för snabbare omdirigering
+          }, 2000); // Ge användaren tid att se meddelandet
         } else {
-          console.log('Token is valid');
+          console.log('Token is valid in Dashboard');
           setTokenExpired(false);
           setIsValidatingToken(false);
         }
       } catch (error) {
-        console.error('Error validating token:', error);
+        console.error('Error validating token in Dashboard:', error);
+        // Vid nätverksfel, fortsätt ändå men logga felet
+        setTokenExpired(false);
         setIsValidatingToken(false);
       }
     };
