@@ -24,6 +24,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SecurityIcon from '@mui/icons-material/Security';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -38,6 +39,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('shortcut'); // 'shortcut' eller 'dashboard'
   const [isMobile, setIsMobile] = useState(false);
+  const [globalError, setGlobalError] = useState(null);
 
   // Kontrollera om det är mobil
   React.useEffect(() => {
@@ -701,15 +703,24 @@ function App() {
   return (
     <>
       {loginIndicator}
+      {globalError && (
+        <Box sx={{ position: 'fixed', top: 56, left: 0, right: 0, zIndex: 3000, p: 1 }}>
+          <Alert severity="error" sx={{ borderRadius: 0 }}>
+            Ett fel uppstod: {globalError}
+          </Alert>
+        </Box>
+      )}
       <Header user={user} onNavigate={handleNavigateToMeeting} />
       <Box sx={{ mt: { xs: 14, sm: 16 }, minHeight: 'calc(100vh - 200px)', px: { xs: 1, sm: 2 }, pb: { xs: 8, sm: 0 } }}>
-        {shouldShowTask ? (
-          <Task user={user} />
-        ) : shouldShowDashboard ? (
-          <Dashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
-        ) : (
-          <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
-        )}
+        <ErrorBoundary componentName="MainRouter">
+          {shouldShowTask ? (
+            <Task user={user} />
+          ) : shouldShowDashboard ? (
+            <Dashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
+          ) : (
+            <ShortcutDashboard user={user} onNavigateToMeeting={handleNavigateToMeeting} />
+          )}
+        </ErrorBoundary>
       </Box>
       {!shouldShowTask && <Footer />}
       <MobileNavigation currentPath={window.location.pathname + window.location.search} user={user} />

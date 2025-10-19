@@ -8,6 +8,7 @@ import ContactManager from './ContactManager';
 import TeamContacts from './TeamContacts';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 export default function Dashboard({ user, onNavigateToMeeting }) {
   const [currentView, setCurrentView] = useState('shortcut');
@@ -227,7 +228,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
               return; // Stoppa vanlig grupplogik
             }
           }
-          
           // Fortsätt med vanlig grupplogik om ingen direktåtkomst
           continueNormalGroupJoin();
         })
@@ -235,24 +235,23 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           console.error('Error checking group status for direct access:', err);
           continueNormalGroupJoin();
         });
-      
-      const continueNormalGroupJoin = () => {
 
+      // Hoistad deklaration så att anrop ovan fungerar utan ReferenceError
+      function continueNormalGroupJoin() {
+        // Hantera team-möten
+        if (teamName && teamMembers) {
+          const memberEmails = teamMembers.split(',');
+          setGroupStatus({
+            allJoined: false,
+            current: 1,
+            expected: memberEmails.length + 1,
+            invited: memberEmails,
+            groupName: `${teamName} - Teammöte`
+          });
+          setStatusLoaded(true);
+          // Fortsätt med vanlig grupplogik för team-möten
+        }
 
-      // Hantera team-möten
-      if (teamName && teamMembers) {
-        const memberEmails = teamMembers.split(',');
-        setGroupStatus({
-          allJoined: false,
-          current: 1,
-          expected: memberEmails.length + 1,
-          invited: memberEmails,
-          groupName: `${teamName} - Teammöte`
-        });
-        setStatusLoaded(true);
-        // Fortsätt med vanlig grupplogik för team-möten
-      }
-      
         console.log('Joining group normally:', { groupId, email, inviteeId });
         
         // Kontrollera om gruppen existerar först
@@ -301,7 +300,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           .catch(error => {
             console.error('Error in group join flow:', error);
           });
-      }; // End of continueNormalGroupJoin function
+      } // End of continueNormalGroupJoin function
     }
   }, [groupId, user.accessToken, inviteeId, user.email, user.emails, directAccess, teamName]);
 
@@ -458,7 +457,11 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   
   if (currentView === 'invite') {
-    return <InviteFriend user={user} onNavigateBack={() => setCurrentView('shortcut')} />;
+    return (
+      <ErrorBoundary componentName="InviteFriend">
+        <InviteFriend fromUser={user} fromToken={user.accessToken} onNavigateBack={() => setCurrentView('shortcut')} />
+      </ErrorBoundary>
+    );
   }
   
   if (currentView === 'team') {
@@ -534,10 +537,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Box>
         )}
       
-      {/* VIKTIG FIX: Rendera alltid CompareCalendar (för att React hooks ska vara konsistenta) */}
-      {/* Men visa väntrum OVANPÅ om inte alla är inne */}
+      {/* VIKTIG FIX: Rendera CompareCalendar endast när den ska visas */}
       <Box sx={{ position: 'relative' }}>
-        {/* Visa väntrum som overlay om inte alla är inne */}
         {groupId && !groupStatus.allJoined && statusLoaded && (
           <Box sx={{ 
             position: 'relative',
@@ -683,22 +684,25 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Box>
         )}
 
-        {/* ALLTID rendera CompareCalendar (även om väntrum visas) för att undvika React hooks-fel */}
-        {/* Men dölj den visuellt tills alla har anslutit */}
-        <Box sx={{ 
-          display: (groupId && !groupStatus.allJoined && statusLoaded) ? 'none' : 'block'
-        }}>
-          <CompareCalendar
-            myToken={user.accessToken}
-            invitedTokens={invitedTokens}
-            user={user}
-            groupId={groupId}
-            directAccess={directAccess === 'true'}
-            contactEmails={contactEmails}
-            contactName={contactName}
-            teamName={teamName}
-          />
-        </Box>
+        {(
+          !groupId || groupStatus.allJoined || directAccess === 'true'
+        ) && (
+          <Box>
+            <ErrorBoundary componentName="CompareCalendar">
+              <CompareCalendar
+                myToken={user.accessToken}
+                invitedTokens={invitedTokens}
+                user={user}
+                groupId={groupId}
+                directAccess={directAccess === 'true'}
+                contactEmail={contactEmails && contactEmails.length > 0 ? contactEmails[0] : undefined}
+                contactEmails={contactEmails}
+                contactName={contactName}
+                teamName={teamName}
+              />
+            </ErrorBoundary>
+          </Box>
+        )}
       </Box>
 
       </Container>
