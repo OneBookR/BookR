@@ -343,194 +343,71 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
+// Uppdaterad Microsoft kalenderhämtning med korrekt API-anrop
 const fetchMicrosoftCalendarEvents = async (token, min, max) => {
   try {
-    // Test token validity first
-    const testResponse = await fetch(
-      'https://graph.microsoft.com/v1.0/me',
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-    
-    if (testResponse.status === 401) {
-      console.error('Microsoft OAuth token expired or invalid');
-      return { events: [], timezone: 'Europe/Stockholm' };
-    }
-    
-    // Hämta användarens tidszon
-    let userTimezone = 'Europe/Stockholm'; // Default
-    try {
-      const settingsResponse = await fetch(
-        'https://graph.microsoft.com/v1.0/me/mailboxSettings',
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      if (settingsResponse.ok) {
-        const settingsData = await settingsResponse.json();
-        userTimezone = settingsData.timeZone || 'Europe/Stockholm';
-      }
-    } catch (err) {
-      console.log('Could not fetch timezone, using default');
-    }
-    
-    // Hämta kalenderhändelser
-    const response = await fetch(
-      `https://graph.microsoft.com/v1.0/me/events?$filter=start/dateTime ge '${min}' and end/dateTime le '${max}'&$orderby=start/dateTime`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const data = await response.json();
-    if (!response.ok) {
-      console.error('Microsoft API-fel vid hämtning av händelser:', data.error);
-      return { events: [], timezone: userTimezone };
-    }
-
-    // Konvertera Microsoft events till Google Calendar format
-    const convertedEvents = (data.value || []).map(event => ({
-      summary: event.subject,
-      start: {
-        dateTime: event.start.dateTime,
-        timeZone: event.start.timeZone
+    const response = await fetch('https://graph.microsoft.com/v1.0/me/calendarView', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Prefer': 'outlook.timezone="UTC"'
       },
-      end: {
-        dateTime: event.end.dateTime,
-        timeZone: event.end.timeZone
-      },
-      isAllDay: event.isAllDay
-    }));
-
-    console.log('Fetched Microsoft events:', convertedEvents.length, 'timezone:', userTimezone);
-
-    return { events: convertedEvents, timezone: userTimezone };
-  } catch (err) {
-    console.error('Fel vid hämtning av Microsoft kalenderhändelser:', err);
-    return { events: [], timezone: 'Europe/Stockholm' };
-  }
-};
-
-const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
-  console.log(`fetchCalendarEvents called with provider: ${provider}`);
-  if (provider === 'microsoft') {
-    return fetchMicrosoftCalendarEvents(token, min, max);
-  }
-  try {
-    // Test token validity first
-    const testResponse = await fetch(
-      'https://www.googleapis.com/calendar/v3/users/me/settings/timezone',
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-    
-    if (testResponse.status === 401) {
-      console.error('Google OAuth token expired or invalid for token:', token.substring(0, 20) + '...');
-      console.error('Token validation failed - user needs to re-authenticate');
-      return { events: [], timezone: 'Europe/Stockholm' };
-    }
-    
-    // Hämta användarens tidszon
-    const settingsResponse = testResponse;
-    
-    let userTimezone = 'Europe/Stockholm'; // Default
-    if (settingsResponse.ok) {
-      const settingsData = await settingsResponse.json();
-      userTimezone = settingsData.value || 'Europe/Stockholm';
-    }
-    
-    // Hämta alla kalendrar
-    const calendarListResponse = await fetch(
-      'https://www.googleapis.com/calendar/v3/users/me/calendarList',
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const calendarListData = await calendarListResponse.json();
-    if (!calendarListResponse.ok) {
-      console.error('API-fel vid hämtning av kalenderlista:', calendarListData.error);
-      return { events: [], timezone: userTimezone };
-    }
-
-    // Filtrera bort publika/helgdagar/veckonummer-kalendrar
-    const calendars = (calendarListData.items || []).filter(
-      cal =>
-        cal.primary === true ||
-        (
-          !cal.id.includes('holiday@') &&
-          !cal.id.toLowerCase().includes('weeknum') &&
-          !cal.summary.toLowerCase().includes('helgdag') &&
-          !cal.summary.toLowerCase().includes('veckonummer')
-        )
-    );
-
-    // Reduced logging to prevent rate limits
-    if (calendars.length > 0) {
-      console.log('Found', calendars.length, 'calendars for user');
-    }
-
-    // Hämta händelser från varje kalender
-    const eventsPromises = calendars.map(async (calendar) => {
-      try {
-        const response = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
-            calendar.id
-          )}/events?timeMin=${min}&timeMax=${max}&singleEvents=true&orderBy=startTime`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        const data = await response.json();
-        if (!response.ok) {
-          if (response.status === 401) {
-            console.error(`Token expired for calendar ${calendar.id} - user needs to re-authenticate`);
-            return [];
-          }
-          console.error(`API-fel för kalender ${calendar.id}:`, data.error);
-          return [];
-        }
-
-        const events = data.items || [];
-        console.log(`Calendar ${calendar.summary}: ${events.length} events`);
-        return events;
-      } catch (err) {
-        console.error(`Fel vid hämtning av händelser för kalender ${calendar.id}:`, err);
-        return [];
+      params: {
+        startDateTime: new Date(min).toISOString(),
+        endDateTime: new Date(max).toISOString(),
+        $select: 'subject,start,end,showAs'
       }
     });
 
-    // Vänta på alla händelser
-    const allEvents = await Promise.all(eventsPromises);
-
-    // Slå ihop alla händelser till en enda array
-    const flatEvents = allEvents.flat();
-    console.log('Google Calendar - Fetched events for', allEvents.length, 'calendars, total events:', flatEvents.length, 'timezone:', userTimezone);
-    
-    // Debug: logga första eventet om det finns
-    if (flatEvents.length > 0) {
-      console.log('First Google event:', JSON.stringify(flatEvents[0], null, 2));
+    if (!response.ok) {
+      throw new Error(`Microsoft Calendar API error: ${response.status}`);
     }
 
-    return { events: flatEvents, timezone: userTimezone };
+    const data = await response.json();
+    return data.value.map(event => ({
+      id: event.id,
+      title: event.subject || 'Upptagen',
+      start: { dateTime: event.start.dateTime },
+      end: { dateTime: event.end.dateTime },
+      transparency: event.showAs === 'free' ? 'transparent' : 'opaque'
+    }));
   } catch (err) {
-    console.error('Fel vid hämtning av kalenderhändelser:', err);
-    return { events: [], timezone: 'Europe/Stockholm' };
+    console.error('Error fetching Microsoft calendar:', err);
+    throw err;
+  }
+};
+
+// Uppdaterad kalenderhämtning som hanterar både Google och Microsoft
+const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
+  console.log(`fetchCalendarEvents called with provider: ${provider}`);
+  
+  if (provider === 'microsoft') {
+    return fetchMicrosoftCalendarEvents(token, min, max);
+  }
+  
+  try {
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      params: {
+        timeMin: new Date(min).toISOString(),
+        timeMax: new Date(max).toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Google Calendar API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.items;
+  } catch (err) {
+    console.error('Error fetching Google calendar:', err);
+    throw err;
   }
 };
 
@@ -1257,7 +1134,7 @@ app.get('/api/group/:groupId/status', async (req, res) => {
     const invitedEmails = invitations.map(inv => inv.email);
     
     // Separera accepterade och nekade inbjudningar
-    const acceptedInvitations = invitations.filter(inv => inv.responded && inv.accepted);
+    const acceptedInvitations
     const declinedInvitations = invitations.filter(inv => inv.responded && !inv.accepted);
     const pendingInvitations = invitations.filter(inv => !inv.responded);
     
