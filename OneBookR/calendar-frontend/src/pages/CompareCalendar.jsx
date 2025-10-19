@@ -77,8 +77,60 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   const [undoAction, setUndoAction] = useState(null);
   const [successAnimation, setSuccessAnimation] = useState(null);
   const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
+  const [tokenValidated, setTokenValidated] = useState(false);
+  const [isValidatingToken, setIsValidatingToken] = useState(true);
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
+
+  // Validera token innan allt annat
+  useEffect(() => {
+    const validateToken = async () => {
+      if (!myToken) {
+        setIsValidatingToken(false);
+        setTokenValidated(false);
+        return;
+      }
+
+      try {
+        // Testa token genom att göra ett enkelt API-anrop
+        const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+          headers: {
+            Authorization: `Bearer ${myToken}`,
+          },
+        });
+
+        if (response.status === 401) {
+          console.log('Token has expired in CompareCalendar, redirecting to login...');
+          
+          // Spara aktuell URL för att återvända efter inloggning
+          const currentUrl = window.location.href;
+          localStorage.setItem('bookr_return_url', currentUrl);
+          
+          // Rensa användardata
+          localStorage.removeItem('bookr_user');
+          sessionStorage.removeItem('hasTriedSession');
+          
+          // Omdirigera till logout som rensar allt och sedan tillbaka till login
+          setTimeout(() => {
+            window.location.href = 'https://www.onebookr.se/auth/logout';
+          }, 1500);
+          
+          setTokenValidated(false);
+          setIsValidatingToken(false);
+        } else {
+          console.log('Token is valid in CompareCalendar');
+          setTokenValidated(true);
+          setIsValidatingToken(false);
+        }
+      } catch (error) {
+        console.error('Error validating token in CompareCalendar:', error);
+        setTokenValidated(false);
+        setIsValidatingToken(false);
+      }
+    };
+
+    validateToken();
+  }, [myToken]);
 
   // Hämta förslag
   useEffect(() => {
@@ -113,6 +165,19 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
 
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
+    // Kontrollera token innan hämtning
+    if (!tokenValidated) {
+      setToast({ 
+        open: true, 
+        message: 'Din session har gått ut. Logga in igen för att fortsätta.', 
+        severity: 'error' 
+      });
+      setTimeout(() => {
+        window.location.href = 'https://www.onebookr.se/auth/logout';
+      }, 2000);
+      return;
+    }
+    
     if (!isOnline) {
       setError('Ingen internetanslutning. Kontrollera din anslutning och försök igen.');
       return;
@@ -377,29 +442,53 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   };
 
   if (!user) {
-    // Använd state-parameter för OAuth
-    const urlParams = new URLSearchParams(window.location.search);
-    const groupId = urlParams.get('group');
-    const inviteeId = urlParams.get('invitee');
-    
-    let googleLoginUrl = `${API_BASE_URL}/auth/google`;
-    if (groupId) {
-      const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
-      googleLoginUrl += `?state=${encodeURIComponent(state)}`;
-    }
-    
     return (
-      <Box sx={{ textAlign: 'center', mt: 5 }}>
-        <Typography variant="h6" gutterBottom>
-          Logga in för att jämföra kalendrar
+      <Box sx={{ textAlign: 'center', mt: 10, px: 2 }}>
+        <Typography variant="h5" gutterBottom>
+          Laddar...
         </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          href={googleLoginUrl}
-        >
-          Logga in med Google
-        </Button>
+      </Box>
+    );
+  }
+
+  // Visa laddningsskärm under token-validering
+  if (isValidatingToken) {
+    return (
+      <Box sx={{ textAlign: 'center', mt: 10, px: 2 }}>
+        <Typography variant="h5" gutterBottom sx={{ color: '#0a2540', mb: 2 }}>
+          Validerar din inloggning...
+        </Typography>
+        <Typography variant="body1" sx={{ color: '#666' }}>
+          Detta tar bara några sekunder
+        </Typography>
+      </Box>
+    );
+  }
+
+  // Visa meddelande om token är ogiltig
+  if (!tokenValidated) {
+    return (
+      <Box sx={{ 
+        textAlign: 'center', 
+        mt: 10,
+        px: 2,
+        py: 8,
+        bgcolor: '#fff3e0',
+        borderRadius: 3,
+        border: '2px solid #ff9800',
+        maxWidth: 600,
+        mx: 'auto'
+      }}>
+        <Typography variant="h5" gutterBottom sx={{ color: '#bf360c', mb: 2 }}>
+          ⚠️ Din session har gått ut
+        </Typography>
+        <Typography variant="body1" sx={{ color: '#666', mb: 3 }}>
+          För att kunna jämföra kalendrar behöver du logga in igen.
+          Du omdirigeras automatiskt...
+        </Typography>
+        <Typography variant="caption" sx={{ color: '#999' }}>
+          Om inget händer inom några sekunder, klicka <a href="https://www.onebookr.se/auth/logout" style={{ color: '#1976d2' }}>här</a>
+        </Typography>
       </Box>
     );
   }
@@ -1694,7 +1783,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                           const hoursPerDay = (endHour * 60 + endMin - startHour * 60 - startMin) / 60;
                           const days = Math.ceil((new Date(s.multiDayEnd) - new Date(s.multiDayStart)) / (1000 * 60 * 60 * 24));
                           return `${days * hoursPerDay} timmar totalt`;
-                        })() : `${Math.ceil((new Date(s.multiDayEnd) - new Date(s.multiDayStart)) / (1000 * 60 * 60 * 24)) * (s.durationPerDay || 0)} timmar totalt`}
+                        })() : `${Math.ceil((new Date(s.multiDayEnd) - new Date(s.multiDayStart)) / (1000 * 60 * 60 * 24)) * (s.durationPerDay ||  0)} timmar totalt`}
                       </Typography>
                       <Typography variant="body2" sx={{
                         color: '#666',

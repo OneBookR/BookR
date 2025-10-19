@@ -22,6 +22,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   });
   const [joinedEmails, setJoinedEmails] = useState([]);
   const [statusLoaded, setStatusLoaded] = useState(false);
+  const [isValidatingToken, setIsValidatingToken] = useState(true);
+  const [tokenExpired, setTokenExpired] = useState(false);
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
@@ -55,6 +57,49 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       setCurrentView('dashboard');
     }
   }, [groupId, directAccess]);
+  
+  // Validera token innan någon kalenderjämförelse
+  useEffect(() => {
+    const validateToken = async () => {
+      if (!user || !user.accessToken) {
+        setIsValidatingToken(false);
+        return;
+      }
+
+      try {
+        // Testa token genom att göra ett enkelt API-anrop
+        const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+          headers: {
+            Authorization: `Bearer ${user.accessToken}`,
+          },
+        });
+
+        if (response.status === 401) {
+          console.log('Token has expired, redirecting to login...');
+          setTokenExpired(true);
+          setIsValidatingToken(false);
+          
+          // Spara aktuell URL för att återvända efter inloggning
+          const currentUrl = window.location.href;
+          localStorage.setItem('bookr_return_url', currentUrl);
+          
+          // Omdirigera till logout som rensar allt och sedan tillbaka till login
+          setTimeout(() => {
+            window.location.href = 'https://www.onebookr.se/auth/logout';
+          }, 2000);
+        } else {
+          console.log('Token is valid');
+          setTokenExpired(false);
+          setIsValidatingToken(false);
+        }
+      } catch (error) {
+        console.error('Error validating token:', error);
+        setIsValidatingToken(false);
+      }
+    };
+
+    validateToken();
+  }, [user?.accessToken]);
  
   useEffect(() => {
     // Hämta e-post på säkert sätt
@@ -317,6 +362,48 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   // NYTT: Visa väntrum endast om vi aktivt väntar på andra att ansluta
   const waitingForOthers = groupId && !groupStatus.allJoined && statusLoaded && !directAccess && groupStatus.expected > 1;
+
+  // Visa laddningsskärm under token-validering
+  if (isValidatingToken) {
+    return (
+      <Container maxWidth="md" sx={{ mt: 10 }}>
+        <Box sx={{ textAlign: 'center', py: 10 }}>
+          <Typography variant="h5" gutterBottom sx={{ color: '#0a2540', mb: 2 }}>
+            Validerar din inloggning...
+          </Typography>
+          <Typography variant="body1" sx={{ color: '#666' }}>
+            Detta tar bara några sekunder
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
+
+  // Visa meddelande om token har gått ut
+  if (tokenExpired) {
+    return (
+      <Container maxWidth="md" sx={{ mt: 10 }}>
+        <Box sx={{ 
+          textAlign: 'center', 
+          py: 10,
+          bgcolor: '#fff3e0',
+          borderRadius: 3,
+          border: '2px solid #ff9800'
+        }}>
+          <Typography variant="h5" gutterBottom sx={{ color: '#bf360c', mb: 2 }}>
+            ⚠️ Din session har gått ut
+          </Typography>
+          <Typography variant="body1" sx={{ color: '#666', mb: 3 }}>
+            För säkerhets skull behöver du logga in igen för att fortsätta.
+            Du omdirigeras automatiskt...
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#999' }}>
+            Om inget händer, klicka här för att logga in manuellt
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
 
   if (!user) {
     return (

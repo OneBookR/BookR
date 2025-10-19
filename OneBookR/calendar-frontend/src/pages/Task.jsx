@@ -23,12 +23,57 @@ const Task = ({ user, onBack }) => {
   const [taskSlots, setTaskSlots] = useState([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tokenValidated, setTokenValidated] = useState(false);
+  const [isValidatingToken, setIsValidatingToken] = useState(true);
+
+  // Validera token vid start
+  useEffect(() => {
+    const validateToken = async () => {
+      if (!user || !user.accessToken) {
+        setIsValidatingToken(false);
+        setTokenValidated(false);
+        return;
+      }
+
+      try {
+        const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+          headers: {
+            Authorization: `Bearer ${user.accessToken}`,
+          },
+        });
+
+        if (response.status === 401) {
+          console.log('Token has expired in Task, redirecting to login...');
+          localStorage.setItem('bookr_return_url', window.location.href);
+          localStorage.removeItem('bookr_user');
+          sessionStorage.removeItem('hasTriedSession');
+          
+          setTimeout(() => {
+            window.location.href = 'https://www.onebookr.se/auth/logout';
+          }, 1500);
+          
+          setTokenValidated(false);
+          setIsValidatingToken(false);
+        } else {
+          console.log('Token is valid in Task');
+          setTokenValidated(true);
+          setIsValidatingToken(false);
+        }
+      } catch (error) {
+        console.error('Error validating token in Task:', error);
+        setTokenValidated(false);
+        setIsValidatingToken(false);
+      }
+    };
+
+    validateToken();
+  }, [user?.accessToken]);
 
   useEffect(() => {
-    if (user && user.accessToken) {
+    if (user && user.accessToken && tokenValidated) {
       loadCalendarEvents();
     }
-  }, [user]);
+  }, [user, tokenValidated]);
 
   const loadCalendarEvents = async () => {
     try {
@@ -146,6 +191,67 @@ const Task = ({ user, onBack }) => {
   };
 
   const allEvents = [...calendarEvents, ...taskSlots];
+
+  // Visa laddningsskärm under token-validering
+  if (isValidatingToken) {
+    return (
+      <>
+        <Box sx={{
+          background: 'rgba(255,255,255,0.98)',
+          borderRadius: { xs: 2, sm: 3 },
+          p: { xs: 3, sm: 4 },
+          mb: { xs: 4, sm: 6 },
+          mt: { xs: 8, sm: 12 },
+          mx: 'auto',
+          width: { xs: '100%', sm: '95vw', md: 1500 },
+          maxWidth: '95vw',
+          textAlign: 'center',
+          boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
+          border: '1.5px solid #e3e8ee'
+        }}>
+          <Typography variant="h5" gutterBottom sx={{ color: '#0a2540', mb: 2 }}>
+            Validerar din inloggning...
+          </Typography>
+          <Typography variant="body1" sx={{ color: '#666' }}>
+            Detta tar bara några sekunder
+          </Typography>
+        </Box>
+      </>
+    );
+  }
+
+  // Visa meddelande om token är ogiltig
+  if (!tokenValidated) {
+    return (
+      <>
+        <Box sx={{ 
+          background: 'rgba(255,255,255,0.98)',
+          borderRadius: { xs: 2, sm: 3 },
+          p: { xs: 3, sm: 4 },
+          mb: { xs: 4, sm: 6 },
+          mt: { xs: 8, sm: 12 },
+          mx: 'auto',
+          width: { xs: '100%', sm: '95vw', md: 1500 },
+          maxWidth: '95vw',
+          textAlign: 'center',
+          bgcolor: '#fff3e0',
+          borderRadius: 3,
+          border: '2px solid #ff9800'
+        }}>
+          <Typography variant="h5" gutterBottom sx={{ color: '#bf360c', mb: 2 }}>
+            ⚠️ Din session har gått ut
+          </Typography>
+          <Typography variant="body1" sx={{ color: '#666', mb: 3 }}>
+            För att använda Task Scheduler behöver du logga in igen.
+            Du omdirigeras automatiskt...
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#999' }}>
+            Om inget händer inom några sekunder, klicka <a href="https://www.onebookr.se/auth/logout" style={{ color: '#1976d2' }}>här</a>
+          </Typography>
+        </Box>
+      </>
+    );
+  }
 
   return (
     <>
