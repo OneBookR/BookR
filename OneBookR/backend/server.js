@@ -2204,8 +2204,13 @@ app.delete('/api/user/delete-data', async (req, res) => {
 app.post('/api/calendar/events', async (req, res) => {
   const { token, timeMin, timeMax } = req.body;
   
+  if (!token) {
+    return res.status(400).json({ error: 'Token required' });
+  }
+
   try {
-    // Validera token först
+    // Sätt timeout för token-validering
+    const timeoutMs = 5000; // 5 sekunder timeout
     const oauth2Client = new google.auth.OAuth2(
       process.env.CLIENT_ID,
       process.env.CLIENT_SECRET,
@@ -2214,32 +2219,41 @@ app.post('/api/calendar/events', async (req, res) => {
 
     oauth2Client.setCredentials({
       access_token: token,
-      refresh_token: req.body.refreshToken // Vi behöver skicka med refresh token från frontend
+      refresh_token: req.body.refreshToken
     });
 
+    // Validera token med timeout
+    const validationPromise = oauth2Client.getTokenInfo(token);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Token validation timeout')), timeoutMs)
+    );
+
     try {
-      // Försök validera token
-      await oauth2Client.getTokenInfo(token);
+      await Promise.race([validationPromise, timeoutPromise]);
     } catch (error) {
-      // Token är ogiltig, försök refresh om vi har refresh token
+      if (error.message === 'Token validation timeout') {
+        return res.status(503).json({ 
+          error: 'Service temporarily unavailable',
+          message: 'Token validation timed out'
+        });
+      }
+
+      // Token är ogiltig eller utgången
       if (req.body.refreshToken) {
         try {
           const { tokens } = await oauth2Client.refreshToken(req.body.refreshToken);
-          // Skicka tillbaka ny token till frontend
           return res.status(401).json({ 
             error: 'Token expired',
             newToken: tokens.access_token,
             requiresReauth: false
           });
         } catch (refreshError) {
-          // Refresh misslyckades, användaren måste logga in igen
           return res.status(401).json({ 
             error: 'Token refresh failed',
             requiresReauth: true
           });
         }
       } else {
-        // Ingen refresh token, användaren måste logga in igen
         return res.status(401).json({ 
           error: 'Token invalid and no refresh token',
           requiresReauth: true
@@ -2247,18 +2261,38 @@ app.post('/api/calendar/events', async (req, res) => {
       }
     }
 
-    // Fortsätt med kalenderhämtning som vanligt...
+    // Token är giltig, hämta kalenderdata med timeout
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-    const response = await calendar.events.list({
+    const calendarPromise = calendar.events.list({
       calendarId: 'primary',
       timeMin: timeMin,
       timeMax: timeMax,
-      singleEvents: true
+      singleEvents: true,
+      maxResults: 2500 // Begränsa antal händelser
     });
 
-    res.json({ events: response.data.items });
+    const calendarTimeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Calendar fetch timeout')), timeoutMs)
+    );
+
+    try {
+      const response = await Promise.race([calendarPromise, calendarTimeoutPromise]);
+      res.json({ events: response.data.items });
+    } catch (error) {
+      if (error.message === 'Calendar fetch timeout') {
+        return res.status(503).json({ 
+          error: 'Service temporarily unavailable',
+          message: 'Calendar fetch timed out'
+        });
+      }
+      throw error;
+    }
+
   } catch (error) {
-    console.error('Error fetching calendar:', error);
-    res.status(500).json({ error: 'Failed to fetch calendar data' });
+    console.error('Error in calendar endpoint:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message
+    });
   }
 });

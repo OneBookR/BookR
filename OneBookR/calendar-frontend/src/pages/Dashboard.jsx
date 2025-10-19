@@ -614,6 +614,13 @@ const fetchAvailability = async () => {
   
   try {
     const allTokens = [...invitedTokens, myToken].filter(Boolean);
+    
+    // Kontrollera att vi har tokens innan vi fortsätter
+    if (!allTokens.length) {
+      setError('Ingen åtkomst till kalendrar. Försök logga in igen.');
+      return;
+    }
+
     const response = await fetch('https://www.onebookr.se/api/availability', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -631,17 +638,39 @@ const fetchAvailability = async () => {
       })
     });
 
+    // Hantera olika typer av fel
+    if (response.status === 503) {
+      setError('Tjänsten är tillfälligt överbelastad. Vänta några sekunder och försök igen.');
+      return;
+    }
+
+    if (response.status === 401) {
+      const data = await response.json();
+      await handleTokenError(data, user.email);
+      return;
+    }
+
     if (!response.ok) {
-      const error = new Error('API request failed');
-      error.response = response;
-      throw error;
+      throw new Error(`API error: ${response.status}`);
     }
 
     const data = await response.json();
-    setAvailability(data.availability || []);
+    if (!data.availability) {
+      setError('Kunde inte hämta kalenderdata. Försök igen senare.');
+      return;
+    }
+
+    setAvailability(data.availability);
     setHasSearched(true);
+    setError(null);
+
   } catch (error) {
-    await handleTokenError(error, user.email);
+    console.error('Calendar fetch error:', error);
+    if (error.name === 'AbortError' || error.message?.includes('timeout')) {
+      setError('Anslutningen tog för lång tid. Kontrollera din internetanslutning och försök igen.');
+    } else {
+      setError('Ett fel uppstod. Försök igen om en stund.');
+    }
   } finally {
     setIsLoadingAvailability(false);
   }
