@@ -567,8 +567,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           contactEmails={contactEmails}
           contactName={contactName}
           teamName={teamName}
-          provider={user.provider || 'google'} // Lägg till provider
-          invitedProviders={groupStatus.memberProviders || {}} // Lägg till medlemmarnas providers
         />
       )}
 
