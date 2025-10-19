@@ -346,16 +346,16 @@ app.get('/auth/logout', (req, res) => {
 // Uppdaterad Microsoft kalenderhämtning med korrekt API-anrop
 const fetchMicrosoftCalendarEvents = async (token, min, max) => {
   try {
-    const response = await fetch('https://graph.microsoft.com/v1.0/me/calendarView', {
+    const startDateTime = encodeURIComponent(new Date(min).toISOString());
+    const endDateTime = encodeURIComponent(new Date(max).toISOString());
+    const select = encodeURIComponent('subject,start,end,showAs');
+    
+    const response = await fetch(
+      `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${startDateTime}&endDateTime=${endDateTime}&$select=${select}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Prefer': 'outlook.timezone="UTC"'
-      },
-      params: {
-        startDateTime: new Date(min).toISOString(),
-        endDateTime: new Date(max).toISOString(),
-        $select: 'subject,start,end,showAs'
       }
     });
 
@@ -386,16 +386,18 @@ const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
   }
   
   try {
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events`, {
+    const params = new URLSearchParams({
+      timeMin: new Date(min).toISOString(),
+      timeMax: new Date(max).toISOString(),
+      singleEvents: 'true',
+      orderBy: 'startTime'
+    });
+    
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      params: {
-        timeMin: new Date(min).toISOString(),
-        timeMax: new Date(max).toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime'
+        'Authorization': `Bearer ${token}`
       }
     });
 
