@@ -741,6 +741,18 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                       <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
                         {new Date(invite.createdAt).toLocaleDateString()}
                       </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {invite.groupName || 'Namnlös grupp'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                        Inbjudan skickad: {new Date(invite.timestamp).toLocaleString('sv-SE', { 
+                          year: 'numeric', 
+                          month: 'numeric', 
+                          day: 'numeric',
+                          hour: '2-digit', 
+                          minute: '2-digit'
+                        })}
+                      </Typography>
                       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         {invite.type === 'contact_request' ? (
                           <>
