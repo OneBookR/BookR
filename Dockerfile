@@ -1,19 +1,27 @@
 FROM node:20
 
+ENV NODE_ENV=production
+
 WORKDIR /app
 
-# Copy all source code first
+# Install backend deps (cached)
+COPY OneBookR/backend/package*.json OneBookR/backend/
+RUN cd OneBookR/backend && npm ci
+
+# Install frontend deps (cached)
+COPY OneBookR/calendar-frontend/package*.json OneBookR/calendar-frontend/
+RUN cd OneBookR/calendar-frontend && npm ci
+
+# Copy the rest of the source
 COPY . .
 
-# Install root dependencies (med retry)
-RUN npm install || npm install
+# Build frontend
+RUN cd OneBookR/calendar-frontend && npm run build
 
-# Install backend dependencies (med retry)
-RUN cd OneBookR/backend && npm install || npm install
+# Prune backend dev dependencies to keep image slim
+RUN cd OneBookR/backend && npm prune --omit=dev
 
-# Install frontend dependencies and build (med retry)
-RUN cd OneBookR/calendar-frontend && npm install || npm install && npm run build
-
-EXPOSE 8080
+# Railway will set PORT; server listens on PORT or 3000
+EXPOSE 3000
 
 CMD ["node", "OneBookR/backend/server.js"]
