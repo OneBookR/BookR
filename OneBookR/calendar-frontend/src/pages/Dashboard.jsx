@@ -364,20 +364,44 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 		[invitedTokensRaw]
 	);
 
-	// Nytt: rendera CompareCalendar först när vi är "redo" och lås mount
+	// Lås montering och frys props för CompareCalendar
 	const [compareMounted, setCompareMounted] = useState(false);
 	const canRenderCompare = useMemo(() => {
 		const haveMyToken = typeof user?.accessToken === 'string' && user.accessToken.length > 0;
 		if (!haveMyToken) return false;
 		if (directAccess === 'true') return true;
 		if (!groupId) return true;
-		// Om grupp: vänta in statusLoaded och att alla har anslutit (eller bara jag för 1-personsfall)
 		return statusLoaded && (groupStatus?.allJoined || (groupStatus?.expected ?? 1) <= 1);
 	}, [user?.accessToken, directAccess, groupId, statusLoaded, groupStatus?.allJoined, groupStatus?.expected]);
 
+	// NYTT: frys props vid första "redo"-ögonblick
+	const [frozen, setFrozen] = useState(null);
 	useEffect(() => {
-		if (canRenderCompare && !compareMounted) setCompareMounted(true);
-	}, [canRenderCompare, compareMounted]);
+		if (canRenderCompare && !compareMounted) {
+			setFrozen({
+				key: `cmp-${groupId || 'nogroup'}-${directAccess === 'true'}`,
+				myToken: user.accessToken,
+				invitedTokens: safeInvitedTokens,
+				groupId,
+				directAccess: directAccess === 'true',
+				contactEmail: (contactEmails && contactEmails.length > 0) ? contactEmails[0] : undefined,
+				contactEmails,
+				contactName,
+				teamName,
+			});
+			setCompareMounted(true);
+		}
+	}, [
+		canRenderCompare,
+		compareMounted,
+		user.accessToken,
+		safeInvitedTokens,
+		groupId,
+		directAccess,
+		contactEmails,
+		contactName,
+		teamName
+	]);
 
   // Visa laddningsskärm under token-validering
   if (isValidatingToken) {
@@ -543,7 +567,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Box>
         )}
       
-      {/* VIKTIG FIX: Rendera CompareCalendar endast när den ska visas */}
+      {/* VIKTIG FIX: Rendera CompareCalendar endast när den ska visas och med frysta props */}
       <Box sx={{ position: 'relative' }}>
         {groupId && !groupStatus.allJoined && statusLoaded && (
           <Box sx={{ 
@@ -690,23 +714,21 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           </Box>
         )}
 
-        {(
-          !groupId || groupStatus.allJoined || directAccess === 'true'
-        ) && (
+        {compareMounted && frozen && (
           <Box>
             <ErrorBoundary componentName="CompareCalendar">
               <CompareCalendar
-                // Minska key-variationen: knyt till groupId + directAccess
-                key={`cmp-${groupId || 'nogroup'}-${directAccess === 'true'}`}
-                myToken={user.accessToken}
-                invitedTokens={safeInvitedTokens}
+                // ...existing code...
+                key={frozen.key}
+                myToken={frozen.myToken}
+                invitedTokens={frozen.invitedTokens}
                 user={user}
-                groupId={groupId}
-                directAccess={directAccess === 'true'}
-                contactEmail={contactEmails && contactEmails.length > 0 ? contactEmails[0] : undefined}
-                contactEmails={contactEmails}
-                contactName={contactName}
-                teamName={teamName}
+                groupId={frozen.groupId}
+                directAccess={frozen.directAccess}
+                contactEmail={frozen.contactEmail}
+                contactEmails={frozen.contactEmails}
+                contactName={frozen.contactName}
+                teamName={frozen.teamName}
               />
             </ErrorBoundary>
           </Box>
