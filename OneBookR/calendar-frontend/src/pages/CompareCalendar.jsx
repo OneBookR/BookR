@@ -63,6 +63,76 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     } catch (_) {}
   }, [myToken, invitedTokens, user, directAccess, contactEmail, contactName, teamName]);
 
+  // Visa enkel fallback om token saknas (förhindrar krasch innan login-flödet hanterar det)
+  if (!myToken) {
+    return (
+      <div style={{ padding: 16, border: '1px solid #ff9800', background: '#fff8e1', borderRadius: 8, color: '#e65100' }}>
+        Din session saknar åtkomsttoken. Logga ut och in igen.
+      </div>
+    );
+  }
+
+  // BYT UT osäkra hook-destructures mot säkra default-värden
+  const themeApi = (typeof useTheme === 'function' ? useTheme() : {}) || {};
+  const theme = themeApi.theme || { isDark: false };
+  const toggleTheme = themeApi.toggleTheme || (() => {});
+
+  const notifApi = (typeof useNotifications === 'function' ? useNotifications() : {}) || {};
+  const permission = notifApi.permission ?? 'default';
+  const requestPermission = notifApi.requestPermission || (async () => {});
+  const showNotification = notifApi.showNotification || (() => {});
+  const scheduleReminder = notifApi.scheduleReminder || (() => {});
+
+  const pwaApi = (typeof usePWA === 'function' ? usePWA() : {}) || {};
+  const isInstallable = pwaApi.isInstallable ?? false;
+  const installApp = pwaApi.installApp || (() => {});
+
+  const contactsApi = (typeof useContacts === 'function' ? useContacts() : {}) || {};
+  const contacts = contactsApi.contacts || [];
+  const addContact = contactsApi.addContact || (() => {});
+  const removeContact = contactsApi.removeContact || (() => {});
+  const updateContact = contactsApi.updateContact || (() => {});
+  const incrementInviteCount = contactsApi.incrementInviteCount || (() => {});
+
+  const [availability, setAvailability] = useState([]);
+  const [newContactEmail, setNewContactEmail] = useState('');
+  const [newContactName, setNewContactName] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState([]);
+  const [error, setError] = useState(null);
+  const [timeMin, setTimeMin] = useState('');
+  const [timeMax, setTimeMax] = useState('');
+  const [meetingDuration, setMeetingDuration] = useState(60);
+  const [isMultiDay, setIsMultiDay] = useState(false);
+  const [multiDayStart, setMultiDayStart] = useState('');
+  const [multiDayEnd, setMultiDayEnd] = useState('');
+  const [hasSearched, setHasSearched] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [dayStart, setDayStart] = useState('09:00');
+  const [dayEnd, setDayEnd] = useState('18:00');
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestDialog, setSuggestDialog] = useState({ open: false, slot: null });
+  const [meetingTitle, setMeetingTitle] = useState('');
+  const [withMeet, setWithMeet] = useState(true);
+  const [meetingLocation, setMeetingLocation] = useState('');
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
+  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
+  const [tutorialStep, setTutorialStep] = useState(-1);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState('invitations');
+  const [sidebarMode, setSidebarMode] = useState('notifications'); // 'notifications' eller 'contacts'
+  const [invitations, setInvitations] = useState([]);
+  const [timeProposals, setTimeProposals] = useState([]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [undoAction, setUndoAction] = useState(null);
+  const [successAnimation, setSuccessAnimation] = useState(null);
+  const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
+  const [tokenValidated, setTokenValidated] = useState(false);
+  const [isValidatingToken, setIsValidatingToken] = useState(true);
+  const urlParams = new URLSearchParams(window.location.search);
+  const groupId = urlParams.get('group');
+
   // Validera token innan allt annat
   useEffect(() => {
     const validateToken = async () => {
@@ -479,20 +549,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
         </Typography>
         <Typography variant="caption" sx={{ color: '#999' }}>
           Om inget händer inom några sekunder, klicka <a href="https://www.onebookr.se/auth/logout" style={{ color: '#1976d2' }}>här</a>
-        </Typography>
-      </Box>
-    );
-  }
-
-  // Visa enkel fallback om token saknas (efter hooks) för att undvika hook-ordningsfel
-  if (!myToken) {
-    return (
-      <Box sx={{ textAlign: 'center', mt: 10, px: 2 }}>
-        <Typography variant="h6" gutterBottom sx={{ color: '#bf360c', mb: 2 }}>
-          Din session saknar åtkomsttoken
-        </Typography>
-        <Typography variant="body1" sx={{ color: '#666' }}>
-          Logga ut och in igen.
         </Typography>
       </Box>
     );
@@ -1071,183 +1127,52 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
 
   return (
     <>
-      <div style={{ 
-        marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
-        transition: 'margin-right 0.3s ease',
-        minHeight: '100vh',
-        padding: isMobile ? '8px' : '0'
-      }}>
+    <div style={{ 
+      marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
+      transition: 'margin-right 0.3s ease',
+      minHeight: '100vh',
+      padding: isMobile ? '8px' : '0'
+    }}>
 
 
-        <Slide direction="up" in={true} timeout={800}>
-          <Box
-            sx={{
-              bgcolor: theme.colors.surface,
-              borderRadius: { xs: 2, sm: 3 },
-              boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
-              border: `1px solid ${theme.colors.border}`,
-              p: { xs: 2, sm: 3 },
-              mb: { xs: 8, sm: 15 },
-              maxWidth: { xs: '100%', sm: 800 },
-              mx: 0,
-              transition: 'all 0.3s ease'
-            }}
-          >
-          <Box
-            component="form"
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-              mb: 0,
-              maxWidth: 600,
-            }}
-          >
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }} data-tutorial="date-inputs">
-              <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
-                <TextField
-                  label="Från"
-                  type="date"
-                  InputLabelProps={{ shrink: true }}
-                  value={timeMin ? timeMin.slice(0, 10) : ''}
-                  onChange={e => {
-                    const date = e.target.value;
-                    const time = timeMin ? timeMin.slice(11, 16) : '00:00';
-                    setTimeMin(date ? `${date}T${time}` : '');
-                  }}
-                  fullWidth
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 999,
-                      background: theme.colors.bg,
-                      color: theme.colors.text,
-                      '& fieldset': {
-                        borderColor: theme.colors.border
-                      }
-                    },
-                    '& .MuiInputBase-root': {
-                      borderRadius: 999,
-                    },
-                    '& .MuiInputLabel-root': {
-                      color: theme.colors.textSecondary
-                    }
-                  }}
-                  variant="outlined"
-                />
-                <TextField
-                  label="Tid"
-                  type="time"
-                  InputLabelProps={{ shrink: true }}
-                  value={timeMin ? timeMin.slice(11, 16) : ''}
-                  onChange={e => {
-                    if (timeMin) {
-                      setTimeMin(timeMin.slice(0, 10) + 'T' + e.target.value);
-                    }
-                  }}
-                  sx={{
-                    minWidth: 120,
-                    maxWidth: 160,
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 999,
-                      background: theme.colors.bg,
-                      color: theme.colors.text,
-                      '& fieldset': {
-                        borderColor: theme.colors.border
-                      }
-                    },
-                    '& .MuiInputBase-root': {
-                      borderRadius: 999,
-                    },
-                    '& .MuiInputLabel-root': {
-                      color: theme.colors.textSecondary
-                    }
-                  }}
-                  variant="outlined"
-                />
-              </Box>
-              <Typography sx={{ mx: 1, fontWeight: 600, color: '#888', fontSize: 22, userSelect: 'none', display: { xs: 'none', sm: 'block' } }}>–</Typography>
-              <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
-                <TextField
-                  label="Till"
-                  type="date"
-                  InputLabelProps={{ shrink: true }}
-                  value={timeMax ? timeMax.slice(0, 10) : ''}
-                  onChange={e => {
-                    const date = e.target.value;
-                    const time = timeMax ? timeMax.slice(11, 16) : '23:59';
-                    setTimeMax(date ? `${date}T${time}` : '');
-                  }}
-                  fullWidth
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 999,
-                      background: theme.colors.bg,
-                      color: theme.colors.text,
-                      '& fieldset': {
-                        borderColor: theme.colors.border
-                      }
-                    },
-                    '& .MuiInputBase-root': {
-                      borderRadius: 999,
-                    },
-                    '& .MuiInputLabel-root': {
-                      color: theme.colors.textSecondary
-                    }
-                  }}
-                  variant="outlined"
-                />
-                <TextField
-                  label="Tid"
-                  type="time"
-                  InputLabelProps={{ shrink: true }}
-                  value={timeMax ? timeMax.slice(11, 16) : ''}
-                  onChange={e => {
-                    if (timeMax) {
-                      setTimeMax(timeMax.slice(0, 10) + 'T' + e.target.value);
-                    }
-                  }}
-                  sx={{
-                    minWidth: 120,
-                    maxWidth: 160,
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 999,
-                      background: theme.colors.bg,
-                      color: theme.colors.text,
-                      '& fieldset': {
-                        borderColor: theme.colors.border
-                      }
-                    },
-                    '& .MuiInputBase-root': {
-                      borderRadius: 999,
-                    },
-                    '& .MuiInputLabel-root': {
-                      color: theme.colors.textSecondary
-                    }
-                  }}
-                  variant="outlined"
-                />
-              </Box>
-            </Box>
-            <Typography
-              variant="caption"
-              sx={{
-                color: '#888',
-                mb: 0.3,
-                mt: 2,
-                pl: 1.0 // Flytta texten lite till höger
-              }}
-            >
-              Om du inte anger något datumintervall visas automatiskt alla lediga tider från idag och 30 dagar framåt.
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, gap: 2, mt: 1 }}>
+      <Slide direction="up" in={true} timeout={800}>
+        <Box
+          sx={{
+            bgcolor: theme.colors.surface,
+            borderRadius: { xs: 2, sm: 3 },
+            boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
+            border: `1px solid ${theme.colors.border}`,
+            p: { xs: 2, sm: 3 },
+            mb: { xs: 8, sm: 15 },
+            maxWidth: { xs: '100%', sm: 800 },
+            mx: 0,
+            transition: 'all 0.3s ease'
+          }}
+        >
+        <Box
+          component="form"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            mb: 0,
+            maxWidth: 600,
+          }}
+        >
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }} data-tutorial="date-inputs">
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
               <TextField
-                label={isMultiDay ? "Timmar per dag" : "Mötestid (minuter)"}
-                type="number"
-                value={meetingDuration}
-                onChange={(e) => setMeetingDuration(Number(e.target.value))}
-                data-tutorial="duration"
+                label="Från"
+                type="date"
+                InputLabelProps={{ shrink: true }}
+                value={timeMin ? timeMin.slice(0, 10) : ''}
+                onChange={e => {
+                  const date = e.target.value;
+                  const time = timeMin ? timeMin.slice(11, 16) : '00:00';
+                  setTimeMin(date ? `${date}T${time}` : '');
+                }}
+                fullWidth
                 sx={{
-                  flex: 1,
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 999,
                     background: theme.colors.bg,
@@ -1265,93 +1190,120 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                 }}
                 variant="outlined"
               />
-              <Button
-                variant={isMultiDay ? "contained" : "outlined"}
-                onClick={() => setIsMultiDay(!isMultiDay)}
-                sx={{
-                  borderRadius: 999,
-                  px: 3,
-                  fontWeight: 600,
-                  fontSize: 12
-                }}
-              >
-                Flera dagar
-              </Button>
-            </Box>
-            
-            {isMultiDay && (
-              <Box sx={{ mt: 2, p: 2, bgcolor: '#e3f2fd', borderRadius: 2, border: '1px solid #1976d2' }}>
-                <Typography variant="body2" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
-                  Flerdagars-möte
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                  <TextField
-                    label="Startdatum"
-                    type="date"
-                    value={multiDayStart}
-                    onChange={e => setMultiDayStart(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                    sx={{
-                      flex: 1,
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: 999,
-                        background: '#fff',
-                      },
-                    }}
-                  />
-                  <Typography sx={{ color: '#1976d2', fontWeight: 600 }}>–</Typography>
-                  <TextField
-                    label="Slutdatum"
-                    type="date"
-                    value={multiDayEnd}
-                    onChange={e => setMultiDayEnd(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                    sx={{
-                      flex: 1,
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: 999,
-                        background: '#fff',
-                      },
-                    }}
-                  />
-                </Box>
-                <Typography variant="caption" sx={{ color: '#666', mt: 1, display: 'block' }}>
-                  Ange hur många timmar per dag mötet ska vara och välj datumintervall
-                </Typography>
-              </Box>
-            )}
-            <TextField
-              label="Från (dagens starttid)"
-              type="time"
-              value={dayStart}
-              onChange={e => setDayStart(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              data-tutorial="day-hours"
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 999,
-                  background: theme.colors.bg,
-                  color: theme.colors.text,
-                  '& fieldset': {
-                    borderColor: theme.colors.border
+              <TextField
+                label="Tid"
+                type="time"
+                InputLabelProps={{ shrink: true }}
+                value={timeMin ? timeMin.slice(11, 16) : ''}
+                onChange={e => {
+                  if (timeMin) {
+                    setTimeMin(timeMin.slice(0, 10) + 'T' + e.target.value);
                   }
-                },
-                '& .MuiInputBase-root': {
-                  borderRadius: 999,
-                },
-                '& .MuiInputLabel-root': {
-                  color: theme.colors.textSecondary
-                }
-              }}
-              variant="outlined"
-            />
+                }}
+                sx={{
+                  minWidth: 120,
+                  maxWidth: 160,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 999,
+                    background: theme.colors.bg,
+                    color: theme.colors.text,
+                    '& fieldset': {
+                      borderColor: theme.colors.border
+                    }
+                  },
+                  '& .MuiInputBase-root': {
+                    borderRadius: 999,
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: theme.colors.textSecondary
+                  }
+                }}
+                variant="outlined"
+              />
+            </Box>
+            <Typography sx={{ mx: 1, fontWeight: 600, color: '#888', fontSize: 22, userSelect: 'none', display: { xs: 'none', sm: 'block' } }}>–</Typography>
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
+              <TextField
+                label="Till"
+                type="date"
+                InputLabelProps={{ shrink: true }}
+                value={timeMax ? timeMax.slice(0, 10) : ''}
+                onChange={e => {
+                  const date = e.target.value;
+                  const time = timeMax ? timeMax.slice(11, 16) : '23:59';
+                  setTimeMax(date ? `${date}T${time}` : '');
+                }}
+                fullWidth
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 999,
+                    background: theme.colors.bg,
+                    color: theme.colors.text,
+                    '& fieldset': {
+                      borderColor: theme.colors.border
+                    }
+                  },
+                  '& .MuiInputBase-root': {
+                    borderRadius: 999,
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: theme.colors.textSecondary
+                  }
+                }}
+                variant="outlined"
+              />
+              <TextField
+                label="Tid"
+                type="time"
+                InputLabelProps={{ shrink: true }}
+                value={timeMax ? timeMax.slice(11, 16) : ''}
+                onChange={e => {
+                  if (timeMax) {
+                    setTimeMax(timeMax.slice(0, 10) + 'T' + e.target.value);
+                  }
+                }}
+                sx={{
+                  minWidth: 120,
+                  maxWidth: 160,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 999,
+                    background: theme.colors.bg,
+                    color: theme.colors.text,
+                    '& fieldset': {
+                      borderColor: theme.colors.border
+                    }
+                  },
+                  '& .MuiInputBase-root': {
+                    borderRadius: 999,
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: theme.colors.textSecondary
+                  }
+                }}
+                variant="outlined"
+              />
+            </Box>
+          </Box>
+          <Typography
+            variant="caption"
+            sx={{
+              color: '#888',
+              mb: 0.3,
+              mt: 2,
+              pl: 1.0 // Flytta texten lite till höger
+            }}
+          >
+            Om du inte anger något datumintervall visas automatiskt alla lediga tider från idag och 30 dagar framåt.
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, gap: 2, mt: 1 }}>
             <TextField
-              label="Till (dagens sluttid)"
-              type="time"
-              value={dayEnd}
-              onChange={e => setDayEnd(e.target.value)}
-              InputLabelProps={{ shrink: true }}
+              label={isMultiDay ? "Timmar per dag" : "Mötestid (minuter)"}
+              type="number"
+              value={meetingDuration}
+              onChange={(e) => setMeetingDuration(Number(e.target.value))}
+              data-tutorial="duration"
               sx={{
+                flex: 1,
                 '& .MuiOutlinedInput-root': {
                   borderRadius: 999,
                   background: theme.colors.bg,
@@ -1370,102 +1322,206 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
               variant="outlined"
             />
             <Button
-              variant="contained"
-              color="primary"
-              onClick={fetchAvailability}
-              disabled={isLoadingAvailability}
-              data-tutorial="compare-button"
+              variant={isMultiDay ? "contained" : "outlined"}
+              onClick={() => setIsMultiDay(!isMultiDay)}
               sx={{
-                fontWeight: 600,
-                fontSize: '1.08rem',
-                letterSpacing: 0.5,
                 borderRadius: 999,
-                minWidth: 0,
-                minHeight: 0,
-                height: 48,
-                width: '100%',
-                background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-                color: '#fff',
-                boxShadow: '0 2px 8px 0 rgba(99,91,255,0.13)',
-                transition: 'background 0.2s, box-shadow 0.2s, transform 0.1s',
-                '&:hover': {
-                  background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
-                  boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)',
-                  transform: 'scale(1.03)',
-                },
-                '&:active': {
-                  background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-                  boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)',
-                  transform: 'scale(0.98)',
-                },
-                '&:disabled': {
-                  background: '#ccc',
-                  transform: 'none',
-                  boxShadow: 'none'
-                },
-                py: 1.2,
-                mt: 1,
-                mb: 3,
-                textTransform: 'none',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                gap: 1
+                px: 3,
+                fontWeight: 600,
+                fontSize: 12
               }}
             >
-              {isLoadingAvailability && <CircularProgress size={20} sx={{ color: 'white' }} />}
-              {isLoadingAvailability ? 'Jämför kalendrar...' : 'Jämför kalendrar'}
-              {!isOnline && ' (Offline)'}
+              Flera dagar
             </Button>
           </Box>
-          </Box>
-        </Slide>
-
-        {/* Offline indikator */}
-        {!isOnline && (
-          <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-            🚫 Ingen internetanslutning - vissa funktioner kan vara begränsade
-          </Alert>
-        )}
-        
-        {/* Undo-knapp */}
-        {undoAction && (
-          <Alert 
-            severity="info" 
-            sx={{ mb: 2, borderRadius: 2 }}
-            action={
-              <Button 
-                color="inherit" 
-                size="small" 
-                onClick={() => {
-                  // Implementera undo-logik här
-                  setUndoAction(null);
-                  setToast({ open: true, message: 'Tidsförslag ångrat', severity: 'info' });
-                }}
-              >
-                ÅNGRA
-              </Button>
-            }
+          
+          {isMultiDay && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: '#e3f2fd', borderRadius: 2, border: '1px solid #1976d2' }}>
+              <Typography variant="body2" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
+                Flerdagars-möte
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                <TextField
+                  label="Startdatum"
+                  type="date"
+                  value={multiDayStart}
+                  onChange={e => setMultiDayStart(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{
+                    flex: 1,
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 999,
+                      background: '#fff',
+                    },
+                  }}
+                />
+                <Typography sx={{ color: '#1976d2', fontWeight: 600 }}>–</Typography>
+                <TextField
+                  label="Slutdatum"
+                  type="date"
+                  value={multiDayEnd}
+                  onChange={e => setMultiDayEnd(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{
+                    flex: 1,
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 999,
+                      background: '#fff',
+                    },
+                  }}
+                />
+              </Box>
+              <Typography variant="caption" sx={{ color: '#666', mt: 1, display: 'block' }}>
+                Ange hur många timmar per dag mötet ska vara och välj datumintervall
+              </Typography>
+            </Box>
+          )}
+          <TextField
+            label="Från (dagens starttid)"
+            type="time"
+            value={dayStart}
+            onChange={e => setDayStart(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            data-tutorial="day-hours"
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 999,
+                background: theme.colors.bg,
+                color: theme.colors.text,
+                '& fieldset': {
+                  borderColor: theme.colors.border
+                }
+              },
+              '& .MuiInputBase-root': {
+                borderRadius: 999,
+              },
+              '& .MuiInputLabel-root': {
+                color: theme.colors.textSecondary
+              }
+            }}
+            variant="outlined"
+          />
+          <TextField
+            label="Till (dagens sluttid)"
+            type="time"
+            value={dayEnd}
+            onChange={e => setDayEnd(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 999,
+                background: theme.colors.bg,
+                color: theme.colors.text,
+                '& fieldset': {
+                  borderColor: theme.colors.border
+                }
+              },
+              '& .MuiInputBase-root': {
+                borderRadius: 999,
+              },
+              '& .MuiInputLabel-root': {
+                color: theme.colors.textSecondary
+              }
+            }}
+            variant="outlined"
+          />
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={fetchAvailability}
+            disabled={isLoadingAvailability}
+            data-tutorial="compare-button"
+            sx={{
+              fontWeight: 600,
+              fontSize: '1.08rem',
+              letterSpacing: 0.5,
+              borderRadius: 999,
+              minWidth: 0,
+              minHeight: 0,
+              height: 48,
+              width: '100%',
+              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+              color: '#fff',
+              boxShadow: '0 2px 8px 0 rgba(99,91,255,0.13)',
+              transition: 'background 0.2s, box-shadow 0.2s, transform 0.1s',
+              '&:hover': {
+                background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)',
+                transform: 'scale(1.03)',
+              },
+              '&:active': {
+                background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+                boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)',
+                transform: 'scale(0.98)',
+              },
+              '&:disabled': {
+                background: '#ccc',
+                transform: 'none',
+                boxShadow: 'none'
+              },
+              py: 1.2,
+              mt: 1,
+              mb: 3,
+              textTransform: 'none',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: 1
+            }}
           >
-            Tidsförslag skickat - du kan ångra inom 10 sekunder
-          </Alert>
-        )}
-        
-        {error && (
-          <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-            {error}
-          </Alert>
-        )}
-        {hasSearched && !error && filteredAvailability.length === 0 && (
-          <Typography>Inga lediga tider hittades.</Typography>
-        )}
+            {isLoadingAvailability && <CircularProgress size={20} sx={{ color: 'white' }} />}
+            {isLoadingAvailability ? 'Jämför kalendrar...' : 'Jämför kalendrar'}
+            {!isOnline && ' (Offline)'}
+          </Button>
+        </Box>
+        </Box>
+      </Slide>
 
-        {/* Närmaste lediga tider */}
-        {isLoadingAvailability && hasSearched && <TimeSlotSkeleton />}
-        {sortedFutureSlots.length > 0 && !isLoadingAvailability && (
-          <Box sx={{ mb: 4, maxWidth: { xs: '100%', md: 1200 }, margin: '0 auto', width: { xs: '100%', md: '105%' }, mt: 4 }} data-tutorial="time-slots">
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Närmaste lediga tider
+      {/* Offline indikator */}
+      {!isOnline && (
+        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+          🚫 Ingen internetanslutning - vissa funktioner kan vara begränsade
+        </Alert>
+      )}
+      
+      {/* Undo-knapp */}
+      {undoAction && (
+        <Alert 
+          severity="info" 
+          sx={{ mb: 2, borderRadius: 2 }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={() => {
+                // Implementera undo-logik här
+                setUndoAction(null);
+                setToast({ open: true, message: 'Tidsförslag ångrat', severity: 'info' });
+              }}
+            >
+              ÅNGRA
+            </Button>
+          }
+        >
+          Tidsförslag skickat - du kan ångra inom 10 sekunder
+        </Alert>
+      )}
+      
+      {error && (
+        <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+          {error}
+        </Alert>
+      )}
+      {hasSearched && !error && filteredAvailability.length === 0 && (
+        <Typography>Inga lediga tider hittades.</Typography>
+      )}
+
+      {/* Närmaste lediga tider */}
+      {isLoadingAvailability && hasSearched && <TimeSlotSkeleton />}
+      {sortedFutureSlots.length > 0 && !isLoadingAvailability && (
+        <Box sx={{ mb: 4, maxWidth: { xs: '100%', md: 1200 }, margin: '0 auto', width: { xs: '100%', md: '105%' }, mt: 4 }} data-tutorial="time-slots">
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Närmaste lediga tider
           </Typography>
           <Box sx={{
             display: { xs: 'none', lg: 'flex' },
