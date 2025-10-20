@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import InviteFriend from './InviteFriend';
 import CompareCalendar from './CompareCalendar';
 import Task from './Task';
@@ -354,25 +354,30 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     }
   }, [groupId, groupStatus.allJoined]);
 
-  // Om ingen grupp, använd bara din egen token
-  const tokens = (groupId || directAccess === 'true') ? groupTokens : [user.accessToken];
-  const invitedTokens = tokens.filter(token => token !== user.accessToken);
-  
-  console.log('Dashboard tokens setup:', {
-    totalTokens: tokens.length,
-    myToken: user.accessToken ? 'Present' : 'Missing',
-    invitedTokens: invitedTokens.length,
-    directAccess: directAccess === 'true',
-    groupId: groupId
-  });
+  // Beräkna tokens och gör props stabila
+	const tokensAll = (groupId || directAccess === 'true') ? groupTokens : [user.accessToken];
+	const invitedTokensRaw = tokensAll.filter(token => token !== user.accessToken);
 
-  // Grupp-länk
-  const groupLink = groupId
-    ? `${window.location.origin}${window.location.pathname}?group=${groupId}`
-    : '';
+	// Nytt: memoiserad och städad invitedTokens
+	const safeInvitedTokens = useMemo(
+		() => (Array.isArray(invitedTokensRaw) ? invitedTokensRaw.filter(Boolean) : []),
+		[invitedTokensRaw]
+	);
 
-  // NYTT: Visa väntrum endast om vi aktivt väntar på andra att ansluta
-  const waitingForOthers = groupId && !groupStatus.allJoined && statusLoaded && !directAccess && groupStatus.expected > 1;
+	// Nytt: rendera CompareCalendar först när vi är "redo" och lås mount
+	const [compareMounted, setCompareMounted] = useState(false);
+	const canRenderCompare = useMemo(() => {
+		const haveMyToken = typeof user?.accessToken === 'string' && user.accessToken.length > 0;
+		if (!haveMyToken) return false;
+		if (directAccess === 'true') return true;
+		if (!groupId) return true;
+		// Om grupp: vänta in statusLoaded och att alla har anslutit (eller bara jag för 1-personsfall)
+		return statusLoaded && (groupStatus?.allJoined || (groupStatus?.expected ?? 1) <= 1);
+	}, [user?.accessToken, directAccess, groupId, statusLoaded, groupStatus?.allJoined, groupStatus?.expected]);
+
+	useEffect(() => {
+		if (canRenderCompare && !compareMounted) setCompareMounted(true);
+	}, [canRenderCompare, compareMounted]);
 
   // Visa laddningsskärm under token-validering
   if (isValidatingToken) {
@@ -691,9 +696,10 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           <Box>
             <ErrorBoundary componentName="CompareCalendar">
               <CompareCalendar
-                key={`cmp-${groupId || 'nogroup'}-${groupStatus.allJoined}-${directAccess}-${(invitedTokens||[]).length}`}
+                // Minska key-variationen: knyt till groupId + directAccess
+                key={`cmp-${groupId || 'nogroup'}-${directAccess === 'true'}`}
                 myToken={user.accessToken}
-                invitedTokens={invitedTokens}
+                invitedTokens={safeInvitedTokens}
                 user={user}
                 groupId={groupId}
                 directAccess={directAccess === 'true'}
