@@ -72,27 +72,27 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     );
   }
 
-  // BYT UT osäkra hook-destructures mot säkra default-värden
-  const themeApi = (typeof useTheme === 'function' ? useTheme() : {}) || {};
-  const theme = themeApi.theme || { isDark: false };
-  const toggleTheme = themeApi.toggleTheme || (() => {});
+  // --- FIX: Always call hooks at the top level ---
+  const themeApi = useTheme();
+  const theme = themeApi?.theme || { isDark: false, colors: { surface: '#fff', border: '#e0e3e7', text: '#222', textSecondary: '#888', bg: '#f7f9fb', primary: '#1976d2', warning: '#ff9800', success: '#4caf50', error: '#d32f2f' } };
+  const toggleTheme = themeApi?.toggleTheme || (() => {});
 
-  const notifApi = (typeof useNotifications === 'function' ? useNotifications() : {}) || {};
-  const permission = notifApi.permission ?? 'default';
-  const requestPermission = notifApi.requestPermission || (async () => {});
-  const showNotification = notifApi.showNotification || (() => {});
-  const scheduleReminder = notifApi.scheduleReminder || (() => {});
+  const notifApi = useNotifications();
+  const permission = notifApi?.permission ?? 'default';
+  const requestPermission = notifApi?.requestPermission || (async () => {});
+  const showNotification = notifApi?.showNotification || (() => {});
+  const scheduleReminder = notifApi?.scheduleReminder || (() => {});
 
-  const pwaApi = (typeof usePWA === 'function' ? usePWA() : {}) || {};
-  const isInstallable = pwaApi.isInstallable ?? false;
-  const installApp = pwaApi.installApp || (() => {});
+  const pwaApi = usePWA();
+  const isInstallable = pwaApi?.isInstallable ?? false;
+  const installApp = pwaApi?.installApp || (() => {});
 
-  const contactsApi = (typeof useContacts === 'function' ? useContacts() : {}) || {};
-  const contacts = contactsApi.contacts || [];
-  const addContact = contactsApi.addContact || (() => {});
-  const removeContact = contactsApi.removeContact || (() => {});
-  const updateContact = contactsApi.updateContact || (() => {});
-  const incrementInviteCount = contactsApi.incrementInviteCount || (() => {});
+  const contactsApi = useContacts();
+  const contacts = contactsApi?.contacts || [];
+  const addContact = contactsApi?.addContact || (() => {});
+  const removeContact = contactsApi?.removeContact || (() => {});
+  const updateContact = contactsApi?.updateContact || (() => {});
+  const incrementInviteCount = contactsApi?.incrementInviteCount || (() => {});
 
   const [availability, setAvailability] = useState([]);
   const [newContactEmail, setNewContactEmail] = useState('');
@@ -1802,7 +1802,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                   key={s.id}
                   sx={{
                     mb: 3,
-                    borderRadius: 3,
+                    borderRadius:  3,
                     border: s.finalized ? '2px solid #4caf50' : '1px solid #e0e3e7',
                     boxShadow: s.finalized ? '0 4px 20px rgba(76, 175, 80, 0.15)' : '0 2px 8px rgba(60,64,67,.06)',
                     background: s.finalized ? 'linear-gradient(135deg, #f8fff8 0%, #e8f5e8 100%)' : '#fff',
