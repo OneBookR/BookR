@@ -136,55 +136,56 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
 
-  // Validera token innan allt annat
+  // NYTT: Validera token via backend (stöd för Google/Microsoft)
   useEffect(() => {
-    const validateToken = async () => {
+    const validate = async () => {
       if (!myToken) {
         setIsValidatingToken(false);
         setTokenValidated(false);
         return;
       }
-
       try {
-        // Testa token genom att göra ett enkelt API-anrop
-        const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
-          headers: {
-            Authorization: `Bearer ${myToken}`,
-          },
+        const res = await fetch(`${API_BASE_URL}/api/auth/validate-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: myToken, provider: userProvider })
         });
-
-        if (response.status === 401) {
-          console.log('Token has expired in CompareCalendar, redirecting to login...');
-          
-          // Spara aktuell URL för att återvända efter inloggning
-          const currentUrl = window.location.href;
-          localStorage.setItem('bookr_return_url', currentUrl);
-          
-          // Rensa användardata
-          localStorage.removeItem('bookr_user');
-          sessionStorage.removeItem('hasTriedSession');
-          
-          // Omdirigera till logout som rensar allt och sedan tillbaka till login
+        const data = await res.json();
+        const valid = !!data.valid;
+        setTokenValidated(valid);
+        if (!valid) {
+          setToast({ open: true, message: 'Din session har gått ut. Logga in igen.', severity: 'error' });
           setTimeout(() => {
-            window.location.href = 'https://www.onebookr.se/auth/logout';
+            window.location.href = `${API_BASE_URL}/auth/logout`;
           }, 1500);
-          
-          setTokenValidated(false);
-          setIsValidatingToken(false);
-        } else {
-          console.log('Token is valid in CompareCalendar');
-          setTokenValidated(true);
-          setIsValidatingToken(false);
         }
-      } catch (error) {
-        console.error('Error validating token in CompareCalendar:', error);
+      } catch (e) {
         setTokenValidated(false);
+        setToast({ open: true, message: 'Kunde inte validera token. Försök logga in igen.', severity: 'error' });
+        setTimeout(() => {
+          window.location.href = `${API_BASE_URL}/auth/logout`;
+        }, 1500);
+      } finally {
         setIsValidatingToken(false);
       }
     };
+    validate();
+  }, [myToken, userProvider, API_BASE_URL]);
 
-    validateToken();
-  }, [myToken]);
+  if (error) {
+    return (
+      <Box sx={{ p: 3, textAlign: 'center' }}>
+        <Typography color="error">{error}</Typography>
+        <Button 
+          onClick={() => window.location.href = '/auth/logout'}
+          variant="contained"
+          sx={{ mt: 2 }}
+        >
+          Logga in igen
+        </Button>
+      </Box>
+    );
+  }
 
   // Hämta förslag
   useEffect(() => {
@@ -1807,6 +1808,9 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                     borderRadius:  3,
                     border: s.finalized ? '2px solid #4caf50' : '1px solid #e0e3e7',
                     boxShadow: s.finalized ? '0 4px 20px rgba(76, 175, 80, 0.15)' : '0 2px 8px rgba(60,64,67,.06)',
+
+
+
                     background: s.finalized ? 'linear-gradient(135deg, #f8fff8 0%, #e8f5e8 100%)' : '#fff',
                     transition: 'all 0.3s ease',
                     '&:hover': {

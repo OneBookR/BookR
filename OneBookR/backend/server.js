@@ -117,6 +117,7 @@ passport.use('google', new GoogleStrategy({
   }
   profile.accessToken = accessToken;
   profile.refreshToken = refreshToken;  // Store refresh token for incremental auth
+  profile.provider = 'google'; // NYTT: säkerställ provider sätts korrekt
   console.log('Google OAuth - Access token:', accessToken ? 'Present' : 'Missing');
   console.log('Google OAuth - Refresh token:', refreshToken ? 'Present' : 'Missing');
   return done(null, profile);
@@ -2406,3 +2407,38 @@ function findFreeSlotsInDay(busyTimes, dayStart, dayEnd) {
   
   return freeSlots;
 }
+
+// NYTT: Centraliserad tokenvalidering för Google/Microsoft
+app.post('/api/auth/validate-token', async (req, res) => {
+  try {
+    const { token, provider = 'google' } = req.body || {};
+    if (!token) {
+      return res.status(400).json({ valid: false, error: 'Token required', provider });
+    }
+
+    if (provider === 'microsoft') {
+      try {
+        const r = await fetch('https://graph.microsoft.com/v1.0/me', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        return res.json({ valid: r.ok, provider });
+      } catch (e) {
+        console.error('Microsoft token validation error:', e?.message);
+        return res.json({ valid: false, provider });
+      }
+    } else {
+      try {
+        const r = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        return res.json({ valid: r.ok, provider });
+      } catch (e) {
+        console.error('Google token validation error:', e?.message);
+        return res.json({ valid: false, provider });
+      }
+    }
+  } catch (error) {
+    console.error('Token validation endpoint error:', error);
+    return res.json({ valid: false, provider: req.body?.provider || 'google' });
+  }
+});

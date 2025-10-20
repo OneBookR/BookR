@@ -17,8 +17,8 @@ class ErrorBoundary extends React.Component {
   }
 
   handleReload = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
-    // Försök rendera om
+    // NYTT: Full page reload för att rensa korrupt state/session
+    window.location.reload();
   };
 
   render() {

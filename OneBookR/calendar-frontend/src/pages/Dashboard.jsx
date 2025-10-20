@@ -9,6 +9,7 @@ import TeamContacts from './TeamContacts';
 import { Container, Typography, Box, Button, TextField } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { API_BASE_URL } from '../config';
 
 export default function Dashboard({ user, onNavigateToMeeting }) {
   const [currentView, setCurrentView] = useState('shortcut');
