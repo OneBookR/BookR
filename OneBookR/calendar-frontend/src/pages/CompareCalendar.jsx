@@ -63,14 +63,17 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     } catch (_) {}
   }, [myToken, invitedTokens, user, directAccess, contactEmail, contactName, teamName]);
 
-  // Visa enkel fallback om token saknas (förhindrar krasch innan login-flödet hanterar det)
-  if (!myToken) {
+  // Fallback för user och myToken
+  if (!user || !myToken) {
     return (
       <div style={{ padding: 16, border: '1px solid #ff9800', background: '#fff8e1', borderRadius: 8, color: '#e65100' }}>
-        Din session saknar åtkomsttoken. Logga ut och in igen.
+        Din session saknar användare eller åtkomsttoken. Logga ut och in igen.
       </div>
     );
   }
+
+  // Fallback för user.provider
+  const userProvider = user?.provider || 'google';
 
   // --- FIX: Always call hooks at the top level ---
   const themeApi = useTheme();
@@ -294,8 +297,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
         
         // Anpassa API-anrop för flerdagars-möten
         // Skapa provider-array - första token är alltid den inloggade användaren
-        const providers = [user.provider || 'google'];
-        // För resten, anta Google som standard
+        const providers = [userProvider];
         for (let i = 1; i < tokens.length; i++) {
           providers.push('google');
         }

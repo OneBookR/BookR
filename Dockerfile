@@ -1,21 +1,19 @@
-FROM node:18
+FROM node:20
 
 WORKDIR /app
 
 # Copy all source code first
 COPY . .
 
-# Install root dependencies
-RUN npm install
+# Install root dependencies (med retry)
+RUN npm install || npm install
 
-# Install backend dependencies
-RUN cd OneBookR/backend && npm install
+# Install backend dependencies (med retry)
+RUN cd OneBookR/backend && npm install || npm install
 
-# Install frontend dependencies and build
-RUN cd OneBookR/calendar-frontend && npm install && npm run build
+# Install frontend dependencies and build (med retry)
+RUN cd OneBookR/calendar-frontend && npm install || npm install && npm run build
 
-# Expose port
 EXPOSE 8080
 
-# Start the application
 CMD ["node", "OneBookR/backend/server.js"]
