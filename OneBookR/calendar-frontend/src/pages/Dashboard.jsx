@@ -690,6 +690,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           <Box>
             <ErrorBoundary componentName="CompareCalendar">
               <CompareCalendar
+                key={`cmp-${groupId || 'nogroup'}-${groupStatus.allJoined}-${directAccess}-${(invitedTokens||[]).length}`}
                 myToken={user.accessToken}
                 invitedTokens={invitedTokens}
                 user={user}

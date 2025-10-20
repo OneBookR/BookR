@@ -39,10 +39,61 @@ const calendarTodayBg = "#fffde7";
 const localizer = momentLocalizer(moment);
 
 export default function CompareCalendar({ myToken, invitedTokens = [], user, directAccess, contactEmail, contactName, teamName }) {
-  const { theme, toggleTheme } = useTheme();
-  const { permission, requestPermission, showNotification, scheduleReminder } = useNotifications();
-  const { isInstallable, installApp } = usePWA();
-  const { contacts, addContact, removeContact, updateContact, incrementInviteCount } = useContacts();
+  // Säkerställ att hooks som använder window.user fungerar
+  React.useEffect(() => {
+    try {
+      if (user && !window.user) {
+        window.user = user;
+      }
+    } catch (_) {}
+  }, [user]);
+
+  // Defensiv loggning av inkommande props
+  React.useEffect(() => {
+    try {
+      console.log('[CompareCalendar] props', {
+        hasMyToken: !!myToken,
+        invitedTokensLen: Array.isArray(invitedTokens) ? invitedTokens.length : 'n/a',
+        userEmail: user?.email || user?.emails?.[0]?.value || user?.emails?.[0],
+        directAccess,
+        contactEmail,
+        contactName,
+        teamName,
+      });
+    } catch (_) {}
+  }, [myToken, invitedTokens, user, directAccess, contactEmail, contactName, teamName]);
+
+  // Visa enkel fallback om token saknas (förhindrar krasch innan login-flödet hanterar det)
+  if (!myToken) {
+    return (
+      <div style={{ padding: 16, border: '1px solid #ff9800', background: '#fff8e1', borderRadius: 8, color: '#e65100' }}>
+        Din session saknar åtkomsttoken. Logga ut och in igen.
+      </div>
+    );
+  }
+
+  // BYT UT osäkra hook-destructures mot säkra default-värden
+  const themeApi = (typeof useTheme === 'function' ? useTheme() : {}) || {};
+  const theme = themeApi.theme || { isDark: false };
+  const toggleTheme = themeApi.toggleTheme || (() => {});
+
+  const notifApi = (typeof useNotifications === 'function' ? useNotifications() : {}) || {};
+  const permission = notifApi.permission ?? 'default';
+  const requestPermission = notifApi.requestPermission || (async () => {});
+  const showNotification = notifApi.showNotification || (() => {});
+  const scheduleReminder = notifApi.scheduleReminder || (() => {});
+
+  const pwaApi = (typeof usePWA === 'function' ? usePWA() : {}) || {};
+  const isInstallable = pwaApi.isInstallable ?? false;
+  const installApp = pwaApi.installApp || (() => {});
+
+  const contactsApi = (typeof useContacts === 'function' ? useContacts() : {}) || {};
+  const contacts = contactsApi.contacts || [];
+  const addContact = contactsApi.addContact || (() => {});
+  const removeContact = contactsApi.removeContact || (() => {});
+  const updateContact = contactsApi.updateContact || (() => {});
+  const incrementInviteCount = contactsApi.incrementInviteCount || (() => {});
+
   const [availability, setAvailability] = useState([]);
   const [newContactEmail, setNewContactEmail] = useState('');
   const [newContactName, setNewContactName] = useState('');
@@ -165,134 +216,144 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
 
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
-    // Kontrollera token innan hämtning
-    if (!tokenValidated) {
-      setToast({ 
-        open: true, 
-        message: 'Din session har gått ut. Logga in igen för att fortsätta.', 
-        severity: 'error' 
-      });
-      setTimeout(() => {
-        window.location.href = 'https://www.onebookr.se/auth/logout';
-      }, 2000);
-      return;
-    }
-    
-    if (!isOnline) {
-      setError('Ingen internetanslutning. Kontrollera din anslutning och försök igen.');
-      return;
-    }
-    
-    setIsLoadingAvailability(true);
-    setHasSearched(true);
-    setError(null);
-    
-    let tokens = [myToken, ...invitedTokens];
-    
-    // För team-möten eller grupper, hämta alla tokens från gruppen
-    if (groupId) {
+    try {
+      const tokens = [myToken, ...(Array.isArray(invitedTokens) ? invitedTokens : [])].filter(Boolean);
+      if (!Array.isArray(tokens) || tokens.length === 0) {
+        console.warn('[CompareCalendar] Hoppar över fetchAvailability: tom token-lista');
+        return;
+      }
+      
+      // Kontrollera token innan hämtning
+      if (!tokenValidated) {
+        setToast({ 
+          open: true, 
+          message: 'Din session har gått ut. Logga in igen för att fortsätta.', 
+          severity: 'error' 
+        });
+        setTimeout(() => {
+          window.location.href = 'https://www.onebookr.se/auth/logout';
+        }, 2000);
+        return;
+      }
+      
+      if (!isOnline) {
+        setError('Ingen internetanslutning. Kontrollera din anslutning och försök igen.');
+        return;
+      }
+      
+      setIsLoadingAvailability(true);
+      setHasSearched(true);
+      setError(null);
+      
+      // För team-möten eller grupper, hämta alla tokens från gruppen
+      if (groupId) {
+        try {
+          const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
+          if (groupTokensRes.ok) {
+            const groupTokensData = await groupTokensRes.json();
+            tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
+          }
+        } catch (err) {
+          console.log('Could not fetch group tokens, using provided tokens:', err);
+        }
+      }
+      
+      tokens = Array.from(new Set(tokens.filter(Boolean)));
+      
+      if (tokens.length < 1) {
+        setError('Minst en token krävs för att visa kalendrar.');
+        setAvailability([]);
+        setIsLoadingAvailability(false);
+        return;
+      }
+      
+      // Validering för flerdagars-möten
+      if (isMultiDay) {
+        if (!multiDayStart || !multiDayEnd) {
+          setError('Ange startdatum och slutdatum för flerdagars-mötet.');
+          setAvailability([]);
+          setIsLoadingAvailability(false);
+          return;
+        }
+        if (new Date(multiDayStart) >= new Date(multiDayEnd)) {
+          setError('Slutdatum måste vara efter startdatum.');
+          setAvailability([]);
+          setIsLoadingAvailability(false);
+          return;
+        }
+      } else if (!timeMin || !timeMax) {
+        setError('Ange ett datumintervall.');
+        setAvailability([]);
+        setIsLoadingAvailability(false);
+        return;
+      }
+
       try {
-        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
-        if (groupTokensRes.ok) {
-          const groupTokensData = await groupTokensRes.json();
-          tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        
+        // Anpassa API-anrop för flerdagars-möten
+        // Skapa provider-array - första token är alltid den inloggade användaren
+        const providers = [user.provider || 'google'];
+        // För resten, anta Google som standard
+        for (let i = 1; i < tokens.length; i++) {
+          providers.push('google');
+        }
+        
+        const requestBody = {
+          tokens,
+          providers,
+          duration: meetingDuration, // Alltid i rätt enhet från input
+          dayStart,
+          dayEnd,
+          isMultiDay,
+        };
+        
+        if (isMultiDay) {
+          requestBody.timeMin = new Date(multiDayStart + 'T00:00:00').toISOString();
+          requestBody.timeMax = new Date(multiDayEnd + 'T23:59:59').toISOString();
+          requestBody.multiDayStart = multiDayStart;
+          requestBody.multiDayEnd = multiDayEnd;
+        } else {
+          requestBody.timeMin = new Date(timeMin).toISOString();
+          requestBody.timeMax = new Date(timeMax).toISOString();
+        }
+        
+        const res = await fetch(`${API_BASE_URL}/api/availability`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        const data = await res.json();
+
+        if (res.ok) {
+          console.log('Received availability from backend:', data);
+          // Säkerställ att vi endast använder de gemensamma lediga tiderna från backend
+          setAvailability(Array.isArray(data) ? data : []);
+          setError(null);
+          setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} lediga tider`, severity: 'success' });
+        } else {
+          setAvailability([]);
+          setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
         }
       } catch (err) {
-        console.log('Could not fetch group tokens, using provided tokens:', err);
-      }
-    }
-    
-    tokens = Array.from(new Set(tokens.filter(Boolean)));
-    
-    if (tokens.length < 1) {
-      setError('Minst en token krävs för att visa kalendrar.');
-      setAvailability([]);
-      setIsLoadingAvailability(false);
-      return;
-    }
-    
-    // Validering för flerdagars-möten
-    if (isMultiDay) {
-      if (!multiDayStart || !multiDayEnd) {
-        setError('Ange startdatum och slutdatum för flerdagars-mötet.');
         setAvailability([]);
+        if (err.name === 'AbortError') {
+          setError('Förfrågan tog för lång tid. Försök igen.');
+        } else {
+          setError(isOnline ? 'Tekniskt fel vid hämtning av tillgänglighet.' : 'Ingen internetanslutning.');
+        }
+      } finally {
         setIsLoadingAvailability(false);
-        return;
-      }
-      if (new Date(multiDayStart) >= new Date(multiDayEnd)) {
-        setError('Slutdatum måste vara efter startdatum.');
-        setAvailability([]);
-        setIsLoadingAvailability(false);
-        return;
-      }
-    } else if (!timeMin || !timeMax) {
-      setError('Ange ett datumintervall.');
-      setAvailability([]);
-      setIsLoadingAvailability(false);
-      return;
-    }
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      
-      // Anpassa API-anrop för flerdagars-möten
-      // Skapa provider-array - första token är alltid den inloggade användaren
-      const providers = [user.provider || 'google'];
-      // För resten, anta Google som standard
-      for (let i = 1; i < tokens.length; i++) {
-        providers.push('google');
-      }
-      
-      const requestBody = {
-        tokens,
-        providers,
-        duration: meetingDuration, // Alltid i rätt enhet från input
-        dayStart,
-        dayEnd,
-        isMultiDay,
-      };
-      
-      if (isMultiDay) {
-        requestBody.timeMin = new Date(multiDayStart + 'T00:00:00').toISOString();
-        requestBody.timeMax = new Date(multiDayEnd + 'T23:59:59').toISOString();
-        requestBody.multiDayStart = multiDayStart;
-        requestBody.multiDayEnd = multiDayEnd;
-      } else {
-        requestBody.timeMin = new Date(timeMin).toISOString();
-        requestBody.timeMax = new Date(timeMax).toISOString();
-      }
-      
-      const res = await fetch(`${API_BASE_URL}/api/availability`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      const data = await res.json();
-
-      if (res.ok) {
-        console.log('Received availability from backend:', data);
-        // Säkerställ att vi endast använder de gemensamma lediga tiderna från backend
-        setAvailability(Array.isArray(data) ? data : []);
-        setError(null);
-        setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} lediga tider`, severity: 'success' });
-      } else {
-        setAvailability([]);
-        setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
       }
     } catch (err) {
       setAvailability([]);
-      if (err.name === 'AbortError') {
-        setError('Förfrågan tog för lång tid. Försök igen.');
-      } else {
-        setError(isOnline ? 'Tekniskt fel vid hämtning av tillgänglighet.' : 'Ingen internetanslutning.');
-      }
-    } finally {
+      setError('Kunde inte hämta tillgänglighet. Försök igen senare.');
       setIsLoadingAvailability(false);
     }
   };
@@ -1748,7 +1809,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                     transition: 'all 0.3s ease',
                     '&:hover': {
                       transform: 'translateY(-4px)',
-                      boxShadow: s.finalized ? '0 8px 32px rgba(76, 175, 80, 0.25)' : '0 8px 24px rgba(60,64,67,.15)'
+                      boxShadow: s.finalized ? '0 8px 32px rgba(76, 175, 80, 0.25)' : '0 8px 24px rgba(0,0,0,0.15)'
                     }
                   }}
               >
@@ -2864,28 +2925,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Typography variant="caption" sx={{ color: '#999' }}>
                     {tutorialStep + 1} av {tutorialSteps.length}
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                      size="small"
-                      onClick={closeTutorial}
-                      sx={{ color: '#666' }}
-                    >
-                      Avbryt
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      onClick={nextTutorialStep}
-                      sx={{ borderRadius: 2 }}
-                    >
-                      {tutorialStep === tutorialSteps.length - 1 ? 'Klar' : 'Nästa'}
-                    </Button>
-                  </Box>
-                </Box>
-              </Paper>
-            );
-          })()}
         </>
       )}
       
