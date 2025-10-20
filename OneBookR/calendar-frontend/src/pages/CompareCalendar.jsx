@@ -63,76 +63,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     } catch (_) {}
   }, [myToken, invitedTokens, user, directAccess, contactEmail, contactName, teamName]);
 
-  // Visa enkel fallback om token saknas (förhindrar krasch innan login-flödet hanterar det)
-  if (!myToken) {
-    return (
-      <div style={{ padding: 16, border: '1px solid #ff9800', background: '#fff8e1', borderRadius: 8, color: '#e65100' }}>
-        Din session saknar åtkomsttoken. Logga ut och in igen.
-      </div>
-    );
-  }
-
-  // BYT UT osäkra hook-destructures mot säkra default-värden
-  const themeApi = (typeof useTheme === 'function' ? useTheme() : {}) || {};
-  const theme = themeApi.theme || { isDark: false };
-  const toggleTheme = themeApi.toggleTheme || (() => {});
-
-  const notifApi = (typeof useNotifications === 'function' ? useNotifications() : {}) || {};
-  const permission = notifApi.permission ?? 'default';
-  const requestPermission = notifApi.requestPermission || (async () => {});
-  const showNotification = notifApi.showNotification || (() => {});
-  const scheduleReminder = notifApi.scheduleReminder || (() => {});
-
-  const pwaApi = (typeof usePWA === 'function' ? usePWA() : {}) || {};
-  const isInstallable = pwaApi.isInstallable ?? false;
-  const installApp = pwaApi.installApp || (() => {});
-
-  const contactsApi = (typeof useContacts === 'function' ? useContacts() : {}) || {};
-  const contacts = contactsApi.contacts || [];
-  const addContact = contactsApi.addContact || (() => {});
-  const removeContact = contactsApi.removeContact || (() => {});
-  const updateContact = contactsApi.updateContact || (() => {});
-  const incrementInviteCount = contactsApi.incrementInviteCount || (() => {});
-
-  const [availability, setAvailability] = useState([]);
-  const [newContactEmail, setNewContactEmail] = useState('');
-  const [newContactName, setNewContactName] = useState('');
-  const [selectedContacts, setSelectedContacts] = useState([]);
-  const [error, setError] = useState(null);
-  const [timeMin, setTimeMin] = useState('');
-  const [timeMax, setTimeMax] = useState('');
-  const [meetingDuration, setMeetingDuration] = useState(60);
-  const [isMultiDay, setIsMultiDay] = useState(false);
-  const [multiDayStart, setMultiDayStart] = useState('');
-  const [multiDayEnd, setMultiDayEnd] = useState('');
-  const [hasSearched, setHasSearched] = useState(false);
-  const [showAll, setShowAll] = useState(false);
-  const [dayStart, setDayStart] = useState('09:00');
-  const [dayEnd, setDayEnd] = useState('18:00');
-  const [suggestions, setSuggestions] = useState([]);
-  const [suggestDialog, setSuggestDialog] = useState({ open: false, slot: null });
-  const [meetingTitle, setMeetingTitle] = useState('');
-  const [withMeet, setWithMeet] = useState(true);
-  const [meetingLocation, setMeetingLocation] = useState('');
-  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
-  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
-  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
-  const [tutorialStep, setTutorialStep] = useState(-1);
-  const [showTutorial, setShowTutorial] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState('invitations');
-  const [sidebarMode, setSidebarMode] = useState('notifications'); // 'notifications' eller 'contacts'
-  const [invitations, setInvitations] = useState([]);
-  const [timeProposals, setTimeProposals] = useState([]);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [undoAction, setUndoAction] = useState(null);
-  const [successAnimation, setSuccessAnimation] = useState(null);
-  const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
-  const [tokenValidated, setTokenValidated] = useState(false);
-  const [isValidatingToken, setIsValidatingToken] = useState(true);
-  const urlParams = new URLSearchParams(window.location.search);
-  const groupId = urlParams.get('group');
-
   // Validera token innan allt annat
   useEffect(() => {
     const validateToken = async () => {
@@ -549,6 +479,20 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
         </Typography>
         <Typography variant="caption" sx={{ color: '#999' }}>
           Om inget händer inom några sekunder, klicka <a href="https://www.onebookr.se/auth/logout" style={{ color: '#1976d2' }}>här</a>
+        </Typography>
+      </Box>
+    );
+  }
+
+  // Visa enkel fallback om token saknas (efter hooks) för att undvika hook-ordningsfel
+  if (!myToken) {
+    return (
+      <Box sx={{ textAlign: 'center', mt: 10, px: 2 }}>
+        <Typography variant="h6" gutterBottom sx={{ color: '#bf360c', mb: 2 }}>
+          Din session saknar åtkomsttoken
+        </Typography>
+        <Typography variant="body1" sx={{ color: '#666' }}>
+          Logga ut och in igen.
         </Typography>
       </Box>
     );
