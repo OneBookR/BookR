@@ -26,7 +26,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   const [statusLoaded, setStatusLoaded] = useState(false);
   const [isValidatingToken, setIsValidatingToken] = useState(true);
   const [tokenExpired, setTokenExpired] = useState(false);
-  const [tokenValidated, setTokenValidated] = useState(false);
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
@@ -67,7 +66,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       if (!user || !user.accessToken) {
         setIsValidatingToken(false);
         setTokenExpired(false);
-        setTokenValidated(false);
         return;
       }
 
@@ -82,7 +80,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         if (response.status === 401) {
           console.log('Token has expired in Dashboard, clearing and redirecting...');
           setTokenExpired(true);
-          setTokenValidated(false);
           setIsValidatingToken(false);
           
           // Spara aktuell URL för att återvända efter inloggning
@@ -97,17 +94,16 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           setTimeout(() => {
             window.location.href = 'https://www.onebookr.se/auth/logout';
           }, 2000); // Ge användaren tid att se meddelandet
+          return; // Stoppa fortsatt rendering
         } else {
           console.log('Token is valid in Dashboard');
           setTokenExpired(false);
-          setTokenValidated(true);
           setIsValidatingToken(false);
         }
       } catch (error) {
         console.error('Error validating token in Dashboard:', error);
         // Vid nätverksfel, fortsätt ändå men logga felet
         setTokenExpired(false);
-        setTokenValidated(true);
         setIsValidatingToken(false);
       }
     };
@@ -374,42 +370,42 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 	const canRenderCompare = useMemo(() => {
 		const haveMyToken = typeof user?.accessToken === 'string' && user.accessToken.length > 0;
 		if (!haveMyToken) return false;
-		// NYTT: Vänta på att token-validering är klar OCH token är giltig
-		if (isValidatingToken || !tokenValidated) return false;
+		// NYTT: Blockera om token fortfarande valideras eller har gått ut
+		if (isValidatingToken || tokenExpired) return false;
 		if (directAccess === 'true') return true;
 		if (!groupId) return true;
 		return statusLoaded && (groupStatus?.allJoined || (groupStatus?.expected ?? 1) <= 1);
-	}, [user?.accessToken, isValidatingToken, tokenValidated, directAccess, groupId, statusLoaded, groupStatus?.allJoined, groupStatus?.expected]);
+	}, [user?.accessToken, isValidatingToken, tokenExpired, directAccess, groupId, statusLoaded, groupStatus?.allJoined, groupStatus?.expected]);
 
 	// NYTT: frys props vid första "redo"-ögonblick
 	const [frozen, setFrozen] = useState(null);
 	useEffect(() => {
-		if (canRenderCompare && !compareMounted && tokenValidated) {
-			setFrozen({
-				key: `cmp-${groupId || 'nogroup'}-${directAccess === 'true'}`,
-				myToken: user.accessToken,
-				invitedTokens: safeInvitedTokens,
-				groupId,
-				directAccess: directAccess === 'true',
-				contactEmail: (contactEmails && contactEmails.length > 0) ? contactEmails[0] : undefined,
-				contactEmails,
-				contactName,
-				teamName,
-			});
-			setCompareMounted(true);
-		}
-	}, [
-		canRenderCompare,
-		compareMounted,
-		tokenValidated,
-		user.accessToken,
-		safeInvitedTokens,
-		groupId,
-		directAccess,
-		contactEmails,
-		contactName,
-		teamName
-	]);
+    // Ta bort tokenValidated-check
+    if (canRenderCompare && !compareMounted) {
+      setFrozen({
+        key: `cmp-${groupId || 'nogroup'}-${directAccess === 'true'}`,
+        myToken: user.accessToken,
+        invitedTokens: safeInvitedTokens,
+        groupId,
+        directAccess: directAccess === 'true',
+        contactEmail: (contactEmails && contactEmails.length > 0) ? contactEmails[0] : undefined,
+        contactEmails,
+        contactName,
+        teamName,
+      });
+      setCompareMounted(true);
+    }
+  }, [
+    canRenderCompare,
+    compareMounted,
+    user.accessToken,
+    safeInvitedTokens,
+    groupId,
+    directAccess,
+    contactEmails,
+    contactName,
+    teamName
+  ]);
 
   // Visa laddningsskärm under token-validering
   if (isValidatingToken) {
