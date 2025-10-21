@@ -720,21 +720,19 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
         {compareMounted && frozen && (
           <Box>
-            <ErrorBoundary componentName="CompareCalendar">
-              <CompareCalendar
-                // ...existing code...
-                key={frozen.key}
-                myToken={frozen.myToken}
-                invitedTokens={frozen.invitedTokens}
-                user={user}
-                groupId={frozen.groupId}
-                directAccess={frozen.directAccess}
-                contactEmail={frozen.contactEmail}
-                contactEmails={frozen.contactEmails}
-                contactName={frozen.contactName}
-                teamName={frozen.teamName}
-              />
-            </ErrorBoundary>
+            {/* Ta ej med ErrorBoundary här */}
+            <CompareCalendar
+              key={frozen.key}
+              myToken={frozen.myToken}
+              invitedTokens={frozen.invitedTokens}
+              user={user}
+              groupId={frozen.groupId}
+              directAccess={frozen.directAccess}
+              contactEmail={frozen.contactEmail}
+              contactEmails={frozen.contactEmails}
+              contactName={frozen.contactName}
+              teamName={frozen.teamName}
+            />
           </Box>
         )}
       </Box>
