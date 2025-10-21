@@ -444,6 +444,30 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     }
   };
 
+  const handleCalendarSelectSlot = (slotInfo) => {
+    if (groupId) {
+      setSuggestDialog({
+        open: true,
+        slot: {
+          start: slotInfo.start,
+          end: slotInfo.end,
+        }
+      });
+    }
+  };
+
+  const handleCalendarSelectEvent = (event) => {
+    if (groupId) {
+      setSuggestDialog({
+        open: true,
+        slot: {
+          start: event.start,
+          end: event.end,
+        }
+      });
+    }
+  };
+
   // Spara vy och datum i state för att kunna byta vy och navigera
   const [calendarView, setCalendarView] = useState('week');
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -1745,30 +1769,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                       mt: 2,
                     }}>
                       <Typography sx={{
-                        color: '#2e7d32',
-                        fontWeight: 700,
-                        mb: 2,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        fontSize: 16
-                      }}>
-                        <span style={{
-                          fontSize: 24,
-                          marginRight: 8,
-                        }}>🎉</span>
-                        Mötet är bokat!
-                      </Typography>
-                      <Typography sx={{ color: '#1b5e20', fontWeight: 500, mb: 2, fontSize: 14 }}>
-                        Alla har accepterat tiden. Kalenderinbjudan och möteslänk skickas ut via mejl.
-                      </Typography>
-                      {s.withMeet && s.meetLink && (
-                        <Box sx={{
-                          bgcolor: '#fff',
-                          border: '1px solid #e0e3e7',
-                          borderRadius: 2,
-                          p: 2,
-                          mt: 2
                         }}>
                           <Typography sx={{ color: '#1976d2', fontWeight: 600, mb: 1, fontSize: 14 }}>
                             Google Meet-länk:
