@@ -60,6 +60,15 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     }
   }, [groupId, directAccess]);
   
+  // Härleder provider (fallback om props saknar provider)
+  const derivedProvider = React.useMemo(() => {
+    const p = user?.provider;
+    if (p) return p.toLowerCase();
+    const em = (user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || '').toLowerCase();
+    if (/@(outlook|hotmail|live|msn|office365)\./.test(em)) return 'microsoft';
+    return 'google';
+  }, [user?.provider, user?.email, user?.emails]);
+
   // Validera token innan någon kalenderjämförelse
   useEffect(() => {
     const validateToken = async () => {
@@ -70,33 +79,33 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       }
 
       try {
-        // Testa token genom att göra ett enkelt API-anrop
-        const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
-          headers: {
-            Authorization: `Bearer ${user.accessToken}`,
-          },
+        // Välj rätt endpoint per provider
+        const endpoint =
+          derivedProvider === 'microsoft'
+            ? 'https://graph.microsoft.com/v1.0/me'
+            : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
+
+        const response = await fetch(endpoint, {
+          headers: { Authorization: `Bearer ${user.accessToken}` },
         });
 
         if (response.status === 401) {
-          console.log('Token has expired in Dashboard, clearing and redirecting...');
+          console.log(`Token has expired in Dashboard for provider=${derivedProvider}, clearing and redirecting...`);
           setTokenExpired(true);
           setIsValidatingToken(false);
-          
-          // Spara aktuell URL för att återvända efter inloggning
+
           const currentUrl = window.location.href;
           localStorage.setItem('bookr_return_url', currentUrl);
-          
-          // Rensa användardata
           localStorage.removeItem('bookr_user');
           sessionStorage.removeItem('hasTriedSession');
-          
-          // Omdirigera omedelbart till logout
+
           setTimeout(() => {
             window.location.href = 'https://www.onebookr.se/auth/logout';
-          }, 2000); // Ge användaren tid att se meddelandet
-          return; // Stoppa fortsatt rendering
+          }, 2000);
+          return;
         } else {
-          console.log('Token is valid in Dashboard');
+          // Vid 2xx/3xx/403 etc: betrakta token som giltig (endast 401 ska logga ut)
+          console.log(`Token is valid in Dashboard for provider=${derivedProvider} (status ${response.status})`);
           setTokenExpired(false);
           setIsValidatingToken(false);
         }
@@ -109,7 +118,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     };
 
     validateToken();
-  }, [user?.accessToken]);
+  }, [user?.accessToken, derivedProvider]);
  
   useEffect(() => {
     // VIKTIGT: Hämta ALLTID den inloggade användarens e-post (INTE fromUser!)
