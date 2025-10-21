@@ -158,15 +158,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
     try {
-      // FIX: låt tokens vara let (vi utökar listan med gruppens tokens)
+      // FIX: använd let (vi utökar listan nedan)
       let tokens = [myToken, ...(Array.isArray(invitedTokens) ? invitedTokens : [])].filter(Boolean);
       if (!Array.isArray(tokens) || tokens.length === 0) {
         console.warn('[CompareCalendar] Hoppar över fetchAvailability: tom token-lista');
         return;
       }
-
-      // Ta bort intern token-gating här. Dashboard sköter valideringen.
-      // if (!tokenValidated) { ...redirect... }
 
       if (!isOnline) {
         setError('Ingen internetanslutning. Kontrollera din anslutning och försök igen.');
@@ -202,64 +199,51 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        // Anpassa API-anrop för flerdagars-möten
-        // Skapa provider-array - första token är alltid den inloggade användaren
-        const providers = [userProvider];
-        for (let i = 1; i < tokens.length; i++) {
-          providers.push('google');
-        }
-        
-        const requestBody = {
-          tokens,
-          providers,
-          duration: meetingDuration, // Alltid i rätt enhet från input
-          dayStart,
-          dayEnd,
-          isMultiDay,
-        };
-        
+        // OBS: Ta bort providers-heuristik (den var fel för Microsoft-token)
+        // const providers = [userProvider, ...];  // BORTTAGET
+
         // Hämta grupptokens och slå ihop
         if (groupId) {
           try {
             const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
             if (groupTokensRes.ok) {
               const groupTokensData = await groupTokensRes.json();
-              tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
+              tokens = Array.from(new Set([...tokens, ...(groupTokensData.tokens || [])]));
             }
           } catch (err) {
             console.log('Could not fetch group tokens, using provided tokens:', err);
           }
         }
-        
+
         tokens = Array.from(new Set(tokens.filter(Boolean)));
+
+        const requestBody = {
+          tokens,
+          // Viktigt: låt backend auto-detektera provider per token → skicka inte providers
+          duration: meetingDuration,
+          dayStart,
+          dayEnd,
+          isMultiDay,
+          ...(isMultiDay
+            ? {
+                timeMin: new Date(multiDayStart + 'T00:00:00').toISOString(),
+                timeMax: new Date(multiDayEnd + 'T23:59:59').toISOString(),
+                multiDayStart,
+                multiDayEnd
+              }
+            : {
+                timeMin: new Date(timeMin).toISOString(),
+                timeMax: new Date(timeMax).toISOString()
+              })
+        };
 
         const res = await fetch(`${API_BASE_URL}/api/availability`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            tokens,
-            providers,
-            duration: meetingDuration,
-            dayStart,
-            dayEnd,
-            isMultiDay,
-            ...(isMultiDay
-              ? {
-                  timeMin: new Date(multiDayStart + 'T00:00:00').toISOString(),
-                  timeMax: new Date(multiDayEnd + 'T23:59:59').toISOString(),
-                  multiDayStart,
-                  multiDayEnd
-                }
-              : {
-                  timeMin: new Date(timeMin).toISOString(),
-                  timeMax: new Date(timeMax).toISOString()
-                })
-          }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
           signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
         const data = await res.json();
 
