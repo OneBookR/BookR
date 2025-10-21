@@ -63,16 +63,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     } catch (_) {}
   }, [myToken, invitedTokens, user, directAccess, contactEmail, contactName, teamName]);
 
-  // Fallback för user och myToken
-  if (!user || !myToken) {
-    return (
-      <div style={{ padding: 16, border: '1px solid #ff9800', background: '#fff8e1', borderRadius: 8, color: '#e65100' }}>
-        Din session saknar användare eller åtkomsttoken. Logga ut och in igen.
-      </div>
-    );
-  }
-
-  // Fallback för user.provider
   const userProvider = user?.provider || 'google';
 
   // --- FIX: Always call hooks at the top level ---
@@ -135,57 +125,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   const [isValidatingToken, setIsValidatingToken] = useState(true);
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
-
-  // NYTT: Validera token via backend (stöd för Google/Microsoft)
-  useEffect(() => {
-    const validate = async () => {
-      if (!myToken) {
-        setIsValidatingToken(false);
-        setTokenValidated(false);
-        return;
-      }
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/auth/validate-token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: myToken, provider: userProvider })
-        });
-        const data = await res.json();
-        const valid = !!data.valid;
-        setTokenValidated(valid);
-        if (!valid) {
-          setToast({ open: true, message: 'Din session har gått ut. Logga in igen.', severity: 'error' });
-          setTimeout(() => {
-            window.location.href = `${API_BASE_URL}/auth/logout`;
-          }, 1500);
-        }
-      } catch (e) {
-        setTokenValidated(false);
-        setToast({ open: true, message: 'Kunde inte validera token. Försök logga in igen.', severity: 'error' });
-        setTimeout(() => {
-          window.location.href = `${API_BASE_URL}/auth/logout`;
-        }, 1500);
-      } finally {
-        setIsValidatingToken(false);
-      }
-    };
-    validate();
-  }, [myToken, userProvider, API_BASE_URL]);
-
-  if (error) {
-    return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Typography color="error">{error}</Typography>
-        <Button 
-          onClick={() => window.location.href = '/auth/logout'}
-          variant="contained"
-          sx={{ mt: 2 }}
-        >
-          Logga in igen
-        </Button>
-      </Box>
-    );
-  }
 
   // Hämta förslag
   useEffect(() => {
@@ -502,90 +441,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
       }
     } catch (error) {
       setToast({ open: true, message: 'Kunde inte registrera röst. Försök igen.', severity: 'error' });
-    }
-  };
-
-  if (!user) {
-    return (
-      <Box sx={{ textAlign: 'center', mt: 10, px: 2 }}>
-        <Typography variant="h5" gutterBottom>
-          Laddar...
-        </Typography>
-      </Box>
-    );
-  }
-
-  // Visa laddningsskärm under token-validering
-  if (isValidatingToken) {
-    return (
-      <Box sx={{ textAlign: 'center', mt: 10, px: 2 }}>
-        <Typography variant="h5" gutterBottom sx={{ color: '#0a2540', mb: 2 }}>
-          Validerar din inloggning...
-        </Typography>
-        <Typography variant="body1" sx={{ color: '#666' }}>
-          Detta tar bara några sekunder
-        </Typography>
-      </Box>
-    );
-  }
-
-  // Visa meddelande om token är ogiltig
-  if (!tokenValidated) {
-    return (
-      <Box sx={{ 
-        textAlign: 'center', 
-        mt: 10,
-        px: 2,
-        py: 8,
-        bgcolor: '#fff3e0',
-        borderRadius: 3,
-        border: '2px solid #ff9800',
-        maxWidth: 600,
-        mx: 'auto'
-      }}>
-        <Typography variant="h5" gutterBottom sx={{ color: '#bf360c', mb: 2 }}>
-          ⚠️ Din session har gått ut
-        </Typography>
-        <Typography variant="body1" sx={{ color: '#666', mb: 3 }}>
-          För att kunna jämföra kalendrar behöver du logga in igen.
-          Du omdirigeras automatiskt...
-        </Typography>
-        <Typography variant="caption" sx={{ color: '#999' }}>
-          Om inget händer inom några sekunder, klicka <a href="https://www.onebookr.se/auth/logout" style={{ color: '#1976d2' }}>här</a>
-        </Typography>
-      </Box>
-    );
-  }
-
-  // NYTT: Hantera klick i kalendern
-  const handleCalendarSelectSlot = (slotInfo) => {
-    console.log('handleCalendarSelectSlot called:', slotInfo, 'groupId:', groupId);
-    if (groupId) {
-      setSuggestDialog({
-        open: true,
-        slot: {
-          start: slotInfo.start,
-          end: slotInfo.end,
-        }
-      });
-    } else {
-      console.log('No groupId, cannot suggest time');
-    }
-  };
-
-  // Hantera klick i kalendern (tillåt även klick på upptagna tider)
-  const handleCalendarSelectEvent = (event) => {
-    console.log('handleCalendarSelectEvent called:', event, 'groupId:', groupId);
-    if (groupId) {
-      setSuggestDialog({
-        open: true,
-        slot: {
-          start: event.start,
-          end: event.end,
-        }
-      });
-    } else {
-      console.log('No groupId, cannot suggest time');
     }
   };
 
