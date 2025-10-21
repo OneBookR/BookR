@@ -155,6 +155,17 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     }
   }, [groupId]);
 
+  // Heuristik: avgör provider från token-format
+  const detectProvider = (t) => {
+    if (!t) return 'google';
+    // Google access tokens brukar börja med 'ya29.'
+    if (t.startsWith('ya29.')) return 'google';
+    // Microsoft Graph access tokens från OAuth2/MSAL är ofta JWT (tre delar) eller börjar med 'Ew'
+    if (/^Ew[A-Za-z0-9]/.test(t)) return 'microsoft';
+    if (t.split('.').length === 3) return 'microsoft';
+    return 'google';
+  };
+
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
     try {
@@ -217,9 +228,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
 
         tokens = Array.from(new Set(tokens.filter(Boolean)));
 
+        // NYTT: Bygg providers-array i samma ordning som tokens
+        const providers = tokens.map(detectProvider);
+
         const requestBody = {
           tokens,
-          // Viktigt: låt backend auto-detektera provider per token → skicka inte providers
+          providers, // viktigt för att backend inte ska defaulta till google
           duration: meetingDuration,
           dayStart,
           dayEnd,
@@ -674,7 +688,10 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     
     tokens = Array.from(new Set(tokens.filter(Boolean)));
     if (tokens.length < 1) return;
-    
+
+    // NYTT: providers även i auto-laddning
+    const providers = tokens.map(detectProvider);
+
     try {
       const res = await fetch(`${API_BASE_URL}/api/availability`, {
         method: 'POST',
@@ -683,6 +700,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
         },
         body: JSON.stringify({
           tokens,
+          providers, // viktigt, annars defaultar backend till google för alla
           timeMin: start.toISOString(),
           timeMax: end.toISOString(),
           duration: meetingDuration,
@@ -2662,7 +2680,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                         </Box>
                       </Paper>
                     ))
-                  )}
+                  }
                 </Box>
               )}
             </Box>
@@ -2749,24 +2767,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
             return (
               <Paper
                 sx={{
-                  position: 'absolute',
-                  top: isBottom ? rect.top + window.scrollY - 200 : rect.bottom + window.scrollY + 20,
-                  left: popupLeft,
-                  width: 300,
-                  p: 3,
-                  zIndex: 10000,
-                  borderRadius: 3,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    [isBottom ? 'bottom' : 'top']: -10,
-                    left: Math.max(10, rect.left + rect.width/2 - popupLeft),
-                    width: 0,
-                    height: 0,
-                    borderLeft: '10px solid transparent',
-                    borderRight: '10px solid transparent',
-                    [isBottom ? 'borderTop' : 'borderBottom']: '10px solid white'
                   }
                 }}
               >
