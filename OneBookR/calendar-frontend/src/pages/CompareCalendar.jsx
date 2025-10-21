@@ -7,7 +7,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 // Konfigurera moment för svensk tid (GMT+1)
 moment.locale('sv');
 import '../styles/theme.css';
-import { Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, DialogActions, Paper, InputAdornment, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Fade, Tooltip, Badge, Skeleton, Slide, Zoom, Grow, IconButton } from '@mui/material';
+import { Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, DialogActions, DialogContent, Paper, InputAdornment, MenuItem, Select, FormControl, InputLabel, CircularProgress, Snackbar, Alert, Fade, Tooltip, Badge, Skeleton, Slide, Zoom, Grow, IconButton, Divider } from '@mui/material';
 import { TimeSlotSkeleton, SuggestionSkeleton } from '../components/LoadingSkeleton';
 import { useTheme } from '../hooks/useTheme';
 import { useNotifications } from '../hooks/useNotifications';
@@ -23,6 +23,8 @@ import GroupIcon from '@mui/icons-material/Group';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { API_BASE_URL } from '../config';
 
 // --- NYTT: Modernare typsnitt och färger, minimalistiskt ---
@@ -38,7 +40,7 @@ const calendarTodayBg = "#fffde7";
 
 const localizer = momentLocalizer(moment);
 
-export default function CompareCalendar({ myToken, invitedTokens = [], user, directAccess, contactEmail, contactName, teamName }) {
+export default function CompareCalendar({ myToken, invitedTokens = [], user, directAccess, contactEmail, contactEmails, contactName, teamName }) {
   // Säkerställ att hooks som använder window.user fungerar
   React.useEffect(() => {
     try {
@@ -57,11 +59,12 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
         userEmail: user?.email || user?.emails?.[0]?.value || user?.emails?.[0],
         directAccess,
         contactEmail,
+        contactEmails,
         contactName,
         teamName,
       });
     } catch (_) {}
-  }, [myToken, invitedTokens, user, directAccess, contactEmail, contactName, teamName]);
+  }, [myToken, invitedTokens, user, directAccess, contactEmail, contactEmails, contactName, teamName]);
 
   // Fallback för user och myToken
   if (!user || !myToken) {
@@ -104,16 +107,8 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
   const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState('invitations');
-  const [invitations, setInvitations] = useState([]);
-  const [timeProposals, setTimeProposals] = useState([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [successAnimation, setSuccessAnimation] = useState(null);
-  const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
-  const [calendarView, setCalendarView] = useState('week');
-  const [calendarDate, setCalendarDate] = useState(new Date());
-  const [isMobile, setIsMobile] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState([]);
   
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
@@ -281,8 +276,6 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
       });
       
       if (response.ok) {
-        setSuccessAnimation('suggestion');
-        setTimeout(() => setSuccessAnimation(null), 2000);
         setToast({ open: true, message: 'Tidsförslag skickat!', severity: 'success' });
         setSuggestDialog({ open: false, slot: null });
         
@@ -365,225 +358,289 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
     }
   }, [myToken, timeMin, timeMax]);
 
-  // Mobildetektering
+  // Hämta kalenderhändelser för att visa i kalendervyn
   useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      if (mobile) {
-        setCalendarView('agenda');
-      } else {
-        setCalendarView('week');
+    const fetchCalendarEvents = async () => {
+      if (!myToken || !timeMin || !timeMax) return;
+      
+      try {
+        const response = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
+          `timeMin=${encodeURIComponent(new Date(timeMin).toISOString())}&` +
+          `timeMax=${encodeURIComponent(new Date(timeMax).toISOString())}&` +
+          `singleEvents=true&orderBy=startTime`,
+          {
+            headers: {
+              'Authorization': `Bearer ${myToken}`
+            }
+          }
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          const events = (data.items || []).map(event => ({
+            title: event.summary || 'Ingen titel',
+            start: new Date(event.start.dateTime || event.start.date),
+            end: new Date(event.end.dateTime || event.end.date),
+            allDay: !event.start.dateTime
+          }));
+          setCalendarEvents(events);
+        }
+      } catch (error) {
+        console.error('Failed to fetch calendar events:', error);
       }
     };
     
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  // Kalenderstyling
-  useEffect(() => {
-    const styleId = "modern-calendar-style";
-    if (document.getElementById(styleId)) return;
-    const style = document.createElement("style");
-    style.id = styleId;
-    
-    style.innerHTML = `
-      .rbc-calendar, .rbc-time-view, .rbc-agenda-view, .rbc-month-view {
-        font-family: ${calendarFontFamily} !important;
-        background: ${calendarBg};
-        border-radius: 10px;
-        border: 1px solid ${calendarBorder};
-        box-shadow: 0 2px 8px 0 rgba(60,64,67,.06);
-        color: ${theme.colors.text};
-      }
-      .rbc-toolbar {
-        font-family: ${calendarFontFamily} !important;
-        background: ${calendarHeaderBg};
-        border-bottom: 1px solid ${calendarBorder};
-        border-radius: 10px 10px 0 0;
-        padding: 10px 16px;
-      }
-      .rbc-event {
-        background-color: #e3f2fd !important;
-        color: #1976d2 !important;
-        border: 1px solid #1976d2 !important;
-        border-radius: 4px !important;
-      }
-    `;
-    document.head.appendChild(style);
-    return () => {
-      if (document.getElementById(styleId)) {
-        document.getElementById(styleId).remove();
-      }
-    };
-  }, [theme.isDark, calendarBg, calendarBorder, calendarHeaderBg, calendarFontFamily, theme.colors.text]);
-
-  // NYTT: Hantera klick i kalendern
-  const handleCalendarSelectSlot = (slotInfo) => {
-    if (groupId) {
-      setSuggestDialog({
-        open: true,
-        slot: {
-          start: slotInfo.start,
-          end: slotInfo.end,
-        }
-      });
-    }
-  };
-
-  const handleCalendarSelectEvent = (event) => {
-    if (groupId) {
-      setSuggestDialog({
-        open: true,
-        slot: {
-          start: event.start,
-          end: event.end,
-        }
-      });
-    }
-  };
+    fetchCalendarEvents();
+  }, [myToken, timeMin, timeMax]);
 
   return (
     <>
-      <div style={{ marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), transition: 'margin-right 0.3s ease', minHeight: '100vh', padding: isMobile ? '8px' : '0' }}>
-        <Slide direction="up" in={true} timeout={800}>
-          <Box sx={{ bgcolor: theme.colors.surface, borderRadius: { xs: 2, sm: 3 }, boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)', border: `1px solid ${theme.colors.border}`, p: { xs: 2, sm: 3 }, mb: { xs: 8, sm: 15 }, maxWidth: { xs: '100%', sm: 800 }, mx: 0, transition: 'all 0.3s ease' }}>
-            <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 0, maxWidth: 600 }}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
-                  <TextField label="Från" type="date" InputLabelProps={{ shrink: true }} value={timeMin ? timeMin.slice(0, 10) : ''} onChange={e => { const date = e.target.value; const time = timeMin ? timeMin.slice(11, 16) : '00:00'; setTimeMin(date ? `${date}T${time}` : ''); }} fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
-                  <TextField label="Tid" type="time" InputLabelProps={{ shrink: true }} value={timeMin ? timeMin.slice(11, 16) : ''} onChange={e => { if (timeMin) { setTimeMin(timeMin.slice(0, 10) + 'T' + e.target.value); } }} sx={{ minWidth: 120, maxWidth: 160, '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
-                </Box>
-                <Typography sx={{ mx: 1, fontWeight: 600, color: '#888', fontSize: 22, userSelect: 'none', display: { xs: 'none', sm: 'block' } }}>–</Typography>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
-                  <TextField label="Till" type="date" InputLabelProps={{ shrink: true }} value={timeMax ? timeMax.slice(0, 10) : ''} onChange={e => { const date = e.target.value; const time = timeMax ? timeMax.slice(11, 16) : '23:59'; setTimeMax(date ? `${date}T${time}` : ''); }} fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
-                  <TextField label="Tid" type="time" InputLabelProps={{ shrink: true }} value={timeMax ? timeMax.slice(11, 16) : ''} onChange={e => { if (timeMax) { setTimeMax(timeMax.slice(0, 10) + 'T' + e.target.value); } }} sx={{ minWidth: 120, maxWidth: 160, '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
-                </Box>
+      <Slide direction="up" in={true} timeout={800}>
+        <Box sx={{ bgcolor: theme.colors.surface, borderRadius: { xs: 2, sm: 3 }, boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)', border: `1px solid ${theme.colors.border}`, p: { xs: 2, sm: 3 }, mb: { xs: 8, sm: 15 }, maxWidth: { xs: '100%', sm: 800 }, mx: 0, transition: 'all 0.3s ease' }}>
+          <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 0, maxWidth: 600 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
+              <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
+                <TextField label="Från" type="date" InputLabelProps={{ shrink: true }} value={timeMin ? timeMin.slice(0, 10) : ''} onChange={e => { const date = e.target.value; const time = timeMin ? timeMin.slice(11, 16) : '00:00'; setTimeMin(date ? `${date}T${time}` : ''); }} fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
+                <TextField label="Tid" type="time" InputLabelProps={{ shrink: true }} value={timeMin ? timeMin.slice(11, 16) : ''} onChange={e => { if (timeMin) { setTimeMin(timeMin.slice(0, 10) + 'T' + e.target.value); } }} sx={{ minWidth: 120, maxWidth: 160, '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
               </Box>
-              <Typography variant="caption" sx={{ color: '#888', mb: 0.3, mt: 2, pl: 1.0 }}>
-                Om du inte anger något datumintervall visas automatiskt alla lediga tider från idag och 30 dagar framåt.
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, gap: 2, mt: 1 }}>
-                <TextField label={isMultiDay ? "Timmar per dag" : "Mötestid (minuter)"} type="number" value={meetingDuration} onChange={(e) => setMeetingDuration(Number(e.target.value))} sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
-                <Button variant={isMultiDay ? "contained" : "outlined"} onClick={() => setIsMultiDay(!isMultiDay)} sx={{ borderRadius: 999, px: 3, fontWeight: 600, fontSize: 12 }}>Flera dagar</Button>
+              <Typography sx={{ mx: 1, fontWeight: 600, color: '#888', fontSize: 22, userSelect: 'none', display: { xs: 'none', sm: 'block' } }}>–</Typography>
+              <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
+                <TextField label="Till" type="date" InputLabelProps={{ shrink: true }} value={timeMax ? timeMax.slice(0, 10) : ''} onChange={e => { const date = e.target.value; const time = timeMax ? timeMax.slice(11, 16) : '23:59'; setTimeMax(date ? `${date}T${time}` : ''); }} fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
+                <TextField label="Tid" type="time" InputLabelProps={{ shrink: true }} value={timeMax ? timeMax.slice(11, 16) : ''} onChange={e => { if (timeMax) { setTimeMax(timeMax.slice(0, 10) + 'T' + e.target.value); } }} sx={{ minWidth: 120, maxWidth: 160, '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
               </Box>
-              {isMultiDay && (
-                <Box sx={{ mt: 2, p: 2, bgcolor: '#e3f2fd', borderRadius: 2, border: '1px solid #1976d2' }}>
-                  <Typography variant="body2" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>Flerdagars-möte</Typography>
-                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                    <TextField label="Startdatum" type="date" value={multiDayStart} onChange={e => setMultiDayStart(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 999, background: '#fff' } }} />
-                    <Typography sx={{ color: '#1976d2', fontWeight: 600 }}>–</Typography>
-                    <TextField label="Slutdatum" type="date" value={multiDayEnd} onChange={e => setMultiDayEnd(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 999, background: '#fff' } }} />
-                  </Box>
-                  <Typography variant="caption" sx={{ color: '#666', mt: 1, display: 'block' }}>Ange hur många timmar per dag mötet ska vara och välj datumintervall</Typography>
-                </Box>
-              )}
-              <TextField label="Från (dagens starttid)" type="time" value={dayStart} onChange={e => setDayStart(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
-              <TextField label="Till (dagens sluttid)" type="time" value={dayEnd} onChange={e => setDayEnd(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
-              <Button variant="contained" color="primary" onClick={fetchAvailability} disabled={isLoadingAvailability} sx={{ fontWeight: 600, fontSize: '1.08rem', letterSpacing: 0.5, borderRadius: 999, minWidth: 0, minHeight: 0, height: 48, width: '100%', background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)', color: '#fff', boxShadow: '0 2px 8px 0 rgba(99,91,255,0.13)', transition: 'background 0.2s, box-shadow 0.2s, transform 0.1s', '&:hover': { background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)', boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)', transform: 'scale(1.03)' }, '&:active': { background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)', boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)', transform: 'scale(0.98)' }, '&:disabled': { background: '#ccc', transform: 'none', boxShadow: 'none' }, py: 1.2, mt: 1, mb: 3, textTransform: 'none', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1 }}>
-                {isLoadingAvailability && <CircularProgress size={20} sx={{ color: 'white' }} />}
-                {isLoadingAvailability ? 'Jämför kalendrar...' : 'Jämför kalendrar'}
-                {!isOnline && ' (Offline)'}
-              </Button>
             </Box>
+            <Typography variant="caption" sx={{ color: '#888', mb: 0.3, mt: 2, pl: 1.0 }}>
+              Om du inte anger något datumintervall visas automatiskt alla lediga tider från idag och 30 dagar framåt.
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, gap: 2, mt: 1 }}>
+              <TextField label={isMultiDay ? "Timmar per dag" : "Mötestid (minuter)"} type="number" value={meetingDuration} onChange={(e) => setMeetingDuration(Number(e.target.value))} sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
+              <Button variant={isMultiDay ? "contained" : "outlined"} onClick={() => setIsMultiDay(!isMultiDay)} sx={{ borderRadius: 999, px: 3, fontWeight: 600, fontSize: 12 }}>Flera dagar</Button>
+            </Box>
+            {isMultiDay && (
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#e3f2fd', borderRadius: 2, border: '1px solid #1976d2' }}>
+                <Typography variant="body2" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>Flerdagars-möte</Typography>
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <TextField label="Startdatum" type="date" value={multiDayStart} onChange={e => setMultiDayStart(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 999, background: '#fff' } }} />
+                  <Typography sx={{ color: '#1976d2', fontWeight: 600 }}>–</Typography>
+                  <TextField label="Slutdatum" type="date" value={multiDayEnd} onChange={e => setMultiDayEnd(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 999, background: '#fff' } }} />
+                </Box>
+                <Typography variant="caption" sx={{ color: '#666', mt: 1, display: 'block' }}>Ange hur många timmar per dag mötet ska vara och välj datumintervall</Typography>
+              </Box>
+            )}
+            <TextField label="Från (dagens starttid)" type="time" value={dayStart} onChange={e => setDayStart(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
+            <TextField label="Till (dagens sluttid)" type="time" value={dayEnd} onChange={e => setDayEnd(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 999, background: theme.colors.bg, color: theme.colors.text, '& fieldset': { borderColor: theme.colors.border } }, '& .MuiInputBase-root': { borderRadius: 999 }, '& .MuiInputLabel-root': { color: theme.colors.textSecondary } }} variant="outlined" />
+            <Button variant="contained" color="primary" onClick={fetchAvailability} disabled={isLoadingAvailability} sx={{ fontWeight: 600, fontSize: '1.08rem', letterSpacing: 0.5, borderRadius: 999, minWidth: 0, minHeight: 0, height: 48, width: '100%', background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)', color: '#fff', boxShadow: '0 2px 8px 0 rgba(99,91,255,0.13)', transition: 'background 0.2s, box-shadow 0.2s, transform 0.1s', '&:hover': { background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)', boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)', transform: 'scale(1.03)' }, '&:active': { background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)', boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)', transform: 'scale(0.98)' }, '&:disabled': { background: '#ccc', transform: 'none', boxShadow: 'none' }, py: 1.2, mt: 1, mb: 3, textTransform: 'none', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1 }}>
+              {isLoadingAvailability && <CircularProgress size={20} sx={{ color: 'white' }} />}
+              {isLoadingAvailability ? 'Jämför kalendrar...' : 'Jämför kalendrar'}
+              {!isOnline && ' (Offline)'}
+            </Button>
+          </Box>
+        </Box>
+      </Slide>
+
+      {!isOnline && <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>🚫 Ingen internetanslutning - vissa funktioner kan vara begränsade</Alert>}
+      {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{error}</Alert>}
+      {hasSearched && !error && filteredAvailability.length === 0 && <Typography>Inga lediga tider hittades.</Typography>}
+
+      {/* Lediga tider - lista */}
+      {hasSearched && !isLoadingAvailability && sortedFutureSlots.length > 0 && (
+        <Slide direction="up" in={true} timeout={1000}>
+          <Box sx={{ mt: 4, mb: 6 }}>
+            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: theme.colors.text }}>
+              Lediga tider ({sortedFutureSlots.length})
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {visibleSlots.map((slot, index) => {
+                const start = new Date(slot.start);
+                const end = new Date(slot.end);
+                const dayName = start.toLocaleDateString('sv-SE', { weekday: 'long' });
+                const dateStr = start.toLocaleDateString('sv-SE');
+                const timeStr = `${start.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}`;
+                
+                return (
+                  <Fade in={true} timeout={800 + index * 100} key={index}>
+                    <Card sx={{
+                      borderRadius: 3,
+                      boxShadow: '0 2px 8px rgba(60,64,67,.06)',
+                      border: `1px solid ${theme.colors.border}`,
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 8px 24px rgba(99,91,255,0.15)'
+                      }
+                    }}>
+                      <CardContent sx={{ p: 3 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <CheckCircleIcon sx={{ color: '#4caf50', fontSize: 32 }} />
+                            <Box>
+                              <Typography variant="h6" sx={{ fontWeight: 600, color: theme.colors.text, mb: 0.5 }}>
+                                {dayName.charAt(0).toUpperCase() + dayName.slice(1)} {dateStr}
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <AccessTimeIcon sx={{ fontSize: 16, color: theme.colors.textSecondary }} />
+                                <Typography variant="body2" sx={{ color: theme.colors.textSecondary }}>
+                                  {timeStr}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </Box>
+                          {groupId && (
+                            <Button
+                              variant="contained"
+                              onClick={() => handleSuggest(slot)}
+                              disabled={isSubmittingSuggestion}
+                              sx={{
+                                borderRadius: 999,
+                                px: 3,
+                                fontWeight: 600,
+                                background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+                                '&:hover': {
+                                  background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                                }
+                              }}
+                            >
+                              Föreslå tid
+                            </Button>
+                          )}
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  </Fade>
+                );
+              })}
+            </Box>
+            {sortedFutureSlots.length > 4 && !showAll && (
+              <Box sx={{ textAlign: 'center', mt: 3 }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => setShowAll(true)}
+                  sx={{ borderRadius: 999, px: 4 }}
+                >
+                  Visa alla {sortedFutureSlots.length} tider
+                </Button>
+              </Box>
+            )}
           </Box>
         </Slide>
+      )}
 
-        {!isOnline && <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>🚫 Ingen internetanslutning - vissa funktioner kan vara begränsade</Alert>}
-        {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{error}</Alert>}
-        {hasSearched && !error && filteredAvailability.length === 0 && <Typography>Inga lediga tider hittades.</Typography>}
-
-        {/* Kalender */}
-        <Box sx={{ flexGrow: 1, borderRadius: 1, overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
-          <Calendar
-            localizer={localizer}
-            events={[]}
-            startAccessor="start"
-            endAccessor="end"
-            style={{ height: '100%', fontFamily: calendarFontFamily }}
-            views={isMobile ? ['agenda'] : ['month', 'week', 'day']}
-            step={15}
-            timeslots={4}
-            defaultView={calendarView}
-            onView={(view) => setCalendarView(view)}
-            onNavigate={(date) => setCalendarDate(date)}
-            date={calendarDate}
-            components={{
-              toolbar: (toolbarProps) => (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 16px' }}>
-                  <Button onClick={() => toolbarProps.onNavigate('PREV')} size="small">
-                    <ChevronLeftIcon />
-                  </Button>
-                  <Typography variant="h6" component="div" sx={{ flexGrow: 1, textAlign: 'center' }}>
-                    {moment(calendarDate).format('MMMM YYYY')}
-                  </Typography>
-                  <Button onClick={() => toolbarProps.onNavigate('NEXT')} size="small">
-                    <ChevronLeftIcon style={{ transform: 'rotate(180deg)' }} />
-                  </Button>
-                </div>
-              ),
-            }}
-            onSelectSlot={handleCalendarSelectSlot}
-            onSelectEvent={handleCalendarSelectEvent}
-          />
-        </Box>
-        
-        {/* Tidsförslag och inbjudningar */}
-        <Box sx={{ mt: 2, borderRadius: 1, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', p: 2 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            Tidsförslag och inbjudningar
+      {/* Kalendervy */}
+      {hasSearched && !isLoadingAvailability && (
+        <Box sx={{ mt: 4, mb: 4 }}>
+          <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: theme.colors.text }}>
+            Kalendervy
           </Typography>
-          {suggestions.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              Inga tidsförslag eller inbjudningar hittades.
-            </Typography>
-          ) : (
-            suggestions.map((suggestion) => (
-              <Card key={suggestion.id} sx={{ mb: 2, borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+          <Box sx={{ height: 600, bgcolor: '#fff', borderRadius: 2, overflow: 'hidden', border: `1px solid ${theme.colors.border}` }}>
+            <Calendar
+              localizer={localizer}
+              events={calendarEvents}
+              startAccessor="start"
+              endAccessor="end"
+              style={{ height: '100%', fontFamily: calendarFontFamily }}
+              views={['month', 'week', 'day']}
+              defaultView="week"
+            />
+          </Box>
+        </Box>
+      )}
+
+      {/* Tidsförslag-sektion */}
+      {groupId && suggestions.length > 0 && (
+        <Box sx={{ mt: 4, mb: 4 }}>
+          <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: theme.colors.text }}>
+            Tidsförslag
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {suggestions.map((suggestion) => (
+              <Card key={suggestion.id} sx={{ borderRadius: 3, border: `1px solid ${theme.colors.border}` }}>
                 <CardContent>
-                  <Typography variant="h6" component="div" sx={{ mb: 1 }}>
-                    {suggestion.title}
+                  <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
+                    {suggestion.title || 'Tidsförslag'}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     {moment(suggestion.start).format('LLLL')}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    Plats: {suggestion.location || 'Ingen plats angiven'}
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button
                       variant="contained"
-                      size="small"
                       onClick={() => voteSuggestion(suggestion.id, 'accepted')}
                       disabled={isSubmittingSuggestion}
-                      sx={{ flexGrow: 1 }}
                     >
                       Acceptera
                     </Button>
                     <Button
                       variant="outlined"
-                      size="small"
                       onClick={() => voteSuggestion(suggestion.id, 'rejected')}
                       disabled={isSubmittingSuggestion}
-                      sx={{ flexGrow: 1 }}
                     >
                       Avböj
                     </Button>
                   </Box>
                 </CardContent>
               </Card>
-            ))
-          )}
+            ))}
+          </Box>
         </Box>
-        
-        <Snackbar open={toast.open} autoHideDuration={4000} onClose={() => setToast({ ...toast, open: false })} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-          <Alert onClose={() => setToast({ ...toast, open: false })} severity={toast.severity} sx={{ width: '100%', borderRadius: 2 }}>
-            {toast.message}
-          </Alert>
-        </Snackbar>
-      </div>
+      )}
+
+      {/* Dialog för att föreslå tid */}
+      <Dialog open={suggestDialog.open} onClose={() => setSuggestDialog({ open: false, slot: null })} maxWidth="sm" fullWidth>
+        <DialogTitle>Föreslå denna tid för möte</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Mötesbeskrivning (valfritt)"
+            value={meetingTitle}
+            onChange={(e) => setMeetingTitle(e.target.value)}
+            sx={{ mt: 2, mb: 2 }}
+          />
+          <FormControl component="fieldset">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <Button
+                variant={withMeet ? 'contained' : 'outlined'}
+                onClick={() => setWithMeet(true)}
+              >
+                Google Meet
+              </Button>
+              <Button
+                variant={!withMeet ? 'contained' : 'outlined'}
+                onClick={() => setWithMeet(false)}
+              >
+                Fysiskt möte
+              </Button>
+            </Box>
+          </FormControl>
+          {!withMeet && (
+            <TextField
+              fullWidth
+              label="Plats"
+              value={meetingLocation}
+              onChange={(e) => setMeetingLocation(e.target.value)}
+              placeholder="T.ex. Konferensrum A, Café City..."
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSuggestDialog({ open: false, slot: null })}>
+            Avbryt
+          </Button>
+          <Button
+            variant="contained"
+            onClick={confirmSuggest}
+            disabled={isSubmittingSuggestion}
+          >
+            {isSubmittingSuggestion ? <CircularProgress size={20} /> : 'Skicka förslag'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={toast.open} autoHideDuration={4000} onClose={() => setToast({ ...toast, open: false })} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert onClose={() => setToast({ ...toast, open: false })} severity={toast.severity} sx={{ width: '100%', borderRadius: 2 }}>
+          {toast.message}
+        </Alert>
+      </Snackbar>
     </>
   );
 }
