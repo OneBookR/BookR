@@ -38,17 +38,7 @@ const calendarTodayBg = "#fffde7";
 
 const localizer = momentLocalizer(moment);
 
-export default function CompareCalendar({
-  myToken,
-  invitedTokens = [],
-  user,
-  groupId: propGroupId,  // Byt namn på prop
-  directAccess,
-  contactEmail,
-  contactEmails,
-  contactName,
-  teamName
-}) {
+export default function CompareCalendar({ myToken, invitedTokens = [], user, directAccess, contactEmail, contactName, teamName }) {
   // Säkerställ att hooks som använder window.user fungerar
   React.useEffect(() => {
     try {
@@ -132,8 +122,8 @@ export default function CompareCalendar({
   const [successAnimation, setSuccessAnimation] = useState(null);
   const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
   const urlParams = new URLSearchParams(window.location.search);
-  const groupId = propGroupId || urlParams.get('group'); // Använd prop eller fallback till URL
-  
+  const groupId = urlParams.get('group');
+
   // Hämta förslag
   useEffect(() => {
     if (groupId) {
@@ -985,68 +975,6 @@ export default function CompareCalendar({
       }
     });
   };
-
-  useEffect(() => {
-    const fetchAvailability = async () => {
-      if (!myToken) {
-        console.error('No myToken available');
-        return;
-      }
-
-      setLoading(true);
-      try {
-        // Samla alla tokens
-        const allTokens = [myToken, ...safeInvitedTokens].filter(Boolean);
-        
-        // Detektera provider för varje token baserat på användaren
-        const providers = allTokens.map((token, index) => {
-          if (index === 0) {
-            // Första token är användarens egen
-            return user?.provider || 'google';
-          }
-          // För inbjudna tokens, använd deras provider om tillgänglig
-          return 'google'; // Default, backend kommer auto-detektera
-        });
-        
-        console.log('Fetching availability with tokens:', allTokens.length);
-        console.log('Providers:', providers);
-
-        const response = await fetch('https://www.onebookr.se/api/availability', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tokens: allTokens,
-            providers: providers,
-            timeMin: viewStart.toISOString(),
-            timeMax: viewEnd.toISOString(),
-            duration: durationMinutes,
-            dayStart: dayStart || undefined,
-            dayEnd: dayEnd || undefined
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const slots = await response.json();
-        console.log(`Received ${slots.length} available time slots from backend`);
-        
-        setFreeSlots(slots || []);
-        
-        if (!slots || slots.length === 0) {
-          console.warn('No free slots found - check if calendars have events and if there are overlapping free times');
-        }
-      } catch (error) {
-        console.error('Error fetching availability:', error);
-        setFreeSlots([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAvailability();
-  }, [myToken, safeInvitedTokens, viewStart, viewEnd, durationMinutes, dayStart, dayEnd, user?.provider]);
 
   return (
     <>

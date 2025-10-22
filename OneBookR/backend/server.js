@@ -346,12 +346,15 @@ app.get('/auth/logout', (req, res) => {
 
 const fetchMicrosoftCalendarEvents = async (token, min, max) => {
   try {
-    console.log('Fetching Microsoft Calendar events...');
-    
     // Test token validity first
-    const testResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const testResponse = await fetch(
+      'https://graph.microsoft.com/v1.0/me',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
     
     if (testResponse.status === 401) {
       console.error('Microsoft OAuth token expired or invalid');
@@ -359,11 +362,16 @@ const fetchMicrosoftCalendarEvents = async (token, min, max) => {
     }
     
     // Hämta användarens tidszon
-    let userTimezone = 'Europe/Stockholm';
+    let userTimezone = 'Europe/Stockholm'; // Default
     try {
-      const settingsResponse = await fetch('https://graph.microsoft.com/v1.0/me/mailboxSettings', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const settingsResponse = await fetch(
+        'https://graph.microsoft.com/v1.0/me/mailboxSettings',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
       if (settingsResponse.ok) {
         const settingsData = await settingsResponse.json();
         userTimezone = settingsData.timeZone || 'Europe/Stockholm';
@@ -372,103 +380,404 @@ const fetchMicrosoftCalendarEvents = async (token, min, max) => {
       console.log('Could not fetch timezone, using default');
     }
     
-    // Hämta kalenderhändelser med CalendarView API för att få expanderade recurring events
+    // Hämta kalenderhändelser
     const response = await fetch(
-      `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(min)}&endDateTime=${encodeURIComponent(max)}&$orderby=start/dateTime`,
+      `https://graph.microsoft.com/v1.0/me/events?$filter=start/dateTime ge '${min}' and end/dateTime le '${max}'&$orderby=start/dateTime`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          Prefer: 'outlook.timezone="Europe/Stockholm"'
-        }
+        },
       }
     );
 
     const data = await response.json();
     if (!response.ok) {
-      console.error('Microsoft API error:', data.error);
+      console.error('Microsoft API-fel vid hämtning av händelser:', data.error);
       return { events: [], timezone: userTimezone };
     }
 
-    // Konvertera Microsoft events till gemensamt format
-    const convertedEvents = (data.value || []).map(event => {
-      // Hantera både dateTime och date (för heldag)
-      const startDateTime = event.start.dateTime || event.start.date;
-      const endDateTime = event.end.dateTime || event.end.date;
-      
-      return {
-        summary: event.subject || 'Upptagen',
-        start: {
-          dateTime: startDateTime,
-          timeZone: event.start.timeZone || userTimezone
-        },
-        end: {
-          dateTime: endDateTime,
-          timeZone: event.end.timeZone || userTimezone
-        },
-        isAllDay: event.isAllDay || false,
-        originalProvider: 'microsoft'
-      };
-    });
+    // Konvertera Microsoft events till Google Calendar format
+    const convertedEvents = (data.value || []).map(event => ({
+      summary: event.subject,
+      start: {
+        dateTime: event.start.dateTime,
+        timeZone: event.start.timeZone
+      },
+      end: {
+        dateTime: event.end.dateTime,
+        timeZone: event.end.timeZone
+      },
+      isAllDay: event.isAllDay
+    }));
 
-    console.log(`Fetched ${convertedEvents.length} Microsoft events`);
+    console.log('Fetched Microsoft events:', convertedEvents.length, 'timezone:', userTimezone);
+
     return { events: convertedEvents, timezone: userTimezone };
-    
   } catch (err) {
-    console.error('Error fetching Microsoft calendar events:', err);
+    console.error('Fel vid hämtning av Microsoft kalenderhändelser:', err);
     return { events: [], timezone: 'Europe/Stockholm' };
   }
 };
 
-const fetchCalendarEventsAuto = async (token, min, max) => {
-  const provider = detectProviderFromToken(token);
-  console.log(`Auto-detected provider for token: ${provider}`);
-  
+const fetchCalendarEvents = async (token, min, max, provider = 'google') => {
+  console.log(`fetchCalendarEvents called with provider: ${provider}`);
   if (provider === 'microsoft') {
     return fetchMicrosoftCalendarEvents(token, min, max);
-  } else {
-    return fetchCalendarEvents(token, min, max, 'google');
+  }
+  try {
+    // Test token validity first
+    const testResponse = await fetch(
+      'https://www.googleapis.com/calendar/v3/users/me/settings/timezone',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    
+    if (testResponse.status === 401) {
+      console.error('Google OAuth token expired or invalid for token:', token.substring(0, 20) + '...');
+      console.error('Token validation failed - user needs to re-authenticate');
+      return { events: [], timezone: 'Europe/Stockholm' };
+    }
+    
+    // Hämta användarens tidszon
+    const settingsResponse = testResponse;
+    
+    let userTimezone = 'Europe/Stockholm'; // Default
+    if (settingsResponse.ok) {
+      const settingsData = await settingsResponse.json();
+      userTimezone = settingsData.value || 'Europe/Stockholm';
+    }
+    
+    // Hämta alla kalendrar
+    const calendarListResponse = await fetch(
+      'https://www.googleapis.com/calendar/v3/users/me/calendarList',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const calendarListData = await calendarListResponse.json();
+    if (!calendarListResponse.ok) {
+      console.error('API-fel vid hämtning av kalenderlista:', calendarListData.error);
+      return { events: [], timezone: userTimezone };
+    }
+
+    // Filtrera bort publika/helgdagar/veckonummer-kalendrar
+    const calendars = (calendarListData.items || []).filter(
+      cal =>
+        cal.primary === true ||
+        (
+          !cal.id.includes('holiday@') &&
+          !cal.id.toLowerCase().includes('weeknum') &&
+          !cal.summary.toLowerCase().includes('helgdag') &&
+          !cal.summary.toLowerCase().includes('veckonummer')
+        )
+    );
+
+    // Reduced logging to prevent rate limits
+    if (calendars.length > 0) {
+      console.log('Found', calendars.length, 'calendars for user');
+    }
+
+    // Hämta händelser från varje kalender
+    const eventsPromises = calendars.map(async (calendar) => {
+      try {
+        const response = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+            calendar.id
+          )}/events?timeMin=${min}&timeMax=${max}&singleEvents=true&orderBy=startTime`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const data = await response.json();
+        if (!response.ok) {
+          if (response.status === 401) {
+            console.error(`Token expired for calendar ${calendar.id} - user needs to re-authenticate`);
+            return [];
+          }
+          console.error(`API-fel för kalender ${calendar.id}:`, data.error);
+          return [];
+        }
+
+        const events = data.items || [];
+        console.log(`Calendar ${calendar.summary}: ${events.length} events`);
+        return events;
+      } catch (err) {
+        console.error(`Fel vid hämtning av händelser för kalender ${calendar.id}:`, err);
+        return [];
+      }
+    });
+
+    // Vänta på alla händelser
+    const allEvents = await Promise.all(eventsPromises);
+
+    // Slå ihop alla händelser till en enda array
+    const flatEvents = allEvents.flat();
+    console.log('Google Calendar - Fetched events for', allEvents.length, 'calendars, total events:', flatEvents.length, 'timezone:', userTimezone);
+    
+    // Debug: logga första eventet om det finns
+    if (flatEvents.length > 0) {
+      console.log('First Google event:', JSON.stringify(flatEvents[0], null, 2));
+    }
+
+    return { events: flatEvents, timezone: userTimezone };
+  } catch (err) {
+    console.error('Fel vid hämtning av kalenderhändelser:', err);
+    return { events: [], timezone: 'Europe/Stockholm' };
   }
 };
 
-// Hjälpfunktion för att detektera provider baserat på token-format
-function detectProviderFromToken(token) {
-  if (!token) return 'google'; // fallback
+// Exakt sammanslagning av upptagna tider - bevara korta events
+const mergeBusyTimes = (busyTimes) => {
+  if (!Array.isArray(busyTimes) || busyTimes.length === 0) return [];
   
-  // Microsoft tokens börjar ofta med "Ew" eller har specifik JWT-struktur
-  if (token.startsWith('Ew')) return 'microsoft';
+  const filtered = busyTimes
+    .filter(t => typeof t.start === 'number' && typeof t.end === 'number' && t.end > t.start)
+    .sort((a, b) => a.start - b.start);
+
+  if (filtered.length === 0) return [];
+
+  const merged = [{ ...filtered[0] }];
   
-  // Google tokens börjar ofta med "ya29."
-  if (token.startsWith('ya29.')) return 'google';
-  
-  // Försök läsa JWT payload om det är en JWT
-  try {
-    if (token.includes('.')) {
-      const parts = token.split('.');
-      if (parts.length >= 2) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-        if (payload.iss) {
-          if (payload.iss.includes('microsoft') || payload.iss.includes('login.microsoftonline')) {
-            return 'microsoft';
-          }
-          if (payload.iss.includes('google') || payload.iss.includes('accounts.google')) {
-            return 'google';
-          }
-        }
-      }
+  for (let i = 1; i < filtered.length; i++) {
+    const current = filtered[i];
+    const lastMerged = merged[merged.length - 1];
+    
+    // Endast slå ihop om events verkligen överlappar (inte bara är intill)
+    // Detta bevarar korta events som 15-minuters möten
+    if (current.start < lastMerged.end) {
+      // Verkligt överlapp - slå ihop
+      lastMerged.end = Math.max(lastMerged.end, current.end);
+      console.log(`Merged overlapping events: ${lastMerged.title} + ${current.title}`);
+    } else {
+      // Inget överlapp - behåll som separata events
+      merged.push({ ...current });
     }
-  } catch (e) {
-    // Om det inte är en JWT, fortsätt med fallback
   }
   
-  return 'google'; // default fallback
+  console.log(`Merged ${filtered.length} events into ${merged.length} busy periods`);
+  return merged;
+};
+
+// Exakt beräkning av lediga tider - respektera korta upptagna perioder
+const calculateFreeTimes = (mergedBusy, rangeStart, rangeEnd) => {
+  if (typeof rangeStart !== 'number' || typeof rangeEnd !== 'number') return [];
+  if (rangeEnd <= rangeStart) return [];
+  
+  const freeTimes = [];
+  
+  if (!Array.isArray(mergedBusy) || mergedBusy.length === 0) {
+    freeTimes.push({ start: new Date(rangeStart), end: new Date(rangeEnd) });
+    return freeTimes;
+  }
+
+  let cursor = rangeStart;
+
+  for (const slot of mergedBusy) {
+    if (!slot || typeof slot.start !== 'number' || typeof slot.end !== 'number') continue;
+    if (slot.end <= slot.start) continue;
+    
+    if (slot.end <= rangeStart || slot.start >= rangeEnd) continue;
+    
+    // Använd exakta tider från kalendern - ingen rundning
+    const slotStart = Math.max(slot.start, rangeStart);
+    const slotEnd = Math.min(slot.end, rangeEnd);
+    
+    // Ledig tid före detta upptagna block (exakt tid)
+    if (cursor < slotStart) {
+      const freeSlot = { start: new Date(cursor), end: new Date(slotStart) };
+      const freeDuration = Math.round((slotStart - cursor) / (1000 * 60));
+      console.log(`Free slot: ${freeDuration} minutes`);
+      freeTimes.push(freeSlot);
+    }
+    
+    cursor = Math.max(cursor, slotEnd);
+    
+    const busyDuration = Math.round((slotEnd - slotStart) / (1000 * 60));
+    console.log(`Busy slot: ${slot.title} - ${busyDuration} minutes`);
+  }
+
+  if (cursor < rangeEnd) {
+    const finalFreeSlot = { start: new Date(cursor), end: new Date(rangeEnd) };
+    const finalDuration = Math.round((rangeEnd - cursor) / (1000 * 60));
+    console.log(`Final free slot: ${finalDuration} minutes`);
+    freeTimes.push(finalFreeSlot);
+  }
+
+  return freeTimes.filter(ft => ft.end > ft.start);
+};
+
+// Justera findCommonFreeTimes för att korrekt hitta överlapp mellan lediga block
+const findCommonFreeTimes = (freeTimes1, freeTimes2) => {
+  const commonFreeTimes = [];
+  let i = 0, j = 0;
+
+  while (i < freeTimes1.length && j < freeTimes2.length) {
+    const start = Math.max(freeTimes1[i].start.getTime(), freeTimes2[j].start.getTime());
+    const end = Math.min(freeTimes1[i].end.getTime(), freeTimes2[j].end.getTime());
+
+    if (start < end) {
+      commonFreeTimes.push({ start: new Date(start), end: new Date(end) });
+    }
+
+    if (freeTimes1[i].end.getTime() < freeTimes2[j].end.getTime()) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+
+  return commonFreeTimes;
+};
+
+// Säker uppdelning av lediga tider
+function splitFreeSlots(freeSlots, durationMinutes) {
+  if (!Array.isArray(freeSlots) || freeSlots.length === 0) return [];
+  if (!durationMinutes || durationMinutes <= 0) return [];
+  
+  const result = [];
+  const durationMs = durationMinutes * 60 * 1000;
+  
+  for (const slot of freeSlots) {
+    if (!slot || !slot.start || !slot.end) continue;
+    
+    try {
+      const startTime = slot.start.getTime();
+      const endTime = slot.end.getTime();
+      
+      if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) continue;
+      
+      let current = startTime;
+      while (current + durationMs <= endTime) {
+        result.push({
+          start: new Date(current),
+          end: new Date(current + durationMs),
+        });
+        current += durationMs;
+      }
+    } catch (error) {
+      console.warn('Error splitting free slot:', error);
+      continue;
+    }
+  }
+  
+  return result;
 }
 
-// Uppdatera /api/availability endpoint för att hantera providers korrekt
+// Generera lediga slots för hall baserat på öppettider minus upptagna tider
+function generateVenueFreeSlots(busyEvents, startDate, endDate) {
+  const freeSlots = [];
+  const openHour = 9; // Öppnar 09:00
+  const closeHour = 21; // Stänger 21:00
+  const slotDuration = 2 * 60 * 60 * 1000; // 2 timmar per slot
+  
+  // Konvertera busy events till millisekunder
+  const busyTimes = busyEvents.map(e => ({
+    start: new Date(e.start.dateTime || e.start.date).getTime(),
+    end: new Date(e.end.dateTime || e.end.date).getTime()
+  })).sort((a, b) => a.start - b.start);
+  
+  // Gå igenom varje dag
+  const currentDate = new Date(startDate);
+  while (currentDate < endDate) {
+    // Skapa öppettider för dagen
+    const dayStart = new Date(currentDate);
+    dayStart.setHours(openHour, 0, 0, 0);
+    const dayEnd = new Date(currentDate);
+    dayEnd.setHours(closeHour, 0, 0, 0);
+    
+    // Hitta lediga slots under dagen
+    let slotStart = dayStart.getTime();
+    
+    while (slotStart + slotDuration <= dayEnd.getTime()) {
+      const slotEnd = slotStart + slotDuration;
+      
+      // Kolla om denna slot överlappar med något upptaget event
+      const isOccupied = busyTimes.some(busy => 
+        (slotStart < busy.end && slotEnd > busy.start)
+      );
+      
+      if (!isOccupied) {
+        freeSlots.push({
+          start: new Date(slotStart).toISOString(),
+          end: new Date(slotEnd).toISOString(),
+          title: 'Ledig bana',
+          type: 'venue'
+        });
+      }
+      
+      slotStart += slotDuration;
+    }
+    
+    // Nästa dag
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return freeSlots;
+}
+
+// Säker filtrering av tider inom daglig tidsram - KORREKT TIDSHANTERING
+function filterSlotsByDayTime(slots, dayStart, dayEnd) {
+  if (!Array.isArray(slots) || slots.length === 0) return [];
+  if (!dayStart || !dayEnd) return slots;
+  
+  try {
+    const [startHour, startMinute] = dayStart.split(':').map(Number);
+    const [endHour, endMinute] = dayEnd.split(':').map(Number);
+    
+    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute)) {
+      return slots;
+    }
+
+    return slots.filter(slot => {
+      if (!slot || !slot.start || !slot.end) return false;
+      
+      try {
+        const start = new Date(slot.start);
+        const end = new Date(slot.end);
+        
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
+
+        // KORREKT: Använd exakt samma tidszon som kalendern (lokal tid)
+        const startHour24 = start.getHours();
+        const startMin = start.getMinutes();
+        const endHour24 = end.getHours();
+        const endMin = end.getMinutes();
+        
+        // Kontrollera att hela sloten är inom angivet tidsintervall
+        const startTimeMinutes = startHour24 * 60 + startMin;
+        const endTimeMinutes = endHour24 * 60 + endMin;
+        const dayStartMinutes = startHour * 60 + startMinute;
+        const dayEndMinutes = endHour * 60 + endMinute;
+        
+        // STRIKT: Sloten måste vara helt inom tidsramen
+        return startTimeMinutes >= dayStartMinutes && endTimeMinutes <= dayEndMinutes;
+      } catch (error) {
+        console.warn('Error filtering slot by day time:', error);
+        return false;
+      }
+    });
+  } catch (error) {
+    console.error('Error in filterSlotsByDayTime:', error);
+    return slots;
+  }
+}
+
 app.post('/api/availability', async (req, res) => {
-  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd } = req.body;
+  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd } = req.body;
 
   console.log('=== AVAILABILITY API DEBUG ===');
-  console.log('Tokens received:', Array.isArray(tokens) ? tokens.length : 0);
+  console.log('Tokens mottagna av backend:', Array.isArray(tokens) ? tokens.length : 0, 'tokens');
+  console.log('Providers:', req.body?.providers);
+  console.log('Request body providers:', req.body?.providers);
   console.log('TimeMin:', timeMin);
   console.log('TimeMax:', timeMax);
 
@@ -479,86 +788,70 @@ app.post('/api/availability', async (req, res) => {
   const timeMinISO = timeMin || new Date().toISOString();
   const timeMaxISO = timeMax || new Date(Date.now() + 30 * 864e5).toISOString();
 
-  // Hämta events från alla kalendrar med automatisk provider-detektion
+  // Per-token busy extraction with autodetect and fallback
   const allCalendarsBusy = [];
-  
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    const provider = detectProviderFromToken(token);
-    console.log(`Fetching events for token ${i + 1}/${tokens.length}, provider: ${provider}`);
-    
-    try {
-      const { events, timezone } = await fetchCalendarEventsAuto(token, timeMinISO, timeMaxISO);
-      console.log(`Token ${i + 1} returned ${events.length} events from ${provider}`);
-      
-      // Konvertera events till busy-tider
-      const busyTimes = events.map(event => {
-        const start = new Date(event.start.dateTime || event.start.date).getTime();
-        const end = new Date(event.end.dateTime || event.end.date).getTime();
-        return {
-          start,
-          end,
-          title: event.summary || 'Upptagen',
-          provider: event.originalProvider || provider
-        };
-      }).filter(busy => busy.end > busy.start);
-      
-      console.log(`Converted to ${busyTimes.length} busy periods for token ${i + 1}`);
-      allCalendarsBusy.push(busyTimes);
-    } catch (error) {
-      console.error(`Error fetching events for token ${i + 1}:`, error);
-      allCalendarsBusy.push([]); // Lägg till tom array för att inte förstöra indexeringen
-    }
+    const detected = detectProvider(token);
+    console.log(`Fetching calendar events for token ${i + 1}/${tokens.length}, detected provider: ${detected}`);
+    const { provider, busy } = await fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO);
+    console.log(`Token ${i + 1} processed ${busy.length} events (provider used: ${provider})`);
+    allCalendarsBusy.push(busy);
   }
 
-  // Slå ihop upptagna tider per användare
-  const mergedBusyTimes = allCalendarsBusy.map(events => mergeBusyTimes(events));
-  console.log('Merged busy times per user:', mergedBusyTimes.map((bt, i) => `User ${i + 1}: ${bt.length} busy periods`));
+  // Slå ihop alla upptagna tider för varje användare
+  const mergedBusyTimes = allCalendarsBusy.map(events =>
+    mergeBusyTimes(events)
+  );
 
   // Beräkna lediga tider för varje användare
-  const rangeStart = new Date(timeMinISO).getTime();
-  const rangeEnd = new Date(timeMaxISO).getTime();
+  const rangeStart = new Date(timeMin).getTime();
+  const rangeEnd = new Date(timeMax).getTime();
 
   const allFreeTimes = mergedBusyTimes.map(busyTimes =>
     calculateFreeTimes(busyTimes, rangeStart, rangeEnd)
   );
-  console.log('Free times per user:', allFreeTimes.map((ft, i) => `User ${i + 1}: ${ft.length} free slots`));
 
-  // Hitta gemensamma lediga tider
+  // Gemensamma lediga tider mellan ALLA användare
   let commonFreeTimes = allFreeTimes[0] || [];
   
   if (allFreeTimes.length === 1) {
-    console.log('Single user mode - using their free times');
+    console.log('Single user mode - using only their free times');
   } else {
     console.log(`Finding common free times across ${allFreeTimes.length} calendars`);
+    // Flera användare - hitta gemensamma tider genom att iterera genom alla
     for (let i = 1; i < allFreeTimes.length; i++) {
       commonFreeTimes = findCommonFreeTimes(commonFreeTimes, allFreeTimes[i]);
-      console.log(`After comparing with calendar ${i + 1}: ${commonFreeTimes.length} common slots`);
+      console.log(`After comparing with calendar ${i + 1}: ${commonFreeTimes.length} common slots remaining`);
     }
+    console.log(`Final result: ${commonFreeTimes.length} common free time slots found`);
   }
 
-  // Dela upp i önskad duration
+  // Dela upp långa luckor i mindre block
   let splitBlocks = splitFreeSlots(commonFreeTimes, duration);
-  console.log(`Split into ${splitBlocks.length} blocks of ${duration} minutes`);
 
-  // Filtrera på dagtid om angivet
+  // Filtrera blocken på daglig tidsram om det är angivet
   if (dayStart && dayEnd) {
     splitBlocks = filterSlotsByDayTime(splitBlocks, dayStart, dayEnd);
-    console.log(`After day time filter: ${splitBlocks.length} blocks`);
   }
 
-  // Ta bort tider i det förflutna
+  // Kontroll: Ta bara med block som är i framtiden
   const now = Date.now();
   splitBlocks = splitBlocks.filter(slot => new Date(slot.end).getTime() > now);
 
-  // Formatera slutligt resultat
+  // Formatera blocken utan tidszonsjustering
   const formattedBlocks = splitBlocks.map(slot => ({
     ...slot,
     start: slot.start instanceof Date ? slot.start.toISOString() : slot.start,
     end: slot.end instanceof Date ? slot.end.toISOString() : slot.end
   }));
 
-  console.log(`Sending ${formattedBlocks.length} free time blocks to frontend`);
+  console.log(`Sending ${formattedBlocks.length} formatted blocks to frontend`);
+  if (formattedBlocks.length === 0) {
+    console.log('No free time slots found - this might indicate token issues, very busy calendars, or no overlapping free time');
+    console.log('Individual calendar free times:', allFreeTimes.map((ft, i) => `Calendar ${i + 1}: ${ft.length} slots`));
+  }
+
   res.json(formattedBlocks);
 });
 
