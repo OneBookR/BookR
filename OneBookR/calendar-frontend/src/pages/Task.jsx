@@ -235,7 +235,6 @@ const Task = ({ user, onBack }) => {
           maxWidth: '95vw',
           textAlign: 'center',
           bgcolor: '#fff3e0',
-          borderRadius: 3,
           border: '2px solid #ff9800'
         }}>
           <Typography variant="h5" gutterBottom sx={{ color: '#bf360c', mb: 2 }}>

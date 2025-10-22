@@ -42,7 +42,7 @@ export default function CompareCalendar({
   myToken,
   invitedTokens = [],
   user,
-  groupId,
+  groupId: propGroupId,  // Byt namn på prop
   directAccess,
   contactEmail,
   contactEmails,
@@ -132,8 +132,8 @@ export default function CompareCalendar({
   const [successAnimation, setSuccessAnimation] = useState(null);
   const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
   const urlParams = new URLSearchParams(window.location.search);
-  const groupId = urlParams.get('group');
-
+  const groupId = propGroupId || urlParams.get('group'); // Använd prop eller fallback till URL
+  
   // Hämta förslag
   useEffect(() => {
     if (groupId) {
