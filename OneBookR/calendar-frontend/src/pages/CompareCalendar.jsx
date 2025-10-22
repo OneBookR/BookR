@@ -38,7 +38,17 @@ const calendarTodayBg = "#fffde7";
 
 const localizer = momentLocalizer(moment);
 
-export default function CompareCalendar({ myToken, invitedTokens = [], user, directAccess, contactEmail, contactName, teamName }) {
+export default function CompareCalendar({
+  myToken,
+  invitedTokens = [],
+  user,
+  groupId: propGroupId, // Byt namn för att undvika konflikt
+  directAccess,
+  contactEmail,
+  contactEmails,
+  contactName,
+  teamName
+}) {
   // Säkerställ att hooks som använder window.user fungerar
   React.useEffect(() => {
     try {
@@ -121,9 +131,10 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   const [undoAction, setUndoAction] = useState(null);
   const [successAnimation, setSuccessAnimation] = useState(null);
   const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
-  const urlParams = new URLSearchParams(window.location.search);
-  const groupId = urlParams.get('group');
-
+  
+  // Använd propGroupId istället för att deklarera om
+  const groupId = propGroupId;
+  
   // Hämta förslag
   useEffect(() => {
     if (groupId) {
@@ -158,117 +169,78 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
     try {
-      // FIX: använd let (vi utökar listan nedan)
       let tokens = [myToken, ...(Array.isArray(invitedTokens) ? invitedTokens : [])].filter(Boolean);
-      if (!Array.isArray(tokens) || tokens.length === 0) {
-        console.warn('[CompareCalendar] Hoppar över fetchAvailability: tom token-lista');
-        return;
-      }
-
-      if (!isOnline) {
-        setError('Ingen internetanslutning. Kontrollera din anslutning och försök igen.');
+      
+      if (!tokens.length) {
+        console.warn('No tokens available');
         return;
       }
 
       setIsLoadingAvailability(true);
-      setHasSearched(true);
       setError(null);
 
-      // Validering för flerdagars-möten
-      if (isMultiDay) {
-        if (!multiDayStart || !multiDayEnd) {
-          setError('Ange startdatum och slutdatum för flerdagars-mötet.');
-          setAvailability([]);
-          setIsLoadingAvailability(false);
-          return;
+      // Hämta grupptokens om groupId finns
+      if (groupId) {
+        try {
+          const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
+          if (groupTokensRes.ok) {
+            const groupTokensData = await groupTokensRes.json();
+            tokens = Array.from(new Set([...tokens, ...(groupTokensData.tokens || [])]));
+          }
+        } catch (err) {
+          console.log('Could not fetch group tokens:', err);
         }
-        if (new Date(multiDayStart) >= new Date(multiDayEnd)) {
-          setError('Slutdatum måste vara efter startdatum.');
-          setAvailability([]);
-          setIsLoadingAvailability(false);
-          return;
-        }
-      } else if (!timeMin || !timeMax) {
-        setError('Ange ett datumintervall.');
-        setAvailability([]);
-        setIsLoadingAvailability(false);
-        return;
       }
 
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+      tokens = Array.from(new Set(tokens.filter(Boolean)));
 
-        // OBS: Ta bort providers-heuristik (den var fel för Microsoft-token)
-        // const providers = [userProvider, ...];  // BORTTAGET
+      // Skapa providers array - första token är användarens (med känd provider)
+      const providers = [userProvider];
+      
+      // För resten av tokens, låt backend auto-detektera
+      for (let i = 1; i < tokens.length; i++) {
+        providers.push(null); // null = auto-detect i backend
+      }
 
-        // Hämta grupptokens och slå ihop
-        if (groupId) {
-          try {
-            const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
-            if (groupTokensRes.ok) {
-              const groupTokensData = await groupTokensRes.json();
-              tokens = Array.from(new Set([...tokens, ...(groupTokensData.tokens || [])]));
-            }
-          } catch (err) {
-            console.log('Could not fetch group tokens, using provided tokens:', err);
-          }
-        }
+      console.log('Fetching availability with providers:', providers);
 
-        tokens = Array.from(new Set(tokens.filter(Boolean)));
+      const requestBody = {
+        tokens,
+        providers, // Skicka med providers
+        duration: meetingDuration,
+        dayStart,
+        dayEnd,
+        timeMin: timeMin ? new Date(timeMin).toISOString() : new Date().toISOString(),
+        timeMax: timeMax ? new Date(timeMax).toISOString() : new Date(Date.now() + 30 * 864e5).toISOString()
+      };
 
-        const requestBody = {
-          tokens,
-          // Viktigt: låt backend auto-detektera provider per token → skicka inte providers
-          duration: meetingDuration,
-          dayStart,
-          dayEnd,
-          isMultiDay,
-          ...(isMultiDay
-            ? {
-                timeMin: new Date(multiDayStart + 'T00:00:00').toISOString(),
-                timeMax: new Date(multiDayEnd + 'T23:59:59').toISOString(),
-                multiDayStart,
-                multiDayEnd
-              }
-            : {
-                timeMin: new Date(timeMin).toISOString(),
-                timeMax: new Date(timeMax).toISOString()
-              })
-        };
+      const res = await fetch(`${API_BASE_URL}/api/availability`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
 
-        const res = await fetch(`${API_BASE_URL}/api/availability`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
+      const data = await res.json();
+
+      if (res.ok) {
+        setAvailability(Array.isArray(data) ? data : []);
+        setError(null);
+        setToast({ 
+          open: true, 
+          message: `Hittade ${Array.isArray(data) ? data.length : 0} lediga tider`, 
+          severity: 'success' 
         });
-
-        clearTimeout(timeoutId);
-        const data = await res.json();
-
-        if (res.ok) {
-          setAvailability(Array.isArray(data) ? data : []);
-          setError(null);
-          setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} lediga tider`, severity: 'success' });
-        } else {
-          setAvailability([]);
-          setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
-        }
-      } catch (err) {
+      } else {
         setAvailability([]);
-        if (err.name === 'AbortError') {
-          setError('Förfrågan tog för lång tid. Försök igen.');
-        } else {
-          setError(isOnline ? 'Tekniskt fel vid hämtning av tillgänglighet.' : 'Ingen internetanslutning.');
-        }
-      } finally {
-        setIsLoadingAvailability(false);
+        setError(data.error || 'Något gick fel');
       }
     } catch (err) {
+      console.error('Error fetching availability:', err);
       setAvailability([]);
-      setError('Kunde inte hämta tillgänglighet. Försök igen senare.');
+      setError('Kunde inte hämta tillgänglighet');
+    } finally {
       setIsLoadingAvailability(false);
+      setHasSearched(true);
     }
   };
 
@@ -1648,12 +1620,11 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
             );
 
             return (
-              <Fade in={true} timeout={800}>
+              <Fade in={true} timeout={800} key={s.id}>
                 <Card
-                  key={s.id}
                   sx={{
                     mb: 3,
-                    borderRadius:  3,
+                    borderRadius: 3,
                     border: s.finalized ? '2px solid #4caf50' : '1px solid #e0e3e7',
                     boxShadow: s.finalized ? '0 4px 20px rgba(76, 175, 80, 0.15)' : '0 2px 8px rgba(60,64,67,.06)',
 
@@ -1731,7 +1702,7 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                   )}
                   {s.finalized ? (
                     <Box sx={{
-                      bgcolor: 'rgba(76, 175, 80,  0.08)',
+                      bgcolor: 'rgba(76, 175, 80, 0.08)',
                       border: '1px solid rgba(76, 175, 80, 0.3)',
                       borderRadius: 3,
                       p: 3,
@@ -1755,7 +1726,37 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
                       <Typography sx={{ color: '#1b5e20', fontWeight: 500, mb: 2, fontSize: 14 }}>
                         Alla har accepterat tiden. Kalenderinbjudan och möteslänk skickas ut via mejl.
                       </Typography>
-                                           {s.withMeet && s.meetLink && (
+                      {s.withMeet && s.meetLink && (
+                        <Box sx={{
+                          bgcolor: '#fff',
+                          border: '1px solid #e0e3e7',
+                          borderRadius: 2,
+                          p: 2,
+                          mt: 2
+                        }}>
+                          <Typography sx={{ color: '#1976d2', fontWeight: 600, mb: 1, fontSize: 14 }}>
+                            Google Meet-länk:
+                          </Typography>
+                          <Typography sx={{
+                            wordBreak: 'break-all',
+                            fontSize: 13,
+                            fontFamily: 'monospace',
+                            bgcolor: '#f5f5f5',
+                            p: 1,
+                            borderRadius: 1
+                          }}>
+                            <a
+                              href={s.meetLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: '#1976d2', textDecoration: 'none' }}
+                            >
+                              {s.meetLink}
+                            </a>
+                          </Typography>
+                        </Box>
+                      )}
+                      {!s.withMeet && s.location && (
                         <Box sx={{
                           bgcolor: '#fff',
                           border: '1px solid #e0e3e7',
