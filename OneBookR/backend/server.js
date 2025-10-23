@@ -1262,19 +1262,16 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
     res.json({ success: true, suggestion: updatedSuggestion });
     
     if (allAccepted && !suggestion.finalized) {
-      console.log('All accepted! Creating calendar events for all participants...');
+      console.log('All accepted! Creating unified meeting for all participants...');
       
       // Markera som finalized först
-      const tempMeetLink = suggestion.withMeet ? `https://meet.google.com/${Math.random().toString(36).substring(2, 15)}` : '';
       await updateSuggestion(suggestionId, {
         finalized: true,
-        meetLink: tempMeetLink,
         status: 'processing'
       });
       console.log('Marked as finalized, now creating calendar events...');
       
       try {
-        let primaryMeetLink = null;
         const meetEventId = suggestionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
         
         const tokens = (group.tokens || []).filter(Boolean);
@@ -1284,6 +1281,22 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           console.error('No tokens available for group');
           throw new Error('Inga tokens för gruppen');
         }
+
+        // VIKTIGT: Detektera om det finns någon Microsoft-användare
+        let hasMicrosoftUser = false;
+        const providers = [];
+        for (const token of tokens) {
+          const provider = detectProvider(token);
+          providers.push(provider);
+          if (provider === 'microsoft') {
+            hasMicrosoftUser = true;
+          }
+        }
+        
+        // Välj videomötestyp baserat på deltagare
+        const meetingType = hasMicrosoftUser ? 'teams' : 'meet';
+        console.log(`🎥 Meeting type: ${meetingType} (hasMicrosoftUser: ${hasMicrosoftUser})`);
+        console.log(`Providers in group: ${providers.join(', ')}`);
 
         // Skapa base event data
         const baseEventData = {
@@ -1301,39 +1314,55 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           attendees: allEmails
         };
 
-        // Skapa event för varje deltagare med rätt provider
+        let unifiedMeetLink = null;
+
+        // Skapa event för varje deltagare med SAMMA videomötestyp
         for (let i = 0; i < tokens.length; i++) {
           const token = tokens[i];
-          const provider = detectProvider(token);
-          console.log(`Creating event ${i + 1}/${tokens.length} for provider: ${provider}`);
+          const provider = providers[i];
+          console.log(`Creating event ${i + 1}/${tokens.length} for provider: ${provider} with ${meetingType}`);
           
           let result = null;
           
           if (provider === 'microsoft') {
-            // Microsoft Calendar event
+            // Microsoft Calendar med Teams (alltid om det finns MS-användare)
             const msEventData = {
               ...baseEventData,
               conferenceData: suggestion.withMeet ? { createRequest: { requestId: meetEventId } } : undefined
             };
             result = await createMicrosoftCalendarEvent(token, msEventData);
           } else {
-            // Google Calendar event
-            const googleEventData = {
-              ...baseEventData,
-              conferenceData: suggestion.withMeet ? {
-                createRequest: {
-                  requestId: meetEventId,
-                  conferenceSolutionKey: { type: 'hangoutsMeet' }
-                }
-              } : undefined
-            };
-            result = await createGoogleCalendarEvent(token, googleEventData);
+            // Google Calendar
+            if (meetingType === 'teams') {
+              // Om vi ska ha Teams men användaren är Google → skapa utan videomöte, länken kommer från MS-användaren
+              console.log('Creating Google event WITHOUT Meet (Teams will be used from MS user)');
+              const googleEventData = {
+                ...baseEventData,
+                // Ingen conferenceData = inget Meet
+              };
+              result = await createGoogleCalendarEvent(token, googleEventData);
+            } else {
+              // Endast Google-användare → använd Meet
+              console.log('Creating Google event WITH Meet');
+              const googleEventData = {
+                ...baseEventData,
+                conferenceData: suggestion.withMeet ? {
+                  createRequest: {
+                    requestId: meetEventId,
+                    conferenceSolutionKey: { type: 'hangoutsMeet' }
+                  }
+                } : undefined
+              };
+              result = await createGoogleCalendarEvent(token, googleEventData);
+            }
           }
           
           if (result?.success) {
             console.log(`✅ Event created for participant ${i + 1} (${provider})`);
-            if (!primaryMeetLink && result.meetLink) {
-              primaryMeetLink = result.meetLink;
+            // Spara första möteslänken vi får (Teams eller Meet)
+            if (!unifiedMeetLink && result.meetLink) {
+              unifiedMeetLink = result.meetLink;
+              console.log(`📹 Unified meeting link set: ${unifiedMeetLink}`);
             }
           } else {
             console.error(`❌ Failed to create event for participant ${i + 1} (${provider})`);
@@ -1341,47 +1370,50 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         }
         
         console.log('✅ All calendar events created!');
-        if (primaryMeetLink) {
-          console.log(`📹 Meet link: ${primaryMeetLink}`);
-        }
+        console.log(`🎥 Final meeting type: ${meetingType}, link: ${unifiedMeetLink || 'N/A'}`);
         
         // Uppdatera suggestion med meet-länk
         await updateSuggestion(suggestionId, {
-          meetLink: primaryMeetLink || tempMeetLink,
+          meetLink: unifiedMeetLink,
+          meetingType, // Spara vilken typ av möte det är
           finalized: true,
           status: 'completed'
         });
 
-        // Skicka mejl till alla deltagare
+        // Bygg mejltext med rätt videomötestyp
         let mailText = `Alla har accepterat mötestiden!\n\n`;
         mailText += `Möte: ${suggestion.title || 'Föreslaget möte'}\n`;
-        mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n`;
-        if (suggestion.withMeet && primaryMeetLink) {
-          mailText += `Möteslänk: ${primaryMeetLink}\n`;
+        mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n\n`;
+        
+        if (suggestion.withMeet && unifiedMeetLink) {
+          const meetingPlatform = meetingType === 'teams' ? 'Microsoft Teams' : 'Google Meet';
+          mailText += `🎥 ${meetingPlatform}-länk:\n${unifiedMeetLink}\n\n`;
+          mailText += `(Alla deltagare använder samma ${meetingPlatform}-länk)\n\n`;
         }
+        
         if (suggestion.location) {
-          mailText += `Plats: ${suggestion.location}\n`;
+          mailText += `📍 Plats: ${suggestion.location}\n\n`;
         }
-        mailText += `\nDeltagare:\n${allEmails.join('\n')}\n`;
-        mailText += `\nDu hittar även mötet i din kalender (Google Calendar eller Outlook).\n\nHälsningar,\nBookR-teamet`;
+        mailText += `Deltagare:\n${allEmails.join('\n')}\n\n`;
+        mailText += `Du hittar även mötet i din kalender (Google Calendar eller Outlook).\n\nHälsningar,\nBookR-teamet`;
 
         // Skicka mejl med retry
-        for (const email of allEmails) {
+        for (const recipientEmail of allEmails) {
           let attempts = 0;
           while (attempts < 3) {
             attempts++;
             try {
               await resend.emails.send({
                 from: 'BookR <info@onebookr.se>',
-                to: email,
+                to: recipientEmail,
                 subject: 'Möte bokat!',
                 text: mailText,
               });
-              console.log(`Mötesmejl skickat till ${email}`);
+              console.log(`Mötesmejl skickat till ${recipientEmail}`);
               break;
             } catch (err) {
               if (attempts === 3) {
-                console.error(`Misslyckades skicka mejl till ${email}:`, err);
+                console.error(`Misslyckades skicka mejl till ${recipientEmail}:`, err);
               } else {
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
@@ -1391,7 +1423,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
       } catch (err) {
         console.error('Fel vid kalenderskapande:', err);
-        // Behåll finalized=true men markera som error
         await updateSuggestion(suggestionId, {
           finalized: true,
           status: 'error',
@@ -1405,10 +1436,10 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
   }
 });
 
-// Hjälpfunktion: Skapa Microsoft Calendar event
+// Hjälpfunktion: Skapa Microsoft Calendar event med Teams
 async function createMicrosoftCalendarEvent(token, eventData) {
   try {
-    console.log('Creating Microsoft Calendar event...');
+    console.log('Creating Microsoft Calendar event with Teams...');
     
     const microsoftEvent = {
       subject: eventData.summary || 'Möte',
@@ -1457,11 +1488,11 @@ async function createMicrosoftCalendarEvent(token, eventData) {
     const createdEvent = await response.json();
     console.log('✅ Microsoft Calendar event created:', createdEvent.id);
 
-    // Returnera Teams meeting URL om det finns
     return {
       success: true,
       eventId: createdEvent.id,
-      meetLink: createdEvent.onlineMeeting?.joinUrl || null
+      meetLink: createdEvent.onlineMeeting?.joinUrl || null,
+      provider: 'microsoft'
     };
   } catch (error) {
     console.error('Error creating Microsoft Calendar event:', error);
@@ -1469,7 +1500,7 @@ async function createMicrosoftCalendarEvent(token, eventData) {
   }
 }
 
-// Hjälpfunktion: Skapa Google Calendar event
+// Hjälpfunktion: Skapa Google Calendar event (kan vara med eller utan Meet)
 async function createGoogleCalendarEvent(token, eventData) {
   try {
     console.log('Creating Google Calendar event...');
@@ -1494,7 +1525,8 @@ async function createGoogleCalendarEvent(token, eventData) {
     return {
       success: true,
       eventId: response.data.id,
-      meetLink: response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || null
+      meetLink: response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || response.data.hangoutLink || null,
+      provider: 'google'
     };
   } catch (error) {
     console.error('Error creating Google Calendar event:', error);
@@ -1502,539 +1534,508 @@ async function createGoogleCalendarEvent(token, eventData) {
   }
 }
 
-// Sätt gruppnamn
-app.post('/api/group/:groupId/setname', (req, res) => {
-  const { groupId } = req.params;
-  const { groupName, email } = req.body;
-  const group = groups[groupId];
-  if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
-  if (group.creator.email !== email) return res.status(403).json({ error: 'Endast skaparen kan sätta gruppnamn' });
-  
-  group.groupName = groupName;
-  group.nameSet = true;
-  groupNames[groupId] = groupName;
-  
-  // Uppdatera alla inbjudningar med det nya namnet
-  Object.keys(userInvitations).forEach(userEmail => {
-    userInvitations[userEmail].forEach(inv => {
-      if (inv.groupId === groupId) {
-        inv.groupName = groupName;
-      }
-    });
-  });
-  
-  res.json({ success: true });
-});
-
-// Hämta inbjudningar för en användare
-app.get('/api/invitations/:email', async (req, res) => {
+// API: Vote on suggestion - SMART VIDEOMÖTE: Teams om Microsoft finns, annars Meet
+app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) => {
   try {
-    const { email } = req.params;
-    const decodedEmail = decodeURIComponent(email);
-    const invitations = await getInvitationsByEmail(decodedEmail);
-    res.json({ invitations });
-  } catch (error) {
-    console.error('Error fetching invitations:', error);
-    res.status(500).json({ error: 'Kunde inte hämta inbjudningar' });
-  }
-});
+    const { groupId, suggestionId } = req.params;
+    const { email, vote } = req.body;
+    if (!groupId || !suggestionId || !email || !vote) return res.status(400).json({ error: 'groupId, suggestionId, email, vote krävs' });
 
-// Admin login endpoint
-app.post('/api/admin/login', (req, res) => {
-  const { password } = req.body;
-  if (password === process.env.ADMIN_KEY) {
-    req.session.adminAccess = true;
-    res.json({ success: true });
-  } else {
-    res.status(401).json({ error: 'Fel lösenord' });
-  }
-});
-
-// Kontaktformulär: Skicka mail till onebookr@gmail.com
-app.post('/api/contact', async (req, res) => {
-  const { name, email, message } = req.body;
-  if (!name || !email || !message) {
-    return res.status(400).json({ error: 'Alla fält krävs.' });
-  }
-  try {
-    await resend.emails.send({
-      from: 'BookR <info@onebookr.se>',
-      to: 'info@onebookr.se',
-      subject: 'Bokningsförfrågan via BookR',
-      text: `Namn: ${name}\nE-post: ${email}\n\nMeddelande:\n${message}`,
-    });
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Fel vid kontaktmail:', err);
-    res.status(500).json({ error: 'Kunde inte skicka meddelandet.' });
-  }
-});
-
-// Väntelista - PERMANENT LAGRING I FIRESTORE (INGEN DATA FÖRSVINNER ALDRIG)
-import { addToWaitlist, getWaitlist, getWaitlistCount, checkEmailInWaitlist } from './firestore.js';
-
-// Lägg till på väntelista - PERMANENT LAGRING
-app.post('/api/waitlist', async (req, res) => {
-  const { email, name } = req.body;
-  if (!email || !name) {
-    return res.status(400).json({ error: 'Namn och e-post krävs.' });
-  }
-  
-  try {
-    // Kolla om redan registrerad i Firestore
-    const existing = await checkEmailInWaitlist(email);
-    if (existing) {
-      return res.status(400).json({ error: 'Du är redan registrerad på väntelistan!' });
-    }
+    const suggestion = await getSuggestion(suggestionId);
+    if (!suggestion) return res.status(404).json({ error: 'Förslag finns inte' });
     
-    // Lägg till i Firestore - PERMANENT LAGRING
-    await addToWaitlist(email, name);
-    const totalCount = await getWaitlistCount();
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
+
+    // Uppdatera röster
+    const updatedVotes = { ...suggestion.votes, [email]: vote };
+    await updateSuggestion(suggestionId, { votes: updatedVotes });
+
+    // Hämta alla e-postadresser i gruppen
+    const invitations = await getInvitationsByGroup(groupId);
+    const allEmails = [group.creatorEmail, ...invitations.map(inv => inv.email)].filter(Boolean);
+
+    const allAccepted = allEmails.every(e => updatedVotes[e] === 'accepted');
+    console.log('Vote check:', { allEmails, updatedVotes, allAccepted, finalized: suggestion.finalized });
     
-    // Skicka välkomstmejl till användaren
-    try {
-      await resend.emails.send({
-        from: 'BookR <info@onebookr.se>',
-        to: email,
-        subject: 'Välkommen till BookR väntelistan! 🚀',
-        text: `Hej ${name}!\n\nTack för att du gått med på BookR väntelistan! 🎉\n\nDu är nu en av de första som får tillgång till BookR när vi lanserar. Vi bygger något riktigt coolt som kommer att revolutionera hur vi bokar möten!\n\n💫 Vad du kan förvänta dig:\n• Slut på mejlkaoset när ni ska hitta en tid\n• Jämför kalendrar på sekunder\n• Automatiska Google Meet-länkar\n• 100% gratis att använda\n\n📈 Du är nummer ${totalCount} på väntelistan!\n\nVi skickar uppdateringar om lanseringen och exklusiva förhandsvisningar. Håll utkik i din inkorg!\n\nHa en fantastisk dag! ✨\n\nBookR-teamet\ninfo@onebookr.se\n\nP.S. Dela gärna med dina vänner och kollegor - ju fler vi är, desto bättre blir BookR!`,
+    // Returnera omedelbart med uppdaterat förslag
+    const updatedSuggestion = await getSuggestion(suggestionId);
+    res.json({ success: true, suggestion: updatedSuggestion });
+    
+    if (allAccepted && !suggestion.finalized) {
+      console.log('All accepted! Creating unified meeting for all participants...');
+      
+      // Markera som finalized först
+      await updateSuggestion(suggestionId, {
+        finalized: true,
+        status: 'processing'
       });
+      console.log('Marked as finalized, now creating calendar events...');
       
-      // Skicka admin-notifiering
-      await resend.emails.send({
-        from: 'BookR <info@onebookr.se>',
-        to: 'info@onebookr.se',
-        subject: 'Ny registrering på BookR väntelista',
-        text: `Ny person har gått med på väntelistan:\n\nNamn: ${name}\nE-post: ${email}\nTid: ${new Date().toISOString()}\n\nTotalt antal: ${totalCount}`,
-      });
-    } catch (err) {
-      console.error('Fel vid mejlutskick:', err);
-    }
-    
-    res.json({ success: true, count: totalCount });
-  } catch (error) {
-    console.error('Fel vid registrering på väntelista:', error);
-    res.status(500).json({ error: 'Kunde inte registrera på väntelistan.' });
-  }
-});
-
-// Hämta antal på väntelista - FRÅN FIRESTORE
-app.get('/api/waitlist/count', async (req, res) => {
-  try {
-    const count = await getWaitlistCount();
-    res.json({ count });
-  } catch (error) {
-    console.error('Fel vid hämtning av väntelista-antal:', error);
-    res.status(500).json({ error: 'Kunde inte hämta antal.' });
-  }
-});
-
-// Admin: Hämta hela väntelistan (skyddad) - FRÅN FIRESTORE
-app.get('/api/waitlist/admin', async (req, res) => {
-  const adminKey = req.headers['x-admin-key'];
-  if (adminKey !== 'bookr-admin-2024') {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  
-  try {
-    const waitlist = await getWaitlist();
-    res.json({ waitlist, count: waitlist.length });
-  } catch (error) {
-    console.error('Fel vid hämtning av väntelista för admin:', error);
-    res.status(500).json({ error: 'Kunde inte hämta väntelista.' });
-  }
-});
-
-// Generera delningslänk för väntelistan
-app.post('/api/waitlist/share', (req, res) => {
-  const waitlistUrl = 'https://www.onebookr.se/waitlist';
-  const message = encodeURIComponent('Kolla in BookR - slipp mejlkaoset när ni ska boka möten! 🚀');
-  
-  const shareLinks = {
-    email: `mailto:?subject=${encodeURIComponent('Du borde kolla in BookR!')}&body=${encodeURIComponent(`Hej!\n\nJag hittade BookR - en app som gör slut på mejlkaoset när man ska boka möten.\n\nIstället för 15+ mejl och timmar av planering tar det 30 sekunder att hitta en tid som passar alla och få Google Meet-länk automatiskt.\n\nGå med på väntelistan här: ${waitlistUrl}\n\n100% gratis, inga kreditkort, lanseras inom kort!`)}`,
-    whatsapp: `https://wa.me/?text=${message}%20${encodeURIComponent(waitlistUrl)}`,
-    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(waitlistUrl)}`,
-    twitter: `https://twitter.com/intent/tweet?text=${message}&url=${encodeURIComponent(waitlistUrl)}`,
-    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(waitlistUrl)}`,
-    copy: waitlistUrl
-  };
-  
-  res.json({ shareLinks, waitlistUrl });
-});
-
-// Specifika routes för React SPA
-app.get('/waitlist', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/admin/waitlist', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/about', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/contact', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/business-signup', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/business-admin', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/venue-admin', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.get('/venue/:venueId', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-// In-memory storage för företag och hallar (i produktion skulle detta vara databas)
-const businesses = new Map();
-const venues = new Map();
-const venueSchedules = new Map();
-
-// Business API endpoints
-app.post('/api/business/register', async (req, res) => {
-  const { companyName, businessType, contactPerson, googleEmail, googleId, googleToken } = req.body;
-  
-  if (!companyName || !businessType || !contactPerson || !googleEmail) {
-    return res.status(400).json({ error: 'Alla obligatoriska fält krävs' });
-  }
-  
-  try {
-    const bookingCode = Math.random().toString(36).substring(2, 10).toUpperCase();
-    
-    // Spara företaget
-    businesses.set(googleEmail, {
-      companyName,
-      businessType,
-      contactPerson,
-      googleEmail,
-      googleId,
-      bookingCode,
-      createdAt: new Date().toISOString()
-    });
-    
-    res.json({ 
-      success: true, 
-      bookingCode,
-      message: 'Företag registrerat framgångsrikt'
-    });
-  } catch (error) {
-    console.error('Error registering business:', error);
-    res.status(500).json({ error: 'Kunde inte registrera företag' });
-  }
-});
-
-app.get('/api/business/by-email/:email', async (req, res) => {
-  const { email } = req.params;
-  
-  const business = businesses.get(email);
-  
-  if (business) {
-    res.json({ business });
-  } else {
-    res.status(404).json({ error: 'Företag inte hittat' });
-  }
-});
-
-app.get('/api/business/:bookingCode/meetings', async (req, res) => {
-  const { bookingCode } = req.params;
-  
-  // Mock meetings data
-  const mockMeetings = [
-    {
-      id: '1',
-      title: 'Möte med Anna Andersson',
-      start: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      end: new Date(Date.now() + 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-      clientEmail: 'anna@example.com',
-      location: 'Kontoret'
-    },
-    {
-      id: '2', 
-      title: 'Konsultation med Erik Svensson',
-      start: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
-      end: new Date(Date.now() + 48 * 60 * 60 * 1000 + 90 * 60 * 1000).toISOString(),
-      clientEmail: 'erik@example.com',
-      location: 'Online'
-    }
-  ];
-  
-  res.json({ meetings: mockMeetings });
-});
-
-// Venue API endpoints
-app.post('/api/venues/register', async (req, res) => {
-  const { name, website, contactEmail, googleEmail, googleToken } = req.body;
-  
-  if (!name || !contactEmail || !googleEmail || !googleToken) {
-    return res.status(400).json({ error: 'Namn, kontakt-email och Google-inloggning krävs' });
-  }
-  
-  try {
-    const venueId = Math.random().toString(36).substring(2, 10).toLowerCase();
-    const uniqueLink = `https://www.onebookr.se/venue/${venueId}`;
-    
-    venues.set(venueId, {
-      id: venueId,
-      name,
-      website,
-      contactEmail,
-      googleEmail,
-      googleToken,
-      createdAt: new Date().toISOString()
-    });
-    
-    // Hämta riktiga lediga tider från Google Calendar
-    try {
-      const now = new Date();
-      const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      
-      const { events } = await fetchCalendarEvents(
-        googleToken, 
-        now.toISOString(), 
-        weekFromNow.toISOString()
-      );
-      
-      // Skapa lediga slots baserat på öppettider minus upptagna tider
-      const freeSlots = generateVenueFreeSlots(events, now, weekFromNow);
-      venueSchedules.set(venueId, freeSlots);
-    } catch (error) {
-      console.error('Error fetching venue calendar:', error);
-      // Fallback till mock-data
-      const mockSlots = [];
-      const now = new Date();
-      for (let i = 1; i <= 7; i++) {
-        const date = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
-        for (let hour = 9; hour <= 20; hour += 2) {
-          const start = new Date(date);
-          start.setHours(hour, 0, 0, 0);
-          const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-          
-          mockSlots.push({
-            start: start.toISOString(),
-            end: end.toISOString(),
-            title: 'Ledig bana',
-            type: 'venue'
-          });
+      try {
+        const meetEventId = suggestionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
+        
+        const tokens = (group.tokens || []).filter(Boolean);
+        console.log('Available tokens:', tokens.length);
+        
+        if (!tokens.length) {
+          console.error('No tokens available for group');
+          throw new Error('Inga tokens för gruppen');
         }
+
+        // VIKTIGT: Detektera om det finns någon Microsoft-användare
+        let hasMicrosoftUser = false;
+        const providers = [];
+        for (const token of tokens) {
+          const provider = detectProvider(token);
+          providers.push(provider);
+          if (provider === 'microsoft') {
+            hasMicrosoftUser = true;
+          }
+        }
+        
+        // Välj videomötestyp baserat på deltagare
+        const meetingType = hasMicrosoftUser ? 'teams' : 'meet';
+        console.log(`🎥 Meeting type: ${meetingType} (hasMicrosoftUser: ${hasMicrosoftUser})`);
+        console.log(`Providers in group: ${providers.join(', ')}`);
+
+        // Skapa base event data
+        const baseEventData = {
+          summary: suggestion.title || 'BookR-möte',
+          description: `Möte bokat via BookR\n\nDeltagare: ${allEmails.join(', ')}`,
+          start: {
+            dateTime: suggestion.start,
+            timeZone: 'Europe/Stockholm'
+          },
+          end: {
+            dateTime: suggestion.end,
+            timeZone: 'Europe/Stockholm'
+          },
+          location: suggestion.location || undefined,
+          attendees: allEmails
+        };
+
+        let unifiedMeetLink = null;
+
+        // Skapa event för varje deltagare med SAMMA videomötestyp
+        for (let i = 0; i < tokens.length; i++) {
+          const token = tokens[i];
+          const provider = providers[i];
+          console.log(`Creating event ${i + 1}/${tokens.length} for provider: ${provider} with ${meetingType}`);
+          
+          let result = null;
+          
+          if (provider === 'microsoft') {
+            // Microsoft Calendar med Teams (alltid om det finns MS-användare)
+            const msEventData = {
+              ...baseEventData,
+              conferenceData: suggestion.withMeet ? { createRequest: { requestId: meetEventId } } : undefined
+            };
+            result = await createMicrosoftCalendarEvent(token, msEventData);
+          } else {
+            // Google Calendar
+            if (meetingType === 'teams') {
+              // Om vi ska ha Teams men användaren är Google → skapa utan videomöte, länken kommer från MS-användaren
+              console.log('Creating Google event WITHOUT Meet (Teams will be used from MS user)');
+              const googleEventData = {
+                ...baseEventData,
+                // Ingen conferenceData = inget Meet
+              };
+              result = await createGoogleCalendarEvent(token, googleEventData);
+            } else {
+              // Endast Google-användare → använd Meet
+              console.log('Creating Google event WITH Meet');
+              const googleEventData = {
+                ...baseEventData,
+                conferenceData: suggestion.withMeet ? {
+                  createRequest: {
+                    requestId: meetEventId,
+                    conferenceSolutionKey: { type: 'hangoutsMeet' }
+                  }
+                } : undefined
+              };
+              result = await createGoogleCalendarEvent(token, googleEventData);
+            }
+          }
+          
+          if (result?.success) {
+            console.log(`✅ Event created for participant ${i + 1} (${provider})`);
+            // Spara första möteslänken vi får (Teams eller Meet)
+            if (!unifiedMeetLink && result.meetLink) {
+              unifiedMeetLink = result.meetLink;
+              console.log(`📹 Unified meeting link set: ${unifiedMeetLink}`);
+            }
+          } else {
+            console.error(`❌ Failed to create event for participant ${i + 1} (${provider})`);
+          }
+        }
+        
+        console.log('✅ All calendar events created!');
+        console.log(`🎥 Final meeting type: ${meetingType}, link: ${unifiedMeetLink || 'N/A'}`);
+        
+        // Uppdatera suggestion med meet-länk
+        await updateSuggestion(suggestionId, {
+          meetLink: unifiedMeetLink,
+          meetingType, // Spara vilken typ av möte det är
+          finalized: true,
+          status: 'completed'
+        });
+
+        // Bygg mejltext med rätt videomötestyp
+        let mailText = `Alla har accepterat mötestiden!\n\n`;
+        mailText += `Möte: ${suggestion.title || 'Föreslaget möte'}\n`;
+        mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n\n`;
+        
+        if (suggestion.withMeet && unifiedMeetLink) {
+          const meetingPlatform = meetingType === 'teams' ? 'Microsoft Teams' : 'Google Meet';
+          mailText += `🎥 ${meetingPlatform}-länk:\n${unifiedMeetLink}\n\n`;
+          mailText += `(Alla deltagare använder samma ${meetingPlatform}-länk)\n\n`;
+        }
+        
+        if (suggestion.location) {
+          mailText += `📍 Plats: ${suggestion.location}\n\n`;
+        }
+        mailText += `Deltagare:\n${allEmails.join('\n')}\n\n`;
+        mailText += `Du hittar även mötet i din kalender (Google Calendar eller Outlook).\n\nHälsningar,\nBookR-teamet`;
+
+        // Skicka mejl med retry
+        for (const recipientEmail of allEmails) {
+          let attempts = 0;
+          while (attempts < 3) {
+            attempts++;
+            try {
+              await resend.emails.send({
+                from: 'BookR <info@onebookr.se>',
+                to: recipientEmail,
+                subject: 'Möte bokat!',
+                text: mailText,
+              });
+              console.log(`Mötesmejl skickat till ${recipientEmail}`);
+              break;
+            } catch (err) {
+              if (attempts === 3) {
+                console.error(`Misslyckades skicka mejl till ${recipientEmail}:`, err);
+              } else {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            }
+          }
+        }
+
+      } catch (err) {
+        console.error('Fel vid kalenderskapande:', err);
+        await updateSuggestion(suggestionId, {
+          finalized: true,
+          status: 'error',
+          error: err.message
+        });
       }
-      venueSchedules.set(venueId, mockSlots);
     }
-    
-    res.json({ 
-      success: true, 
-      uniqueLink,
-      venueId,
-      message: 'Hall registrerad framgångsrikt'
-    });
   } catch (error) {
-    console.error('Error registering venue:', error);
-    res.status(500).json({ error: 'Kunde inte registrera hall' });
+    console.error('Error voting on suggestion:', error);
+    res.status(500).json({ error: 'Kunde inte rösta på förslag' });
   }
 });
 
-app.get('/api/venues/:venueId', async (req, res) => {
-  const { venueId } = req.params;
-  
-  const venue = venues.get(venueId);
-  const availableSlots = venueSchedules.get(venueId) || [];
-  
-  if (venue) {
-    res.json({ venue, availableSlots });
-  } else {
-    res.status(404).json({ error: 'Hall inte hittad' });
-  }
-});
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
-});
-
-// Svara på inbjudan (acceptera eller neka)
-app.post('/api/invitation/:invitationId/respond', async (req, res) => {
+// Hjälpfunktion: Skapa Microsoft Calendar event med Teams
+async function createMicrosoftCalendarEvent(token, eventData) {
   try {
-    const { invitationId } = req.params;
-    const { response } = req.body; // 'accept' eller 'decline'
+    console.log('Creating Microsoft Calendar event with Teams...');
     
-    if (!response || !['accept', 'decline'].includes(response)) {
-      return res.status(400).json({ error: 'Response måste vara accept eller decline' });
+    const microsoftEvent = {
+      subject: eventData.summary || 'Möte',
+      body: {
+        contentType: 'HTML',
+        content: eventData.description || 'Bokat via BookR'
+      },
+      start: {
+        dateTime: eventData.start.dateTime,
+        timeZone: eventData.start.timeZone || 'Europe/Stockholm'
+      },
+      end: {
+        dateTime: eventData.end.dateTime,
+        timeZone: eventData.end.timeZone || 'Europe/Stockholm'
+      },
+      location: eventData.location ? {
+        displayName: eventData.location
+      } : undefined,
+      attendees: eventData.attendees?.map(email => ({
+        emailAddress: { address: email },
+        type: 'required'
+      })) || []
+    };
+
+    // Lägg till Teams meeting om conferenceData finns
+    if (eventData.conferenceData) {
+      microsoftEvent.isOnlineMeeting = true;
+      microsoftEvent.onlineMeetingProvider = 'teamsForBusiness';
     }
-    
-    await updateInvitation(invitationId, {
-      responded: true,
-      accepted: response === 'accept',
-      respondedAt: new Date().toISOString()
+
+    const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(microsoftEvent)
     });
-    
-    res.json({ success: true });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Microsoft Graph API error:', errorData);
+      return null;
+    }
+
+    const createdEvent = await response.json();
+    console.log('✅ Microsoft Calendar event created:', createdEvent.id);
+
+    return {
+      success: true,
+      eventId: createdEvent.id,
+      meetLink: createdEvent.onlineMeeting?.joinUrl || null,
+      provider: 'microsoft'
+    };
   } catch (error) {
-    console.error('Error responding to invitation:', error);
-    res.status(500).json({ error: 'Kunde inte svara på inbjudan' });
+    console.error('Error creating Microsoft Calendar event:', error);
+    return null;
   }
-});
+}
 
-// Hämta invites för användare (för ShortcutDashboard)
-app.get('/api/invites', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authorization header krävs' });
-  }
-  
-  // För nu returnerar vi mock-data
-  const mockInvites = [];
-  res.json({ invites: mockInvites });
-});
-
-// Svara på invite (för ShortcutDashboard)
-app.post('/api/invites/:inviteId/respond', async (req, res) => {
-  const { inviteId } = req.params;
-  const { response } = req.body;
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authorization header krävs' });
-  }
-  
-  if (!response || !['accept', 'decline'].includes(response)) {
-    return res.status(400).json({ error: 'Response måste vara accept eller decline' });
-  }
-  
-  // För nu returnerar vi bara success
-  res.json({ success: true });
-});
-
-// Skicka kontaktförfrågan
-app.post('/api/contact-request', async (req, res) => {
-  const { fromEmail, toEmail, fromName } = req.body;
-  
-  if (!fromEmail || !toEmail) {
-    return res.status(400).json({ error: 'Från- och till-email krävs' });
-  }
-  
+// Hjälpfunktion: Skapa Google Calendar event (kan vara med eller utan Meet)
+async function createGoogleCalendarEvent(token, eventData) {
+ 
   try {
-    // Skicka notifikation till mottagaren (i produktion skulle detta vara databas)
-    // För nu använder vi localStorage på frontend
-    res.json({ success: true, message: 'Kontaktförfrågan skickad' });
-  } catch (error) {
-    console.error('Error sending contact request:', error);
-    res.status(500).json({ error: 'Kunde inte skicka kontaktförfrågan' });
-  }
-});
-
-// Skicka team-inbjudningar
-app.post('/api/send-team-invitation', async (req, res) => {
-  const { toEmail, fromEmail, fromName, teamName, groupId, hasDirectAccess } = req.body;
-  
-  if (!toEmail || !fromEmail || !teamName || !groupId) {
-    return res.status(400).json({ error: 'Alla fält krävs för team-inbjudan' });
-  }
-  
-  try {
-    const inviteLink = `https://www.onebookr.se/?group=${groupId}&team=${encodeURIComponent(teamName)}`;
-    const accessType = hasDirectAccess ? 'direktåtkomst' : 'vanlig inbjudan';
+    console.log('Creating Google Calendar event...');
     
-    const emailSubject = `Inbjudan till teammöte: ${teamName}`;
-    const emailText = `Hej!
-
-${fromName || fromEmail} har startat en kalenderjämförelse för teamet "${teamName}" och bjudit in dig.
-
-${hasDirectAccess ? 
-      'Du har direktåtkomst vilket betyder att du kan delta direkt utan att behöva logga in separat.' : 
-      'Klicka på länken nedan för att gå med i kalenderjämförelsen.'}
-
-Länk till kalenderjämförelsen:
-${inviteLink}
-
-I kalenderjämförelsen kan ni:
-✅ Se varandras lediga tider
-✅ Föreslå mötestider
-✅ Rösta på förslag
-✅ Få automatiska Google Meet-länkar
-
-Hälsningar,
-BookR-teamet`;
+    const userOAuth2 = new google.auth.OAuth2(
+      process.env.CLIENT_ID,
+      process.env.CLIENT_SECRET
+    );
+    userOAuth2.setCredentials({ access_token: token });
     
-    await resend.emails.send({
-      from: 'BookR <info@onebookr.se>',
-      to: toEmail,
-      subject: emailSubject,
-      text: emailText
+    const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
+
+    const response = await userCalendar.events.insert({
+      calendarId: 'primary',
+      resource: eventData,
+      conferenceDataVersion: eventData.conferenceData ? 1 : 0,
+      sendUpdates: 'all'
     });
-    
-    console.log(`Team invitation sent to ${toEmail} for team ${teamName}`);
-    res.json({ success: true, message: 'Team-inbjudan skickad' });
-  } catch (error) {
-    console.error('Error sending team invitation:', error);
-    res.status(500).json({ error: 'Kunde inte skicka team-inbjudan' });
-  }
-});
 
-// Direktbokning endpoint
-app.post('/api/direct-booking', async (req, res) => {
-  const { contactEmail, contactName, userEmail, userToken } = req.body;
-  
-  if (!contactEmail || !userEmail || !userToken) {
-    return res.status(400).json({ error: 'Kontakt-email, användar-email och token krävs' });
-  }
-  
-  try {
-    // Skapa en direktbokningsgrupp
-    const groupId = `direct_${Date.now()}`;
-    
-    const group = await createGroup({
-      creatorEmail: userEmail,
-      creatorToken: userToken,
-      creatorProvider: 'google',
-      groupName: `Möte med ${contactName || contactEmail}`,
-      tokens: [userToken],
-      joinedEmails: [userEmail],
-      directAccess: true,
-      contactEmail,
-      contactName
-    });
-    
-    res.json({ success: true, groupId, redirectUrl: `/?group=${groupId}&directAccess=true&contactEmail=${encodeURIComponent(contactEmail)}&contactName=${encodeURIComponent(contactName || '')}` });
-  } catch (error) {
-    console.error('Error creating direct booking:', error);
-    res.status(500).json({ error: 'Kunde inte skapa direktbokning' });
-  }
-});
+    console.log('✅ Google Calendar event created:', response.data.id);
 
-// Hämta direktåtkomst-tokens för team/kontakter
-app.post('/api/group/direct-access-tokens', async (req, res) => {
-  const { ownerEmail, targetEmails } = req.body;
-  
-  if (!ownerEmail || !targetEmails || !Array.isArray(targetEmails)) {
-    return res.status(400).json({ error: 'ownerEmail och targetEmails (array) krävs' });
-  }
-  
-  try {
-    // För direktåtkomst använder vi bara ägarens token
-    // Direktåtkomst betyder att vi kan se andras kalendrar utan att de behöver logga in
-    console.log('Direct access tokens requested for:', { ownerEmail, targetEmails });
-    console.log('Returning owner token only for direct access');
-    
-    res.json({ 
-      success: true, 
-      tokens: [], // Inga extra tokens behövs för direktåtkomst
-      message: 'Direktåtkomst aktiverat - använder endast ägarens token' 
-    });
+    return {
+      success: true,
+      eventId: response.data.id,
+      meetLink: response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || response.data.hangoutLink || null,
+      provider: 'google'
+    };
   } catch (error) {
-    console.error('Error fetching direct access tokens:', error);
-    res.status(500).json({ error: 'Kunde inte hämta direktåtkomst-tokens' });
+    console.error('Error creating Google Calendar event:', error);
+    return null;
+  }
+}
+
+// API: Vote on suggestion - SMART VIDEOMÖTE: Teams om Microsoft finns, annars Meet
+app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) => {
+  try {
+    const { groupId, suggestionId } = req.params;
+    const { email, vote } = req.body;
+    if (!groupId || !suggestionId || !email || !vote) return res.status(400).json({ error: 'groupId, suggestionId, email, vote krävs' });
+
+    const suggestion = await getSuggestion(suggestionId);
+    if (!suggestion) return res.status(404).json({ error: 'Förslag finns inte' });
+    
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
+
+    // Uppdatera röster
+    const updatedVotes = { ...suggestion.votes, [email]: vote };
+    await updateSuggestion(suggestionId, { votes: updatedVotes });
+
+    // Hämta alla e-postadresser i gruppen
+    const invitations = await getInvitationsByGroup(groupId);
+    const allEmails = [group.creatorEmail, ...invitations.map(inv => inv.email)].filter(Boolean);
+
+    const allAccepted = allEmails.every(e => updatedVotes[e] === 'accepted');
+    console.log('Vote check:', { allEmails, updatedVotes, allAccepted, finalized: suggestion.finalized });
+    
+    // Returnera omedelbart med uppdaterat förslag
+    const updatedSuggestion = await getSuggestion(suggestionId);
+    res.json({ success: true, suggestion: updatedSuggestion });
+    
+    if (allAccepted && !suggestion.finalized) {
+      console.log('All accepted! Creating unified meeting for all participants...');
+      
+      // Markera som finalized först
+      await updateSuggestion(suggestionId, {
+        finalized: true,
+        status: 'processing'
+      });
+      console.log('Marked as finalized, now creating calendar events...');
+      
+      try {
+        const meetEventId = suggestionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
+        
+        const tokens = (group.tokens || []).filter(Boolean);
+        console.log('Available tokens:', tokens.length);
+        
+        if (!tokens.length) {
+          console.error('No tokens available for group');
+          throw new Error('Inga tokens för gruppen');
+        }
+
+        // VIKTIGT: Detektera om det finns någon Microsoft-användare
+        let hasMicrosoftUser = false;
+        const providers = [];
+        for (const token of tokens) {
+          const provider = detectProvider(token);
+          providers.push(provider);
+          if (provider === 'microsoft') {
+            hasMicrosoftUser = true;
+          }
+        }
+        
+        // Välj videomötestyp baserat på deltagare
+        const meetingType = hasMicrosoftUser ? 'teams' : 'meet';
+        console.log(`🎥 Meeting type: ${meetingType} (hasMicrosoftUser: ${hasMicrosoftUser})`);
+        console.log(`Providers in group: ${providers.join(', ')}`);
+
+        // Skapa base event data
+        const baseEventData = {
+          summary: suggestion.title || 'BookR-möte',
+          description: `Möte bokat via BookR\n\nDeltagare: ${allEmails.join(', ')}`,
+          start: {
+            dateTime: suggestion.start,
+            timeZone: 'Europe/Stockholm'
+          },
+          end: {
+            dateTime: suggestion.end,
+            timeZone: 'Europe/Stockholm'
+          },
+          location: suggestion.location || undefined,
+          attendees: allEmails
+        };
+
+        let unifiedMeetLink = null;
+
+        // Skapa event för varje deltagare med SAMMA videomötestyp
+        for (let i = 0; i < tokens.length; i++) {
+          const token = tokens[i];
+          const provider = providers[i];
+          console.log(`Creating event ${i + 1}/${tokens.length} for provider: ${provider} with ${meetingType}`);
+          
+          let result = null;
+          
+          if (provider === 'microsoft') {
+            // Microsoft Calendar med Teams (alltid om det finns MS-användare)
+            const msEventData = {
+              ...baseEventData,
+              conferenceData: suggestion.withMeet ? { createRequest: { requestId: meetEventId } } : undefined
+            };
+            result = await createMicrosoftCalendarEvent(token, msEventData);
+          } else {
+            // Google Calendar
+            if (meetingType === 'teams') {
+              // Om vi ska ha Teams men användaren är Google → skapa utan videomöte, länken kommer från MS-användaren
+              console.log('Creating Google event WITHOUT Meet (Teams will be used from MS user)');
+              const googleEventData = {
+                ...baseEventData,
+                // Ingen conferenceData = inget Meet
+              };
+              result = await createGoogleCalendarEvent(token, googleEventData);
+            } else {
+              // Endast Google-användare → använd Meet
+              console.log('Creating Google event WITH Meet');
+              const googleEventData = {
+                ...baseEventData,
+                conferenceData: suggestion.withMeet ? {
+                  createRequest: {
+                    requestId: meetEventId,
+                    conferenceSolutionKey: { type: 'hangoutsMeet' }
+                  }
+                } : undefined
+              };
+              result = await createGoogleCalendarEvent(token, googleEventData);
+            }
+          }
+          
+          if (result?.success) {
+            console.log(`✅ Event created for participant ${i + 1} (${provider})`);
+            // Spara första möteslänken vi får (Teams eller Meet)
+            if (!unifiedMeetLink && result.meetLink) {
+              unifiedMeetLink = result.meetLink;
+              console.log(`📹 Unified meeting link set: ${unifiedMeetLink}`);
+            }
+          } else {
+            console.error(`❌ Failed to create event for participant ${i + 1} (${provider})`);
+          }
+        }
+        
+        console.log('✅ All calendar events created!');
+        console.log(`🎥 Final meeting type: ${meetingType}, link: ${unifiedMeetLink || 'N/A'}`);
+        
+        // Uppdatera suggestion med meet-länk
+        await updateSuggestion(suggestionId, {
+          meetLink: unifiedMeetLink,
+          meetingType, // Spara vilken typ av möte det är
+          finalized: true,
+          status: 'completed'
+        });
+
+        // Bygg mejltext med rätt videomötestyp
+        let mailText = `Alla har accepterat mötestiden!\n\n`;
+        mailText += `Möte: ${suggestion.title || 'Föreslaget möte'}\n`;
+        mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n\n`;
+        
+        if (suggestion.withMeet && unifiedMeetLink) {
+          const meetingPlatform = meetingType === 'teams' ? 'Microsoft Teams' : 'Google Meet';
+          mailText += `🎥 ${meetingPlatform}-länk:\n${unifiedMeetLink}\n\n`;
+          mailText += `(Alla deltagare använder samma ${meetingPlatform}-länk)\n\n`;
+        }
+        
+        if (suggestion.location) {
+          mailText += `📍 Plats: ${suggestion.location}\n\n`;
+        }
+        mailText += `Deltagare:\n${allEmails.join('\n')}\n\n`;
+        mailText += `Du hittar även mötet i din kalender (Google Calendar eller Outlook).\n\nHälsningar,\nBookR-teamet`;
+
+        // Skicka mejl med retry
+        for (const recipientEmail of allEmails) {
+          let attempts = 0;
+          while (attempts < 3) {
+            attempts++;
+            try {
+              await resend.emails.send({
+                from: 'BookR <info@onebookr.se>',
+                to: recipientEmail,
+                subject: 'Möte bokat!',
+                text: mailText,
+              });
+              console.log(`Mötesmejl skickat till ${recipientEmail}`);
+              break;
+            } catch (err) {
+              if (attempts === 3) {
+                console.error(`Misslyckades skicka mejl till ${recipientEmail}:`, err);
+              } else {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            }
+          }
+        }
+
+      } catch (err) {
+        console.error('Fel vid kalenderskapande:', err);
+        await updateSuggestion(suggestionId, {
+          finalized: true,
+          status: 'error',
+          error: err.message
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error voting on suggestion:', error);
+    res.status(500).json({ error: 'Kunde inte rösta på förslag' });
   }
 });
 
