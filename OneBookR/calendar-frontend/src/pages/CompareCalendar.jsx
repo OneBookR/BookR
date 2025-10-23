@@ -38,7 +38,16 @@ const calendarTodayBg = "#fffde7";
 
 const localizer = momentLocalizer(moment);
 
-export default function CompareCalendar({ myToken, invitedTokens = [], user, directAccess, contactEmail, contactName, teamName }) {
+export default function CompareCalendar({
+  myToken,
+  invitedTokens = [],
+  user,
+  groupId: propGroupId, // Använd prop istället
+  directAccess,
+  contactEmail,
+  contactName,
+  teamName
+}) {
   // Säkerställ att hooks som använder window.user fungerar
   React.useEffect(() => {
     try {
@@ -121,9 +130,14 @@ export default function CompareCalendar({ myToken, invitedTokens = [], user, dir
   const [undoAction, setUndoAction] = useState(null);
   const [successAnimation, setSuccessAnimation] = useState(null);
   const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
-  const urlParams = new URLSearchParams(window.location.search);
-  const groupId = urlParams.get('group');
-
+  
+  // Ta bort denna rad - groupId kommer från props
+  // const urlParams = new URLSearchParams(window.location.search);
+  // const groupId = urlParams.get('group');
+  
+  // Använd propGroupId istället
+  const groupId = propGroupId;
+  
   // Hämta förslag
   useEffect(() => {
     if (groupId) {
