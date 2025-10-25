@@ -1582,19 +1582,24 @@ async function createMicrosoftCalendarEvent(token, eventData, opts = {}) {
         emailAddress: { address: email },
         type: 'required'
       })),
-      // Force Teams if requested
-      isOnlineMeeting: opts.forceTeams === true ? true : undefined
-      // Note: omit onlineMeetingProvider to let Graph choose appropriate provider (consumer/business)
+      isOnlineMeeting: opts.forceTeams === true ? true : undefined,
+      // Ensure recipients are asked to respond, which also helps Outlook/Gmail surface the invite
+      responseRequested: true,
+      allowNewTimeProposals: true
     };
 
-    // Remove undefined fields
+    // Rensa bort undefined-fält innan POST
     Object.keys(microsoftEvent).forEach(k => microsoftEvent[k] === undefined && delete microsoftEvent[k]);
 
-    const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+    // IMPORTANT: sendUpdates=all makes Microsoft send invitations to all attendees
+    const url = 'https://graph.microsoft.com/v1.0/me/events?sendUpdates=all';
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        // Keep timezone consistent
+        Prefer: 'outlook.timezone="Europe/Stockholm"'
       },
       body: JSON.stringify(microsoftEvent)
     });
