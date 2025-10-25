@@ -1538,9 +1538,9 @@ async function createGoogleCalendarEvent(token, eventData) {
 // Health check for Railway
 app.get('/health', (_req, res) => res.status(200).send('OK'));
 
-// SPA fallback for non-API/auth routes (serves the built frontend)
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/auth')) return next();
+// SPA fallback: serve index.html for non-API/auth routes
+// REMOVE/REPLACE any old "app.get('*', ...)" definitions
+app.get(/^(?!\/(api|auth))(.*)$/, (req, res, next) => {
   try {
     res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
   } catch (e) {
