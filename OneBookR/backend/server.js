@@ -771,6 +771,126 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
   }
 }
 
+// --- Provider autodetection + busy fetch helpers (needed by /api/availability) ---
+function looksLikeGoogleToken(token) {
+  if (!token) return false;
+  if (token.startsWith('ya29.')) return true;
+  try {
+    if (token.split('.').length >= 2 && token.startsWith('eyJ')) {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+      const iss = String(payload.iss || '').toLowerCase();
+      if (iss.includes('accounts.google.com')) return true;
+    }
+  } catch {}
+  return false;
+}
+
+function looksLikeMicrosoftToken(token) {
+  if (!token) return false;
+  if (token.startsWith('Ew')) return true;
+  try {
+    if (token.split('.').length >= 2 && token.startsWith('eyJ')) {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+      const iss = String(payload.iss || '').toLowerCase();
+      const aud = String(payload.aud || '').toLowerCase();
+      if (iss.includes('login.microsoftonline.com') || iss.includes('sts.windows.net')) return true;
+      if (aud.includes('graph.microsoft.com')) return true;
+    }
+  } catch {}
+  return false;
+}
+
+function detectProvider(token) {
+  if (looksLikeGoogleToken(token) && !looksLikeMicrosoftToken(token)) return 'google';
+  if (looksLikeMicrosoftToken(token) && !looksLikeGoogleToken(token)) return 'microsoft';
+  if (token && token.startsWith('ya29.')) return 'google';
+  if (token && token.startsWith('Ew')) return 'microsoft';
+  return 'google';
+}
+
+async function fetchGoogleEvents(accessToken, timeMinISO, timeMaxISO) {
+  try {
+    const tzRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const tzData = tzRes.ok ? await tzRes.json() : null;
+    const tz = tzData?.value || 'UTC';
+
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, events: [] };
+    if (!res.ok) return { ok: false, status: res.status, events: [] };
+    const data = await res.json();
+    return { ok: true, status: 200, tz, events: Array.isArray(data.items) ? data.items : [] };
+  } catch {
+    return { ok: false, status: 0, events: [] };
+  }
+}
+
+async function fetchMicrosoftEvents(accessToken, timeMinISO, timeMaxISO) {
+  try {
+    const tzPref = 'outlook.timezone="UTC"';
+    const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(timeMinISO)}&endDateTime=${encodeURIComponent(timeMaxISO)}&$top=1000&$orderby=start/dateTime`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, Prefer: tzPref } });
+    if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, events: [] };
+    if (!res.ok) return { ok: false, status: res.status, events: [] };
+    const data = await res.json();
+    return { ok: true, status: 200, tz: 'UTC', events: Array.isArray(data.value) ? data.value : [] };
+  } catch {
+    return { ok: false, status: 0, events: [] };
+  }
+}
+
+function normalizeGoogleEventsToBusy(items) {
+  const busy = [];
+  for (const ev of items) {
+    const startISO = ev?.start?.dateTime || ev?.start?.date;
+    const endISO = ev?.end?.dateTime || ev?.end?.date;
+    if (!startISO || !endISO) continue;
+    const start = new Date(startISO).getTime();
+    const end = new Date(endISO).getTime();
+    if (isFinite(start) && isFinite(end) && end > start) {
+      busy.push({ start, end, title: ev.summary || 'busy', isAllDay: !!ev?.start?.date });
+    }
+  }
+  return busy;
+}
+
+function normalizeMicrosoftEventsToBusy(items) {
+  const busy = [];
+  for (const ev of items) {
+    const startISO = ev?.start?.dateTime;
+    const endISO = ev?.end?.dateTime;
+    if (!startISO || !endISO) continue;
+    const start = new Date(startISO).getTime();
+    const end = new Date(endISO).getTime();
+    if (isFinite(start) && isFinite(end) && end > start) {
+      busy.push({ start, end, title: ev.subject || 'busy', isAllDay: ev?.isAllDay || false });
+    }
+  }
+  return busy;
+}
+
+async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
+  const detected = detectProvider(token);
+  const tryOrder = detected === 'microsoft' ? ['microsoft', 'google'] : ['google', 'microsoft'];
+
+  for (const prov of tryOrder) {
+    const res = prov === 'google'
+      ? await fetchGoogleEvents(token, timeMinISO, timeMaxISO)
+      : await fetchMicrosoftEvents(token, timeMinISO, timeMaxISO);
+
+    if (res.ok && res.events.length > 0) {
+      const busy = prov === 'google'
+        ? normalizeGoogleEventsToBusy(res.events)
+        : normalizeMicrosoftEventsToBusy(res.events);
+      return { provider: prov, busy };
+    }
+    if (res.status === 401 || res.status === 403) continue;
+  }
+  return { provider: detected, busy: [] };
+}
+
 app.post('/api/availability', async (req, res) => {
   const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd } = req.body;
 
@@ -856,6 +976,64 @@ app.post('/api/availability', async (req, res) => {
 });
 
 // Firebase Firestore används för datalagring
+
+// NYTT: Hämta inbjudningar för e-post (används i frontend Sidebar)
+app.get('/api/invitations/:email', async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email || '').toLowerCase();
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Ogiltig e-postadress' });
+    }
+    const invitations = await getInvitationsByEmail(email);
+    res.json({ invitations: invitations || [] });
+  } catch (err) {
+    console.error('Error fetching invitations by email:', err);
+    res.status(500).json({ error: 'Kunde inte hämta inbjudningar' });
+  }
+});
+
+// NYTT: Svara på inbjudan (accept/decline) – enkel uppdatering
+app.post('/api/invitation/:id/respond', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { response } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'Invitation ID krävs' });
+    const accepted = response === 'accept' || response === 'accepted' || response === true;
+    await updateInvitation(id, {
+      responded: true,
+      accepted,
+      respondedAt: new Date().toISOString()
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error responding to invitation:', err);
+    res.status(500).json({ error: 'Kunde inte uppdatera inbjudan' });
+  }
+});
+
+// NYTT: Svara på förslag via förslags-ID (fallback för sidebar)
+// Notera: Denna variant finaliserar inte möten – huvudflödet använder gruppens vote-endpoint.
+app.post('/api/proposal/:proposalId/respond', async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    const { response, email } = req.body || {};
+    if (!proposalId || !email) {
+      return res.status(400).json({ error: 'proposalId och email krävs' });
+    }
+    const suggestion = await getSuggestion(proposalId);
+    if (!suggestion) return res.status(404).json({ error: 'Förslag finns inte' });
+
+    const vote = (response === 'accept' || response === 'accepted') ? 'accepted' : 'declined';
+    const updatedVotes = { ...(suggestion.votes || {}), [email]: vote };
+    await updateSuggestion(proposalId, { votes: updatedVotes });
+
+    const updated = await getSuggestion(proposalId);
+    res.json({ success: true, suggestion: updated });
+  } catch (err) {
+    console.error('Error responding to proposal:', err);
+    res.status(500).json({ error: 'Kunde inte uppdatera förslag' });
+  }
+});
 
 // Skapa grupp och skicka inbjudan
 app.post('/api/invite', async (req, res) => {
