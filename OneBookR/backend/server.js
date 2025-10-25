@@ -1442,141 +1442,89 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
     
     if (allAccepted && !suggestion.finalized) {
       console.log('All accepted! Creating unified meeting for all participants...');
-      
-      // Markera som finalized först
-      await updateSuggestion(suggestionId, {
-        finalized: true,
-        status: 'processing'
-      });
+      await updateSuggestion(suggestionId, { finalized: true, status: 'processing' });
       console.log('Marked as finalized, now creating calendar events...');
-      
+
       try {
         const meetEventId = suggestionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
-        
         const tokens = (group.tokens || []).filter(Boolean);
         console.log('Available tokens:', tokens.length);
-        
         if (!tokens.length) {
           console.error('No tokens available for group');
           throw new Error('Inga tokens för gruppen');
         }
 
-        // VIKTIGT: Detektera om det finns någon Microsoft-användare
-        let hasMicrosoftUser = false;
-        const providers = [];
-        for (const token of tokens) {
-          const provider = detectProvider(token);
-          providers.push(provider);
-          if (provider === 'microsoft') {
-            hasMicrosoftUser = true;
-          }
-        }
-        
-        // Välj videomötestyp baserat på deltagare
-        const meetingType = hasMicrosoftUser ? 'teams' : 'meet';
-        console.log(`🎥 Meeting type: ${meetingType} (hasMicrosoftUser: ${hasMicrosoftUser})`);
-        console.log(`Providers in group: ${providers.join(', ')}`);
+        // Detect providers once
+        const providers = tokens.map(t => detectProvider(t));
+        const hasMicrosoftUser = providers.includes('microsoft');
 
-        // Skapa base event data
+        // Pick a single host account: prefer Microsoft if present, otherwise first Google
+        const hostIndex = hasMicrosoftUser ? providers.indexOf('microsoft') : 0;
+        const hostToken = tokens[hostIndex];
+        const hostProvider = providers[hostIndex];
+
+        // Decide meeting platform
+        const meetingType = hasMicrosoftUser ? 'teams' : 'meet';
+        console.log(`🎥 Meeting host provider: ${hostProvider}, meeting type: ${meetingType}`);
+
+        // Base event
         const baseEventData = {
           summary: suggestion.title || 'BookR-möte',
           description: `Möte bokat via BookR\n\nDeltagare: ${allEmails.join(', ')}`,
-          start: {
-            dateTime: suggestion.start,
-            timeZone: 'Europe/Stockholm'
-          },
-          end: {
-            dateTime: suggestion.end,
-            timeZone: 'Europe/Stockholm'
-          },
+          start: { dateTime: suggestion.start, timeZone: 'Europe/Stockholm' },
+          end: { dateTime: suggestion.end, timeZone: 'Europe/Stockholm' },
           location: suggestion.location || undefined,
           attendees: allEmails
         };
 
         let unifiedMeetLink = null;
 
-        // Skapa event för varje deltagare med SAMMA videomötestyp
-        for (let i = 0; i < tokens.length; i++) {
-          const token = tokens[i];
-          const provider = providers[i];
-          console.log(`Creating event ${i + 1}/${tokens.length} for provider: ${provider} with ${meetingType}`);
-          
-          let result = null;
-          
-          if (provider === 'microsoft') {
-            // Microsoft Calendar med Teams (alltid om det finns MS-användare)
-            const msEventData = {
-              ...baseEventData,
-              conferenceData: suggestion.withMeet ? { createRequest: { requestId: meetEventId } } : undefined
-            };
-            result = await createMicrosoftCalendarEvent(token, msEventData);
-          } else {
-            // Google Calendar
-            if (meetingType === 'teams') {
-              // Om vi ska ha Teams men användaren är Google → skapa utan videomöte, länken kommer från MS-användaren
-              console.log('Creating Google event WITHOUT Meet (Teams will be used from MS user)');
-              const googleEventData = {
-                ...baseEventData,
-                // Ingen conferenceData = inget Meet
-              };
-              result = await createGoogleCalendarEvent(token, googleEventData);
-            } else {
-              // Endast Google-användare → använd Meet
-              console.log('Creating Google event WITH Meet');
-              const googleEventData = {
-                ...baseEventData,
-                conferenceData: suggestion.withMeet ? {
-                  createRequest: {
-                    requestId: meetEventId,
-                    conferenceSolutionKey: { type: 'hangoutsMeet' }
-                  }
-                } : undefined
-              };
-              result = await createGoogleCalendarEvent(token, googleEventData);
+        if (hostProvider === 'microsoft') {
+          // Always force Teams when hosting on Microsoft
+          const msEventData = { ...baseEventData };
+          const result = await createMicrosoftCalendarEvent(hostToken, msEventData, { forceTeams: true });
+          if (!result?.success) throw new Error('Misslyckades skapa Teams-möte');
+          unifiedMeetLink = result.meetLink || null;
+          console.log('✅ Microsoft host event created. Teams link:', unifiedMeetLink || 'N/A');
+        } else {
+          // Host on Google with Meet, invite everyone (sendUpdates=all)
+          const googleEventData = {
+            ...baseEventData,
+            conferenceData: {
+              createRequest: {
+                requestId: meetEventId,
+                conferenceSolutionKey: { type: 'hangoutsMeet' }
+              }
             }
-          }
-          
-          if (result?.success) {
-            console.log(`✅ Event created for participant ${i + 1} (${provider})`);
-            // Spara första möteslänken vi får (Teams eller Meet)
-            if (!unifiedMeetLink && result.meetLink) {
-              unifiedMeetLink = result.meetLink;
-              console.log(`📹 Unified meeting link set: ${unifiedMeetLink}`);
-            }
-          } else {
-            console.error(`❌ Failed to create event for participant ${i + 1} (${provider})`);
-          }
+          };
+          const result = await createGoogleCalendarEvent(hostToken, googleEventData);
+          if (!result?.success) throw new Error('Misslyckades skapa Google Meet-event');
+          unifiedMeetLink = result.meetLink || null;
+          console.log('✅ Google host event created. Meet link:', unifiedMeetLink || 'N/A');
         }
-        
-        console.log('✅ All calendar events created!');
-        console.log(`🎥 Final meeting type: ${meetingType}, link: ${unifiedMeetLink || 'N/A'}`);
-        
-        // Uppdatera suggestion med meet-länk
+
+        // Update suggestion with final meeting info
         await updateSuggestion(suggestionId, {
           meetLink: unifiedMeetLink,
-          meetingType, // Spara vilken typ av möte det är
+          meetingType,
           finalized: true,
           status: 'completed'
         });
 
-        // Bygg mejltext med rätt videomötestyp
+        // Build and send email
         let mailText = `Alla har accepterat mötestiden!\n\n`;
         mailText += `Möte: ${suggestion.title || 'Föreslaget möte'}\n`;
         mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n\n`;
-        
-        if (suggestion.withMeet && unifiedMeetLink) {
+        if (unifiedMeetLink) {
           const meetingPlatform = meetingType === 'teams' ? 'Microsoft Teams' : 'Google Meet';
-          mailText += `🎥 ${meetingPlatform}-länk:\n${unifiedMeetLink}\n\n`;
-          mailText += `(Alla deltagare använder samma ${meetingPlatform}-länk)\n\n`;
+          mailText += `🎥 ${meetingPlatform}-länk:\n${unifiedMeetLink}\n\n(Alla deltagare använder samma ${meetingPlatform}-länk)\n\n`;
         }
-        
         if (suggestion.location) {
           mailText += `📍 Plats: ${suggestion.location}\n\n`;
         }
         mailText += `Deltagare:\n${allEmails.join('\n')}\n\n`;
-        mailText += `Du hittar även mötet i din kalender (Google Calendar eller Outlook).\n\nHälsningar,\nBookR-teamet`;
+        mailText += `Du hittar mötet i din kalender.\n\nHälsningar,\nBookR-teamet`;
 
-        // Skicka mejl med retry
         for (const recipientEmail of allEmails) {
           let attempts = 0;
           while (attempts < 3) {
@@ -1586,7 +1534,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
                 from: 'BookR <info@onebookr.se>',
                 to: recipientEmail,
                 subject: 'Möte bokat!',
-                text: mailText,
+                text: mailText
               });
               console.log(`Mötesmejl skickat till ${recipientEmail}`);
               break;
@@ -1594,12 +1542,11 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
               if (attempts === 3) {
                 console.error(`Misslyckades skicka mejl till ${recipientEmail}:`, err);
               } else {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(r => setTimeout(r, 1000));
               }
             }
           }
         }
-
       } catch (err) {
         console.error('Fel vid kalenderskapande:', err);
         await updateSuggestion(suggestionId, {
@@ -1616,16 +1563,12 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 });
 
 // Hjälpfunktion: Skapa Microsoft Calendar event med Teams
-async function createMicrosoftCalendarEvent(token, eventData) {
+async function createMicrosoftCalendarEvent(token, eventData, opts = {}) {
   try {
-    console.log('Creating Microsoft Calendar event with Teams...');
-    
+    console.log('Creating Microsoft Calendar event...');
     const microsoftEvent = {
       subject: eventData.summary || 'Möte',
-      body: {
-        contentType: 'HTML',
-        content: eventData.description || 'Bokat via BookR'
-      },
+      body: { contentType: 'HTML', content: eventData.description || 'Bokat via BookR' },
       start: {
         dateTime: eventData.start.dateTime,
         timeZone: eventData.start.timeZone || 'Europe/Stockholm'
@@ -1634,32 +1577,30 @@ async function createMicrosoftCalendarEvent(token, eventData) {
         dateTime: eventData.end.dateTime,
         timeZone: eventData.end.timeZone || 'Europe/Stockholm'
       },
-      location: eventData.location ? {
-        displayName: eventData.location
-      } : undefined,
-      attendees: eventData.attendees?.map(email => ({
+      location: eventData.location ? { displayName: eventData.location } : undefined,
+      attendees: (eventData.attendees || []).map(email => ({
         emailAddress: { address: email },
         type: 'required'
-      })) || []
+      })),
+      // Force Teams if requested
+      isOnlineMeeting: opts.forceTeams === true ? true : undefined
+      // Note: omit onlineMeetingProvider to let Graph choose appropriate provider (consumer/business)
     };
 
-    // Lägg till Teams meeting om conferenceData finns
-    if (eventData.conferenceData) {
-      microsoftEvent.isOnlineMeeting = true;
-      microsoftEvent.onlineMeetingProvider = 'teamsForBusiness';
-    }
+    // Remove undefined fields
+    Object.keys(microsoftEvent).forEach(k => microsoftEvent[k] === undefined && delete microsoftEvent[k]);
 
     const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(microsoftEvent)
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       console.error('Microsoft Graph API error:', errorData);
       return null;
     }
@@ -1670,7 +1611,7 @@ async function createMicrosoftCalendarEvent(token, eventData) {
     return {
       success: true,
       eventId: createdEvent.id,
-      meetLink: createdEvent.onlineMeeting?.joinUrl || null,
+      meetLink: createdEvent?.onlineMeeting?.joinUrl || createdEvent?.onlineMeetingUrl || null,
       provider: 'microsoft'
     };
   } catch (error) {
