@@ -785,14 +785,20 @@ function looksLikeGoogleToken(token) {
   return false;
 }
 
+function isProbablyJWT(token) {
+  return typeof token === 'string' && token.split('.').length >= 2;
+}
+
 function looksLikeMicrosoftToken(token) {
   if (!token) return false;
-  if (token.startsWith('Ew')) return true;
+  // IMPORTANT: Only consider real JWT access tokens with MS claims as Microsoft tokens.
+  // Do NOT use "Ew" (refresh token) heuristic - those are not valid Bearer tokens for Graph.
   try {
-    if (token.split('.').length >= 2 && token.startsWith('eyJ')) {
+    if (isProbablyJWT(token) && token.startsWith('eyJ')) {
       const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
       const iss = String(payload.iss || '').toLowerCase();
       const aud = String(payload.aud || '').toLowerCase();
+      // Typical v2.0 access tokens for Graph
       if (iss.includes('login.microsoftonline.com') || iss.includes('sts.windows.net')) return true;
       if (aud.includes('graph.microsoft.com')) return true;
     }
@@ -804,7 +810,7 @@ function detectProvider(token) {
   if (looksLikeGoogleToken(token) && !looksLikeMicrosoftToken(token)) return 'google';
   if (looksLikeMicrosoftToken(token) && !looksLikeGoogleToken(token)) return 'microsoft';
   if (token && token.startsWith('ya29.')) return 'google';
-  if (token && token.startsWith('Ew')) return 'microsoft';
+  // Removed 'Ew' heuristic to avoid treating refresh tokens as Microsoft access tokens
   return 'google';
 }
 
@@ -1467,27 +1473,46 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         const meetingType = hasMicrosoftUser ? 'teams' : 'meet';
         console.log(`🎥 Meeting host provider: ${hostProvider}, meeting type: ${meetingType}`);
 
-        // Base event
+        // Normalize attendees (unique list of strings)
+        const attendeesEmails = Array.from(new Set(allEmails.filter(Boolean)));
+
         const baseEventData = {
           summary: suggestion.title || 'BookR-möte',
-          description: `Möte bokat via BookR\n\nDeltagare: ${allEmails.join(', ')}`,
+          description: `Möte bokat via BookR\n\nDeltagare: ${attendeesEmails.join(', ')}`,
           start: { dateTime: suggestion.start, timeZone: 'Europe/Stockholm' },
           end: { dateTime: suggestion.end, timeZone: 'Europe/Stockholm' },
           location: suggestion.location || undefined,
-          attendees: allEmails
+          // Keep as strings here; each provider will map to its expected shape
+          attendees: attendeesEmails
         };
 
         let unifiedMeetLink = null;
+        const meetEventId = suggestionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
 
-        if (hostProvider === 'microsoft') {
-          // Always force Teams when hosting on Microsoft
-          const msEventData = { ...baseEventData };
-          const result = await createMicrosoftCalendarEvent(hostToken, msEventData, { forceTeams: true });
-          if (!result?.success) throw new Error('Misslyckades skapa Teams-möte');
-          unifiedMeetLink = result.meetLink || null;
-          console.log('✅ Microsoft host event created. Teams link:', unifiedMeetLink || 'N/A');
+        // Try chosen host first
+        let created = null;
+        if (host.provider === 'microsoft') {
+          created = await createMicrosoftCalendarEvent(host.token, { ...baseEventData }, { forceTeams: true });
+          if (!created?.success) {
+            console.warn('Microsoft hosting failed, falling back to Google Meet if available...');
+            // Fallback to Google host if possible
+            const gHost = googleAccess[0];
+            if (gHost) {
+              meetingType = 'meet';
+              const googleEventData = {
+                ...baseEventData,
+                conferenceData: {
+                  createRequest: {
+                    requestId: meetEventId,
+                    conferenceSolutionKey: { type: 'hangoutsMeet' }
+                  }
+                }
+              };
+              created = await createGoogleCalendarEvent(gHost.token, googleEventData);
+            }
+          }
         } else {
-          // Host on Google with Meet, invite everyone (sendUpdates=all)
+          // Google host
           const googleEventData = {
             ...baseEventData,
             conferenceData: {
@@ -1497,11 +1522,15 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
               }
             }
           };
-          const result = await createGoogleCalendarEvent(hostToken, googleEventData);
-          if (!result?.success) throw new Error('Misslyckades skapa Google Meet-event');
-          unifiedMeetLink = result.meetLink || null;
-          console.log('✅ Google host event created. Meet link:', unifiedMeetLink || 'N/A');
+          created = await createGoogleCalendarEvent(host.token, googleEventData);
         }
+
+        if (!created?.success) {
+          throw new Error('Misslyckades skapa kalenderhändelse på vald plattform');
+        }
+
+        unifiedMeetLink = created.meetLink || null;
+        console.log(`✅ Host event created. Type: ${meetingType}, link: ${unifiedMeetLink || 'N/A'}`);
 
         // Update suggestion with final meeting info
         await updateSuggestion(suggestionId, {
@@ -1566,6 +1595,12 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 async function createMicrosoftCalendarEvent(token, eventData, opts = {}) {
   try {
     console.log('Creating Microsoft Calendar event...');
+    // Guard: only use proper JWT access tokens with Graph
+    if (!isProbablyJWT(token)) {
+      console.error('Provided Microsoft token is not a JWT access token. Skipping Graph call.');
+      return null;
+    }
+
     const microsoftEvent = {
       subject: eventData.summary || 'Möte',
       body: { contentType: 'HTML', content: eventData.description || 'Bokat via BookR' },
@@ -1583,22 +1618,18 @@ async function createMicrosoftCalendarEvent(token, eventData, opts = {}) {
         type: 'required'
       })),
       isOnlineMeeting: opts.forceTeams === true ? true : undefined,
-      // Ensure recipients are asked to respond, which also helps Outlook/Gmail surface the invite
       responseRequested: true,
       allowNewTimeProposals: true
     };
 
-    // Rensa bort undefined-fält innan POST
     Object.keys(microsoftEvent).forEach(k => microsoftEvent[k] === undefined && delete microsoftEvent[k]);
 
-    // IMPORTANT: sendUpdates=all makes Microsoft send invitations to all attendees
     const url = 'https://graph.microsoft.com/v1.0/me/events?sendUpdates=all';
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        // Keep timezone consistent
         Prefer: 'outlook.timezone="Europe/Stockholm"'
       },
       body: JSON.stringify(microsoftEvent)
@@ -1629,7 +1660,6 @@ async function createMicrosoftCalendarEvent(token, eventData, opts = {}) {
 async function createGoogleCalendarEvent(token, eventData) {
   try {
     console.log('Creating Google Calendar event...');
-    
     const userOAuth2 = new google.auth.OAuth2(
       process.env.CLIENT_ID,
       process.env.CLIENT_SECRET
@@ -1638,9 +1668,15 @@ async function createGoogleCalendarEvent(token, eventData) {
     
     const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
 
+    // Ensure attendees are in the correct shape for Google
+    const resource = {
+      ...eventData,
+      attendees: (eventData.attendees || []).map(a => typeof a === 'string' ? ({ email: a }) : a)
+    };
+
     const response = await userCalendar.events.insert({
       calendarId: 'primary',
-      resource: eventData,
+      resource,
       conferenceDataVersion: eventData.conferenceData ? 1 : 0,
       sendUpdates: 'all'
     });
