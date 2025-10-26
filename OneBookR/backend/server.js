@@ -1418,7 +1418,6 @@ app.delete('/api/group/:groupId/suggestion/:suggestionId', (req, res) => {
 });
 
 // Rösta på ett förslag och skapa Google/Teams-länk när alla accepterat
-// KEEP exactly one copy of this handler. Remove any other occurrences of the same route below.
 app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) => {
   try {
     const { groupId, suggestionId } = req.params;
@@ -1460,17 +1459,16 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           throw new Error('Inga tokens för gruppen');
         }
 
-        // Detect providers once
+        // Detect providers once and choose a real Microsoft JWT access token if present
         const providers = tokens.map(t => detectProvider(t));
-        const hasMicrosoftUser = providers.includes('microsoft');
-
-        // Pick a single host account: prefer Microsoft if present, otherwise first Google
-        const hostIndex = hasMicrosoftUser ? providers.indexOf('microsoft') : 0;
+        const msJWTIndex = tokens.findIndex(t => looksLikeMicrosoftToken(t) && isProbablyJWT(t));
+        let hostIndex = msJWTIndex !== -1 ? msJWTIndex : tokens.findIndex((t, idx) => providers[idx] === 'google');
+        if (hostIndex === -1) hostIndex = 0;
         const hostToken = tokens[hostIndex];
-        const hostProvider = providers[hostIndex];
+        const hostProvider = detectProvider(hostToken);
 
-        // Decide meeting platform
-        const meetingType = hasMicrosoftUser ? 'teams' : 'meet';
+        // Decide meeting platform based on actual host
+        let meetingType = hostProvider === 'microsoft' ? 'teams' : 'meet';
         console.log(`🎥 Meeting host provider: ${hostProvider}, meeting type: ${meetingType}`);
 
         // Normalize attendees (unique list of strings)
@@ -1482,22 +1480,19 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           start: { dateTime: suggestion.start, timeZone: 'Europe/Stockholm' },
           end: { dateTime: suggestion.end, timeZone: 'Europe/Stockholm' },
           location: suggestion.location || undefined,
-          // Keep as strings here; each provider will map to its expected shape
           attendees: attendeesEmails
         };
 
         let unifiedMeetLink = null;
-        const meetEventId = suggestionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
 
         // Try chosen host first
         let created = null;
-        if (host.provider === 'microsoft') {
-          created = await createMicrosoftCalendarEvent(host.token, { ...baseEventData }, { forceTeams: true });
+        if (hostProvider === 'microsoft') {
+          created = await createMicrosoftCalendarEvent(hostToken, { ...baseEventData }, { forceTeams: true });
           if (!created?.success) {
             console.warn('Microsoft hosting failed, falling back to Google Meet if available...');
-            // Fallback to Google host if possible
-            const gHost = googleAccess[0];
-            if (gHost) {
+            const gIndex = tokens.findIndex((t, idx) => providers[idx] === 'google');
+            if (gIndex !== -1) {
               meetingType = 'meet';
               const googleEventData = {
                 ...baseEventData,
@@ -1508,7 +1503,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
                   }
                 }
               };
-              created = await createGoogleCalendarEvent(gHost.token, googleEventData);
+              created = await createGoogleCalendarEvent(tokens[gIndex], googleEventData);
             }
           }
         } else {
@@ -1522,7 +1517,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
               }
             }
           };
-          created = await createGoogleCalendarEvent(host.token, googleEventData);
+          created = await createGoogleCalendarEvent(hostToken, googleEventData);
         }
 
         if (!created?.success) {
@@ -1532,7 +1527,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         unifiedMeetLink = created.meetLink || null;
         console.log(`✅ Host event created. Type: ${meetingType}, link: ${unifiedMeetLink || 'N/A'}`);
 
-        // Update suggestion with final meeting info
         await updateSuggestion(suggestionId, {
           meetLink: unifiedMeetLink,
           meetingType,
