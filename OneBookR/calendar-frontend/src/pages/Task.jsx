@@ -36,7 +36,35 @@ const Task = ({ user, onBack }) => {
       }
 
       try {
-        const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+        // NYTT: Detektera provider från user-objektet ELLER från token-format
+        let provider = user.provider;
+        
+        // Fallback: gissa provider baserat på token-format eller email
+        if (!provider) {
+          const token = user.accessToken;
+          if (token.startsWith('Ew') || token.includes('outlook') || token.includes('microsoft')) {
+            provider = 'microsoft';
+          } else if (token.startsWith('ya29.') || token.includes('google')) {
+            provider = 'google';
+          } else {
+            const email = (user.email || user.emails?.[0]?.value || user.emails?.[0] || '').toLowerCase();
+            if (/@(outlook|hotmail|live|msn|office365)\./.test(email)) {
+              provider = 'microsoft';
+            } else {
+              provider = 'google';
+            }
+          }
+        }
+
+        // NYTT: Använd rätt endpoint per provider
+        let endpoint;
+        if (provider === 'microsoft') {
+          endpoint = 'https://graph.microsoft.com/v1.0/me';
+        } else {
+          endpoint = 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
+        }
+
+        const response = await fetch(endpoint, {
           headers: {
             Authorization: `Bearer ${user.accessToken}`,
           },
@@ -55,7 +83,7 @@ const Task = ({ user, onBack }) => {
           setTokenValidated(false);
           setIsValidatingToken(false);
         } else {
-          console.log('Token is valid in Task');
+          console.log(`Token is valid in Task for provider=${provider}`);
           setTokenValidated(true);
           setIsValidatingToken(false);
         }
@@ -67,7 +95,7 @@ const Task = ({ user, onBack }) => {
     };
 
     validateToken();
-  }, [user?.accessToken]);
+  }, [user?.accessToken, user?.provider, user?.email, user?.emails]);
 
   useEffect(() => {
     if (user && user.accessToken && tokenValidated) {
