@@ -131,6 +131,23 @@ passport.use('microsoft', new MicrosoftStrategy({
   scope: ['user.read', 'calendars.read', 'calendars.readwrite'],
   tenant: 'common' // Tillåter både personliga och arbets-/skolkonton
 }, (accessToken, refreshToken, profile, done) => {
+  // Normalize profile so frontend always has an email
+  const primaryEmail =
+    profile?.mail ||
+    profile?.userPrincipalName ||
+    profile?.emails?.[0]?.value ||
+    profile?.emails?.[0];
+
+  if (primaryEmail) {
+    profile.email = primaryEmail;
+    if (!Array.isArray(profile.emails) || profile.emails.length === 0) {
+      profile.emails = [{ value: primaryEmail }];
+    }
+  }
+  if (!profile.displayName && profile._json?.displayName) {
+    profile.displayName = profile._json.displayName;
+  }
+
   profile.accessToken = accessToken;
   profile.refreshToken = refreshToken;
   profile.provider = 'microsoft';
@@ -358,8 +375,14 @@ app.get('/api/user', (req, res) => {
     try {
       const parsed = JSON.parse(Buffer.from(authB64, 'base64').toString('utf8'));
       if (parsed && parsed.user) {
-        req.session.user = parsed.user;
-        return parsed.user;
+        // Ensure normalized email for MS users even if not present
+        const u = parsed.user || {};
+        if (!u.email) {
+          u.email = u.mail || u.userPrincipalName || (Array.isArray(u.emails) ? (u.emails[0]?.value || u.emails[0]) : undefined);
+          if (!Array.isArray(u.emails) && u.email) u.emails = [{ value: u.email }];
+        }
+        req.session.user = u;
+        return u;
       }
     } catch (e) {
       console.warn('Failed to parse auth token in /api/user:', e?.message);
