@@ -79,41 +79,18 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       }
 
       try {
-        // NYTT: Detektera provider från user-objektet ELLER från token-format
-        let provider = user.provider;
-        
-        // Fallback: gissa provider baserat på token-format eller email
-        if (!provider) {
-          const token = user.accessToken;
-          if (token.startsWith('Ew') || token.includes('outlook') || token.includes('microsoft')) {
-            provider = 'microsoft';
-          } else if (token.startsWith('ya29.') || token.includes('google')) {
-            provider = 'google';
-          } else {
-            // Default fallback baserat på email
-            const email = (user.email || user.emails?.[0]?.value || user.emails?.[0] || '').toLowerCase();
-            if (/@(outlook|hotmail|live|msn|office365)\./.test(email)) {
-              provider = 'microsoft';
-            } else {
-              provider = 'google';
-            }
-          }
-        }
-
-        // NYTT: Använd rätt endpoint per provider
-        let endpoint;
-        if (provider === 'microsoft') {
-          endpoint = 'https://graph.microsoft.com/v1.0/me';
-        } else {
-          endpoint = 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
-        }
+        // Välj rätt endpoint per provider
+        const endpoint =
+          derivedProvider === 'microsoft'
+            ? 'https://graph.microsoft.com/v1.0/me'
+            : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
 
         const response = await fetch(endpoint, {
           headers: { Authorization: `Bearer ${user.accessToken}` },
         });
 
         if (response.status === 401) {
-          console.log(`Token has expired in Dashboard for provider=${provider}, clearing and redirecting...`);
+          console.log(`Token has expired in Dashboard for provider=${derivedProvider}, clearing and redirecting...`);
           setTokenExpired(true);
           setIsValidatingToken(false);
 
@@ -128,7 +105,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           return;
         } else {
           // Vid 2xx/3xx/403 etc: betrakta token som giltig (endast 401 ska logga ut)
-          console.log(`Token is valid in Dashboard for provider=${provider} (status ${response.status})`);
+          console.log(`Token is valid in Dashboard for provider=${derivedProvider} (status ${response.status})`);
           setTokenExpired(false);
           setIsValidatingToken(false);
         }
@@ -141,7 +118,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
     };
 
     validateToken();
-  }, [user?.accessToken, user?.provider, user?.email, user?.emails]);
+  }, [user?.accessToken, derivedProvider]);
  
   useEffect(() => {
     // VIKTIGT: Hämta ALLTID den inloggade användarens e-post (INTE fromUser!)
