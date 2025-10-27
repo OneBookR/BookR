@@ -1215,6 +1215,19 @@ app.get(/^(?!\/(api|auth))(.*)$/, (req, res, next) => {
   }
 });
 
+// Small helper: read cookie value without cookie-parser
+function getCookie(req, name) {
+  try {
+    const raw = req.headers?.cookie || '';
+    if (!raw) return null;
+    for (const part of raw.split(';')) {
+      const [k, ...rest] = part.trim().split('=');
+      if (k === name) return decodeURIComponent(rest.join('='));
+    }
+  } catch {}
+  return null;
+}
+
 // Start server (ensure the process binds to PORT)
 const server = app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
