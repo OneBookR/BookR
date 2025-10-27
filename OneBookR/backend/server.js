@@ -1309,6 +1309,15 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
         let unifiedMeetLink = null;
 
+        // NYTT: Skapa FÖRSTA eventet för att få Meet-länken
+        let firstGoogleTokenIndex = -1;
+        for (let i = 0; i < tokens.length; i++) {
+          if (providers[i] === 'google') {
+            firstGoogleTokenIndex = i;
+            break;
+          }
+        }
+
         // Skapa event för varje deltagare med SAMMA videomötestyp
         for (let i = 0; i < tokens.length; i++) {
           const token = tokens[i];
@@ -1333,20 +1342,36 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
                 ...baseEventData,
                 // Ingen conferenceData = inget Meet
               };
-              result = await createGoogleCalendarEvent(token, googleEventData);
+              result = await createGoogleCalendarEvent(token, googleEventData, null);
             } else {
-              // Endast Google-användare → använd Meet
-              console.log('Creating Google event WITH Meet');
-              const googleEventData = {
-                ...baseEventData,
-                conferenceData: suggestion.withMeet ? {
-                  createRequest: {
-                    requestId: meetEventId,
-                    conferenceSolutionKey: { type: 'hangoutsMeet' }
-                  }
-                } : undefined
-              };
-              result = await createGoogleCalendarEvent(token, googleEventData);
+              // NYTT: Endast Google-användare → skapa Meet ENDAST för första användaren, resten får samma länk
+              if (i === firstGoogleTokenIndex && !unifiedMeetLink) {
+                console.log('Creating FIRST Google event WITH NEW Meet link');
+                const googleEventData = {
+                  ...baseEventData,
+                  conferenceData: suggestion.withMeet ? {
+                    createRequest: {
+                      requestId: meetEventId,
+                      conferenceSolutionKey: { type: 'hangoutsMeet' }
+                    }
+                  } : undefined
+                };
+                result = await createGoogleCalendarEvent(token, googleEventData, null);
+                
+                // Spara Meet-länken från första eventet
+                if (result?.meetLink) {
+                  unifiedMeetLink = result.meetLink;
+                  console.log(`📹 Master Meet link created: ${unifiedMeetLink}`);
+                }
+              } else {
+                // Alla andra Google-användare får SAMMA Meet-länk
+                console.log('Creating Google event WITH EXISTING Meet link:', unifiedMeetLink);
+                const googleEventData = {
+                  ...baseEventData,
+                  // TA BORT conferenceData här - vi lägger till länken manuellt i funktionen
+                };
+                result = await createGoogleCalendarEvent(token, googleEventData, unifiedMeetLink);
+              }
             }
           }
           
@@ -1494,10 +1519,9 @@ async function createMicrosoftCalendarEvent(token, eventData) {
 }
 
 // Hjälpfunktion: Skapa Google Calendar event (kan vara med eller utan Meet)
-async function createGoogleCalendarEvent(token, eventData) {
- 
+async function createGoogleCalendarEvent(token, eventData, existingMeetLink = null) {
   try {
-    console.log('Creating Google Calendar event...');
+    console.log('Creating Google Calendar event...', existingMeetLink ? 'with existing Meet link' : 'will generate new Meet link');
     
     const userOAuth2 = new google.auth.OAuth2(
       process.env.CLIENT_ID,
@@ -1507,19 +1531,51 @@ async function createGoogleCalendarEvent(token, eventData) {
     
     const userCalendar = google.calendar({ version: 'v3', auth: userOAuth2 });
 
+    // Om vi redan har en Meet-länk, lägg till den manuellt i beskrivningen
+    let finalEventData = { ...eventData };
+    
+    if (existingMeetLink) {
+      // Lägg INTE till conferenceData (det skapar ny länk)
+      // Istället, lägg till länken i description och som conferenceData med existing ID
+      const meetingId = existingMeetLink.split('/').pop().split('?')[0]; // Extrahera meeting ID från länken
+      
+      finalEventData = {
+        ...eventData,
+        description: `${eventData.description || ''}\n\n🎥 Google Meet: ${existingMeetLink}`,
+        conferenceData: {
+          conferenceSolution: {
+            key: { type: 'hangoutsMeet' }
+          },
+          entryPoints: [{
+            entryPointType: 'video',
+            uri: existingMeetLink,
+            label: existingMeetLink
+          }]
+        }
+      };
+      
+      delete finalEventData.conferenceData.createRequest; // TA BORT createRequest så ingen ny länk skapas
+    }
+
     const response = await userCalendar.events.insert({
       calendarId: 'primary',
-      resource: eventData,
-      conferenceDataVersion: eventData.conferenceData ? 1 : 0,
+      resource: finalEventData,
+      conferenceDataVersion: (eventData.conferenceData && !existingMeetLink) ? 1 : 0,
       sendUpdates: 'all'
     });
 
     console.log('✅ Google Calendar event created:', response.data.id);
 
+    // Returnera den existerande länken om vi fick en, annars den nyskapade
+    const meetLink = existingMeetLink || 
+                     response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || 
+                     response.data.hangoutLink || 
+                     null;
+
     return {
       success: true,
       eventId: response.data.id,
-      meetLink: response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || response.data.hangoutLink || null,
+      meetLink: meetLink,
       provider: 'google'
     };
   } catch (error) {
@@ -1611,6 +1667,15 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
 
         let unifiedMeetLink = null;
 
+        // NYTT: Skapa FÖRSTA eventet för att få Meet-länken
+        let firstGoogleTokenIndex = -1;
+        for (let i = 0; i < tokens.length; i++) {
+          if (providers[i] === 'google') {
+            firstGoogleTokenIndex = i;
+            break;
+          }
+        }
+
         // Skapa event för varje deltagare med SAMMA videomötestyp
         for (let i = 0; i < tokens.length; i++) {
           const token = tokens[i];
@@ -1635,20 +1700,36 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
                 ...baseEventData,
                 // Ingen conferenceData = inget Meet
               };
-              result = await createGoogleCalendarEvent(token, googleEventData);
+              result = await createGoogleCalendarEvent(token, googleEventData, null);
             } else {
-              // Endast Google-användare → använd Meet
-              console.log('Creating Google event WITH Meet');
-              const googleEventData = {
-                ...baseEventData,
-                conferenceData: suggestion.withMeet ? {
-                  createRequest: {
-                    requestId: meetEventId,
-                    conferenceSolutionKey: { type: 'hangoutsMeet' }
-                  }
-                } : undefined
-              };
-              result = await createGoogleCalendarEvent(token, googleEventData);
+              // NYTT: Endast Google-användare → skapa Meet ENDAST för första användaren, resten får samma länk
+              if (i === firstGoogleTokenIndex && !unifiedMeetLink) {
+                console.log('Creating FIRST Google event WITH NEW Meet link');
+                const googleEventData = {
+                  ...baseEventData,
+                  conferenceData: suggestion.withMeet ? {
+                    createRequest: {
+                      requestId: meetEventId,
+                      conferenceSolutionKey: { type: 'hangoutsMeet' }
+                    }
+                  } : undefined
+                };
+                result = await createGoogleCalendarEvent(token, googleEventData, null);
+                
+                // Spara Meet-länken från första eventet
+                if (result?.meetLink) {
+                  unifiedMeetLink = result.meetLink;
+                  console.log(`📹 Master Meet link created: ${unifiedMeetLink}`);
+                }
+              } else {
+                // Alla andra Google-användare får SAMMA Meet-länk
+                console.log('Creating Google event WITH EXISTING Meet link:', unifiedMeetLink);
+                const googleEventData = {
+                  ...baseEventData,
+                  // TA BORT conferenceData här - vi lägger till länken manuellt i funktionen
+                };
+                result = await createGoogleCalendarEvent(token, googleEventData, unifiedMeetLink);
+              }
             }
           }
           
