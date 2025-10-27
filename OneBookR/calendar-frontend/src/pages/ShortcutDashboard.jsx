@@ -45,11 +45,30 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
     if (!userEmail) return;
     
+    // NYTT: Detektera provider innan API-anrop
+    const detectProvider = () => {
+      if (user?.provider) return user.provider.toLowerCase();
+      // Fallback: gissa från email
+      if (userEmail.includes('@outlook') || userEmail.includes('@hotmail') || userEmail.includes('@live.com')) {
+        return 'microsoft';
+      }
+      return 'google';
+    };
+    
+    const provider = detectProvider();
+    console.log('User provider detected:', provider, 'Email:', userEmail);
+    
     // Hämta invites från samma endpoint som InvitationSidebar
     fetch(`https://www.onebookr.se/api/invitations/${encodeURIComponent(userEmail)}`)
-    .then(res => res.json())
-    .then(data => setInvites((data.invitations || []).filter(inv => !inv.responded)))
-    .catch(err => console.log('Failed to fetch invites:', err));
+      .then(res => {
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        return res.json();
+      })
+      .then(data => setInvites((data.invitations || []).filter(inv => !inv.responded)))
+      .catch(err => {
+        console.log('Failed to fetch invites:', err);
+        setInvites([]);
+      });
     
     // Hämta kontaktförfrågningar från localStorage
     const contactRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${userEmail}`) || '[]');
@@ -67,12 +86,18 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     
     setInvites(prev => [...prev, ...formattedRequests]);
 
-    // Hämta upcoming meetings från Google Calendar (endast möten med Google Meet länk)
-    if (user.accessToken) {
+    // NYTT: Hämta only Google Calendar för Google-användare
+    if (provider === 'google' && user.accessToken) {
       fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=10&singleEvents=true&orderBy=startTime`, {
         headers: { 'Authorization': `Bearer ${user.accessToken}` }
       })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401) {
+          console.warn('Google token expired');
+          return { items: [] };
+        }
+        return res.ok ? res.json() : { items: [] };
+      })
       .then(data => {
         const meetings = (data.items || []).filter(event => 
           event.hangoutLink || 
@@ -81,7 +106,32 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         );
         setUpcomingMeetings(meetings);
       })
-      .catch(err => console.log('Failed to fetch calendar events:', err));
+      .catch(err => {
+        console.log('Failed to fetch Google calendar events:', err);
+        setUpcomingMeetings([]);
+      });
+    } else if (provider === 'microsoft' && user.accessToken) {
+      // NYTT: Hämta Microsoft Calendar för Microsoft-användare
+      fetch(`https://graph.microsoft.com/v1.0/me/events?$top=10&$orderby=start/dateTime`, {
+        headers: { 'Authorization': `Bearer ${user.accessToken}` }
+      })
+      .then(res => {
+        if (res.status === 401) {
+          console.warn('Microsoft token expired');
+          return { value: [] };
+        }
+        return res.ok ? res.json() : { value: [] };
+      })
+      .then(data => {
+        const meetings = (data.value || []).filter(event => 
+          event.onlineMeeting || event.isOnlineMeeting
+        );
+        setUpcomingMeetings(meetings);
+      })
+      .catch(err => {
+        console.log('Failed to fetch Microsoft calendar events:', err);
+        setUpcomingMeetings([]);
+      });
     }
 
     // Hämta tidsförslag (samma logik som CompareCalendar)
@@ -131,7 +181,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [user?.email]);
+  }, [user?.email, user?.provider, user?.accessToken]);
 
   const handleNavigateToMeeting = (type) => {
     if (type === 'team') {
@@ -1292,56 +1342,6 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         <Typography variant="caption" sx={{ color: '#666', display: 'block' }}>
                           Från: {proposal.fromEmail}
                         </Typography>
-                        <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                          <Button 
-                            size="small" 
-                            variant="contained" 
-                            sx={{ fontSize: 12 }}
-                            onClick={() => handleProposalResponse(proposal.id, 'accept')}
-                          >
-                            Acceptera
-                          </Button>
-                          <Button 
-                            size="small" 
-                            variant="outlined" 
-                            sx={{ fontSize: 12 }}
-                            onClick={() => handleProposalResponse(proposal.id, 'decline')}
-                          >
-                            Neka
-                          </Button>
-                        </Box>
-                      </Paper>
-                    ))
-                  )}
-                </Box>
-              )}
-            </Box>
-          </Box>
-        </Box>
-      )}
-
-      {/* Toast-meddelanden */}
-      <Snackbar
-        open={toast.open}
-        autoHideDuration={4000}
-        onClose={() => setToast({ ...toast, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => setToast({ ...toast, open: false })}
-          severity={toast.severity}
-          sx={{ width: '100%', borderRadius: 2 }}
-        >
-          {toast.message}
-        </Alert>
-      </Snackbar>
-
-      {/* Kontakter Modal */}
-      <Dialog 
-        open={contactsModalOpen} 
-        onClose={() => setContactsModalOpen(false)}
-        maxWidth="sm"
-        fullWidth
       >
         <DialogTitle sx={{ fontWeight: 600, color: '#0a2540' }}>
           Hantera kontakter
