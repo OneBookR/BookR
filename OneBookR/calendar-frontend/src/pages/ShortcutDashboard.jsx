@@ -1342,6 +1342,39 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         <Typography variant="caption" sx={{ color: '#666', display: 'block' }}>
                           Från: {proposal.fromEmail}
                         </Typography>
+                        <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                          <Button 
+                            size="small" 
+                            variant="outlined" 
+                            onClick={() => handleProposalResponse(proposal.id, 'decline')}
+                            sx={{ fontSize: 12, py: 0.5, px: 1.5 }}
+                          >
+                            Neka
+                          </Button>
+                          <Button 
+                            size="small" 
+                            variant="contained" 
+                            onClick={() => handleProposalResponse(proposal.id, 'accept')}
+                            sx={{ fontSize: 12, py: 0.5, px: 1.5 }}
+                          >
+                            Acceptera
+                          </Button>
+                        </Box>
+                      </Paper>
+                    ))
+                  )}
+                </Box>
+              )}
+            </Box>
+          </Card>
+        </Grid>
+
+        {/* Kontakt-modal för att hantera kontakter */}
+        <Dialog
+        open={contactsModalOpen}
+        onClose={() => setContactsModalOpen(false)}
+        maxWidth="md"
+        fullWidth
       >
         <DialogTitle sx={{ fontWeight: 600, color: '#0a2540' }}>
           Hantera kontakter
@@ -1432,18 +1465,19 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             Stäng
           </Button>
         </DialogActions>
-      </Dialog>
+        </Paper>
+        </Dialog>
 
-      {/* Kontakt-inställningar Modal */}
-      <ContactSettings
-        open={contactSettingsOpen}
-        onClose={() => setContactSettingsOpen(false)}
-        contacts={contacts}
-        onUpdateContactSettings={(contactId, settings) => {
-          // Uppdatera kontakt-inställningar
-          console.log('Uppdaterar inställningar för kontakt:', contactId, settings);
-        }}
-      />
+        {/* Kontakt-inställningar Modal */}
+        <ContactSettings
+          open={contactSettingsOpen}
+          onClose={() => setContactSettingsOpen(false)}
+          contacts={contacts}
+          onUpdateContactSettings={(contactId, settings) => {
+            // Uppdatera kontakt-inställningar
+            console.log('Uppdaterar inställningar för kontakt:', contactId, settings);
+          }}
+        />
     </>
   );
 }
