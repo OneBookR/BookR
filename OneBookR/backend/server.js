@@ -1731,172 +1731,152 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
   }
 });
 
-// Hämta inbjudningar för en e-postadress
-app.get('/api/invitations/:email', async (req, res) => {
-  try {
-    const email = decodeURIComponent(req.params.email || '').trim();
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ error: 'Ogiltig e-post' });
-    }
-    const invitations = await getInvitationsByEmail(email);
-    res.json({
-      invitations: (Array.isArray(invitations) ? invitations : []).map(inv => ({
-        id: inv.id,
-        groupId: inv.groupId,
-        inviteeId: inv.inviteeId,
-        email: inv.email,
-        fromEmail: inv.fromEmail,
-        groupName: inv.groupName || 'Namnlös grupp',
-        isTeamMeeting: !!inv.isTeamMeeting,
-        teamName: inv.teamName || null,
-        responded: !!inv.responded,
-        accepted: !!inv.accepted,
-        createdAt: inv.createdAt || new Date().toISOString()
-      }))
-    });
-  } catch (err) {
-    console.error('Error fetching invitations by email:', err);
-    res.status(500).json({ error: 'Kunde inte hämta inbjudningar' });
-  }
-});
-
-// Svara på inbjudan (accept/decline)
-app.post('/api/invitation/:invitationId/respond', async (req, res) => {
-  try {
-    const { invitationId } = req.params;
-    const { response } = req.body || {};
-    if (!invitationId) return res.status(400).json({ error: 'invitationId krävs' });
-    if (!response || !['accept', 'decline'].includes(String(response))) {
-      return res.status(400).json({ error: 'response måste vara "accept" eller "decline"' });
-    }
-    await updateInvitation(invitationId, {
-      responded: true,
-      accepted: response === 'accept',
-      respondedAt: new Date().toISOString()
-    });
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error responding to invitation:', err);
-    res.status(500).json({ error: 'Kunde inte svara på inbjudan' });
-  }
-});
-
-// Kontaktförfrågan
-app.post('/api/contact-request', async (req, res) => {
-  try {
-    const { fromEmail, fromName, toEmail, toName, message } = req.body || {};
-    if (!fromEmail || !toEmail) return res.status(400).json({ error: 'fromEmail och toEmail krävs' });
-    try {
-      await resend.emails.send({
-        from: 'BookR <info@onebookr.se>',
-        to: toEmail,
-        subject: `${fromName || fromEmail} vill lägga till dig som kontakt i BookR`,
-        text: `${message || ''}\n\nAvsändare: ${fromName || ''} <${fromEmail}>`
-      });
-    } catch (e) {
-      console.warn('Contact-request email failed, continuing:', e.message);
-    }
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error in contact-request:', err);
-    res.status(500).json({ error: 'Kunde inte skicka kontaktförfrågan' });
-  }
-});
-
-// GDPR-endpoint för att radera användardata
-app.delete('/api/user/delete-data', async (req, res) => {
-  const { email } = req.body;
-  if (!email || !email.includes('@')) {
-    return res.status(400).json({ error: 'Giltig e-postadress krävs' });
-  }
-  try {
-    await deleteUserData(email);
-    res.json({ success: true, message: 'All användardata har raderats från Firebase' });
-  } catch (error) {
-    console.error('Error deleting user data:', error);
-    res.status(500).json({ error: 'Kunde inte radera användardata' });
-  }
-});
-
-// Task scheduling endpoints
-app.post('/api/calendar/events', async (req, res) => {
-  const { token, timeMin, timeMax } = req.body;
-  try {
-    const { events } = await fetchCalendarEvents(token, timeMin, timeMax);
-    const formattedEvents = events.map(e => ({
-      title: e.summary || 'Upptagen',
-      start: e.start.dateTime || e.start.date,
-      end: e.end.dateTime || e.end.date
-    }));
-    res.json({ events: formattedEvents });
-  } catch (error) {
-    console.error('Error fetching calendar events:', error);
-    res.status(500).json({ error: 'Kunde inte hämta kalenderhändelser' });
-  }
-});
-
-app.post('/api/task/schedule', async (req, res) => {
-  const { token, taskName, estimatedHours, workStartHour = 9, workEndHour = 18, minSessionHours = 1, maxSessionHours = 4, breakMinutes = 15 } = req.body;
-  if (!token || !taskName || !estimatedHours) {
-    return res.status(400).json({ error: 'Token, uppgiftsnamn och estimerad tid krävs' });
-  }
-  try {
-    const now = new Date();
-    const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    const { events } = await fetchCalendarEvents(token, now.toISOString(), twoWeeksFromNow.toISOString());
-    const busyTimes = events.map(e => ({
-      start: new Date(e.start.dateTime || e.start.date).getTime(),
-      end: new Date(e.end.dateTime || e.end.date).getTime()
-    })).sort((a, b) => a.start - b.start);
-    const taskSlots = findTaskSlots(busyTimes, estimatedHours, now, twoWeeksFromNow, workStartHour, workEndHour, minSessionHours, maxSessionHours, breakMinutes);
-    res.json({ taskSlots });
-  } catch (error) {
-    console.error('Error scheduling task:', error);
-    res.status(500).json({ error: 'Kunde inte schemalägga uppgift' });
-  }
-});
-
-// ASAP Task Scheduling
-function findTaskSlots(busyTimes, totalHours, startDate, endDate, workStartHour = 9, workEndHour = 18, minSessionHours = 1, maxSessionHours = 4, breakMinutes = 15) {
-  // ...existing code (hela findTaskSlots implementation)...
-}
-
-function findFreeSlotsInDay(busyTimes, dayStart, dayEnd) {
-  // ...existing code (hela findFreeSlotsInDay implementation)...
-}
-
 // --- Provider autodetection helpers ---
 function looksLikeGoogleToken(token) {
-  // ...existing code...
+  if (!token) return false;
+  // Google short-lived access tokens often start with 'ya29.'
+  if (token.startsWith('ya29.')) return true;
+  // Try decode JWT payload to check issuer
+  try {
+    if (token.split('.').length >= 2 && token.startsWith('eyJ')) {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+      const iss = String(payload.iss || '').toLowerCase();
+      if (iss.includes('accounts.google.com')) return true;
+    }
+  } catch (_) {}
+  return false;
 }
 
 function looksLikeMicrosoftToken(token) {
-  // ...existing code...
+  if (!token) return false;
+  // MS tokens can be JWT (eyJ...) or opaque 'Ew...'; treat both as possible MS
+  if (token.startsWith('Ew')) return true;
+  try {
+    if (token.split('.').length >= 2 && token.startsWith('eyJ')) {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+      const iss = String(payload.iss || '').toLowerCase();
+      if (iss.includes('login.microsoftonline.com') || iss.includes('sts.windows.net')) return true;
+      const aud = String(payload.aud || '').toLowerCase();
+      if (aud.includes('graph.microsoft.com')) return true;
+    }
+  } catch (_) {}
+  return false;
 }
 
 function detectProvider(token) {
-  // ...existing code...
+  if (looksLikeGoogleToken(token) && !looksLikeMicrosoftToken(token)) return 'google';
+  if (looksLikeMicrosoftToken(token) && !looksLikeGoogleToken(token)) return 'microsoft';
+  // Unknown: prefer trying Google first for ya29 or JWT with google iss, else Microsoft
+  if (token && token.startsWith('ya29.')) return 'google';
+  if (token && token.startsWith('Ew')) return 'microsoft';
+  // Default to google (legacy), but we will fallback to ms if google fails
+  return 'google';
 }
 
-// --- Remote fetchers ---
+// --- Remote fetchers (minimal, robust error handling) ---
 async function fetchGoogleEvents(accessToken, timeMinISO, timeMaxISO) {
-  // ...existing code...
+  try {
+    const tzRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const tzData = tzRes.ok ? await tzRes.json() : null;
+    const tz = tzData?.value || 'UTC';
+
+    // calendarView (Google): get events flattened and expanded instances
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, events: [] };
+    }
+    if (!res.ok) return { ok: false, status: res.status, events: [] };
+    const data = await res.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    return { ok: true, status: 200, tz, events: items };
+  } catch (e) {
+    return { ok: false, status: 0, events: [] };
+  }
 }
 
 async function fetchMicrosoftEvents(accessToken, timeMinISO, timeMaxISO) {
-  // ...existing code...
+  try {
+    const tzPref = 'outlook.timezone="UTC"';
+    // Microsoft Graph calendarView
+    const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(timeMinISO)}&endDateTime=${encodeURIComponent(timeMaxISO)}&$top=1000&$orderby=start/dateTime`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Prefer: tzPref
+      }
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, events: [] };
+    }
+    if (!res.ok) return { ok: false, status: res.status, events: [] };
+    const data = await res.json();
+    const items = Array.isArray(data.value) ? data.value : [];
+    return { ok: true, status: 200, tz: 'UTC', events: items };
+  } catch (e) {
+    return { ok: false, status: 0, events: [] };
+  }
 }
 
+// Normalize events -> busy blocks [{start, end}]
 function normalizeGoogleEventsToBusy(items) {
-  // ...existing code...
+  const busy = [];
+  for (const ev of items) {
+    const startISO = ev?.start?.dateTime || ev?.start?.date;
+    const endISO = ev?.end?.dateTime || ev?.end?.date;
+    if (!startISO || !endISO) continue;
+    const start = new Date(startISO).getTime();
+    const end = new Date(endISO).getTime();
+    if (isFinite(start) && isFinite(end) && end > start) {
+      busy.push({ start, end, title: ev.summary || 'busy', isAllDay: !!ev?.start?.date });
+    }
+  }
+  return busy;
 }
 
 function normalizeMicrosoftEventsToBusy(items) {
-  // ...existing code...
+  const busy = [];
+  for (const ev of items) {
+    const startISO = ev?.start?.dateTime;
+    const endISO = ev?.end?.dateTime;
+    if (!startISO || !endISO) continue;
+    const start = new Date(startISO).getTime();
+    const end = new Date(endISO).getTime();
+    if (isFinite(start) && isFinite(end) && end > start) {
+      busy.push({ start, end, title: ev.subject || 'busy', isAllDay: ev?.isAllDay || false });
+    }
+  }
+  return busy;
 }
 
+// Try primary provider, then fallback to the other if needed
 async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
-  // ...existing code...
+  const detected = detectProvider(token);
+  console.log('fetchCalendarEvents auto-detect:', detected);
+
+  const tryOrder = detected === 'microsoft' ? ['microsoft', 'google'] : ['google', 'microsoft'];
+
+  for (const prov of tryOrder) {
+    const res = prov === 'google'
+      ? await fetchGoogleEvents(token, timeMinISO, timeMaxISO)
+      : await fetchMicrosoftEvents(token, timeMinISO, timeMaxISO);
+
+    if (res.ok && res.events.length > 0) {
+      const busy = prov === 'google'
+        ? normalizeGoogleEventsToBusy(res.events)
+        : normalizeMicrosoftEventsToBusy(res.events);
+      return { provider: prov, busy };
+    }
+
+    // If unauthorized/forbidden, try the other provider before giving up
+    if (res.status === 401 || res.status === 403) {
+      continue;
+    }
+  }
+  // Nothing worked → return empty busy list without breaking the whole flow
+  return { provider: detected, busy: [] };
 }
 
 app.listen(PORT, () => {
