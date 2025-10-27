@@ -1534,39 +1534,26 @@ async function createGoogleCalendarEvent(token, eventData, existingMeetLink = nu
     let finalEventData = { ...eventData };
     
     if (existingMeetLink) {
-      // NYTT: Skapa conferenceData med den existerande Meet-länken
-      // Detta gör att länken hamnar som en klickbar knapp i kalendern
-      const meetingId = existingMeetLink.split('/').pop().split('?')[0];
-      
+      // För existerande Meet-länk: lägg till som hangoutLink (detta gör länken klickbar i Calendar UI)
       finalEventData = {
         ...eventData,
-        conferenceData: {
-          conferenceSolution: {
-            key: { type: 'hangoutsMeet' },
-            name: 'Google Meet',
-            iconUri: 'https://fonts.gstatic.com/s/i/productlogos/meet_2020q4/v6/web-512dp/logo_meet_2020q4_color_2x_web_512dp.png'
-          },
-          conferenceId: meetingId,
-          entryPoints: [{
-            entryPointType: 'video',
-            uri: existingMeetLink,
-            label: existingMeetLink
-          }],
-          signature: meetingId
-        }
+        hangoutLink: existingMeetLink,
+        // Ta bort conferenceData helt - vi använder bara hangoutLink för existerande länkar
+        conferenceData: undefined
       };
+      
+      console.log('Using existing Meet link as hangoutLink:', existingMeetLink);
     }
 
     const response = await userCalendar.events.insert({
       calendarId: 'primary',
       resource: finalEventData,
-      conferenceDataVersion: 1, // Alltid 1 när vi använder conferenceData
+      conferenceDataVersion: (eventData.conferenceData && !existingMeetLink) ? 1 : 0,
       sendUpdates: 'all'
     });
 
     console.log('✅ Google Calendar event created:', response.data.id);
 
-    // Returnera den existerande länken om vi fick en, annars den nyskapade
     const meetLink = existingMeetLink || 
                      response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || 
                      response.data.hangoutLink || 
@@ -1892,39 +1879,26 @@ async function createGoogleCalendarEvent(token, eventData, existingMeetLink = nu
     let finalEventData = { ...eventData };
     
     if (existingMeetLink) {
-      // NYTT: Skapa conferenceData med den existerande Meet-länken
-      // Detta gör att länken hamnar som en klickbar knapp i kalendern
-      const meetingId = existingMeetLink.split('/').pop().split('?')[0];
-      
+      // För existerande Meet-länk: lägg till som hangoutLink (detta gör länken klickbar i Calendar UI)
       finalEventData = {
         ...eventData,
-        conferenceData: {
-          conferenceSolution: {
-            key: { type: 'hangoutsMeet' },
-            name: 'Google Meet',
-            iconUri: 'https://fonts.gstatic.com/s/i/productlogos/meet_2020q4/v6/web-512dp/logo_meet_2020q4_color_2x_web_512dp.png'
-          },
-          conferenceId: meetingId,
-          entryPoints: [{
-            entryPointType: 'video',
-            uri: existingMeetLink,
-            label: existingMeetLink
-          }],
-          signature: meetingId
-        }
+        hangoutLink: existingMeetLink,
+        // Ta bort conferenceData helt - vi använder bara hangoutLink för existerande länkar
+        conferenceData: undefined
       };
+      
+      console.log('Using existing Meet link as hangoutLink:', existingMeetLink);
     }
 
     const response = await userCalendar.events.insert({
       calendarId: 'primary',
       resource: finalEventData,
-      conferenceDataVersion: 1, // Alltid 1 när vi använder conferenceData
+      conferenceDataVersion: (eventData.conferenceData && !existingMeetLink) ? 1 : 0,
       sendUpdates: 'all'
     });
 
     console.log('✅ Google Calendar event created:', response.data.id);
 
-    // Returnera den existerande länken om vi fick en, annars den nyskapade
     const meetLink = existingMeetLink || 
                      response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri || 
                      response.data.hangoutLink || 
