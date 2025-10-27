@@ -181,6 +181,7 @@ app.get('/auth/microsoft/callback',
   passport.authenticate('microsoft', { failureRedirect: '/' }),
   async (req, res) => {
     console.log('Microsoft OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
+    try { req.session.user = req.user; } catch (_) {}
     
     const userEmail = req.user?.mail || req.user?.userPrincipalName;
     
@@ -219,7 +220,17 @@ app.get('/auth/microsoft/callback',
       user: req.user,
       timestamp: Date.now()
     })).toString('base64');
-    
+
+    // Persist an auth cookie to survive MemoryStore resets
+    try {
+      res.cookie('ob_auth', authToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+    } catch (_) {}
+
     const state = req.session.oauthState;
     delete req.session.oauthState;
     
@@ -239,7 +250,8 @@ app.get('/auth/microsoft/callback',
     }
 
     const frontendUrl = 'https://www.onebookr.se';
-    res.redirect(`${frontendUrl}${redirectUrl}`);
+    // Ensure session is saved before redirect
+    return req.session.save(() => res.redirect(`${frontendUrl}${redirectUrl}`));
   }
 );
 
@@ -248,6 +260,7 @@ app.get('/auth/google/callback',
   async (req, res) => {
     console.log('OAuth callback - user authenticated:', req.user ? 'Yes' : 'No');
     console.log('OAuth state received:', req.session.oauthState);
+    try { req.session.user = req.user; } catch (_) {}
     
     // Kontrollera om detta är en ny användare genom Firestore
     const userEmail = req.user?.email || req.user?.emails?.[0]?.value || req.user?.emails?.[0];
@@ -290,7 +303,16 @@ app.get('/auth/google/callback',
       timestamp: Date.now()
     })).toString('base64');
     
-    // Hämta state från session
+    // Persist an auth cookie to survive MemoryStore resets
+    try {
+      res.cookie('ob_auth', authToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+    } catch (_) {}
+
     const state = req.session.oauthState;
     delete req.session.oauthState;
     
@@ -310,7 +332,8 @@ app.get('/auth/google/callback',
     }
 
     const frontendUrl = 'https://www.onebookr.se';
-    res.redirect(`${frontendUrl}${redirectUrl}`);
+    // Ensure session is saved before redirect
+    return req.session.save(() => res.redirect(`${frontendUrl}${redirectUrl}`));
   }
 );
 
@@ -322,14 +345,52 @@ app.get('/api/user', (req, res) => {
     sessionUser: req.session.user ? 'Session user exists' : 'No session user',
     cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
   });
-  
-  // Kolla både passport auth och session
-  const user = req.user || req.session.user;
-  
+
+  // Rehydrate session if needed (supports ?auth, header x-auth, or ob_auth cookie)
+  const ensureSession = () => {
+    if (req.session?.user) return req.session.user;
+    const authB64 =
+      (req.query?.auth && String(req.query.auth)) ||
+      (req.headers['x-auth'] && String(req.headers['x-auth'])) ||
+      getCookie(req, 'ob_auth');
+
+    if (!authB64) return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(authB64, 'base64').toString('utf8'));
+      if (parsed && parsed.user) {
+        req.session.user = parsed.user;
+        return parsed.user;
+      }
+    } catch (e) {
+      console.warn('Failed to parse auth token in /api/user:', e?.message);
+    }
+    return null;
+  };
+
+  const user = req.user || req.session.user || ensureSession();
+
   if (user) {
-    res.json({ user: user, token: user.accessToken });
-  } else {
-    res.status(401).json({ error: 'Not authenticated' });
+    return res.json({ user, token: user.accessToken });
+  }
+  return res.status(401).json({ error: 'Not authenticated' });
+});
+
+// NYTT: Initiera session från auth-token (base64) efter redirect
+app.post('/api/auth/session', (req, res) => {
+  try {
+    const { auth } = req.body || {};
+    if (!auth || typeof auth !== 'string') {
+      return res.status(400).json({ error: 'auth token saknas' });
+    }
+    const parsed = JSON.parse(Buffer.from(auth, 'base64').toString('utf8'));
+    if (!parsed || !parsed.user) {
+      return res.status(400).json({ error: 'Ogiltigt auth-paket' });
+    }
+    req.session.user = parsed.user;
+    return req.session.save(() => res.json({ success: true }));
+  } catch (e) {
+    console.error('Failed to init session from auth:', e);
+    return res.status(400).json({ error: 'Kunde inte initiera session' });
   }
 });
 
@@ -841,8 +902,6 @@ function determineMeetingType(allEmails = [], tokens = []) {
   // 3) Annars: Google Meet
   return 'meet';
 }
-
-// ...existing code...
 
 // Rösta på ett förslag och skapa Google/Teams-länk när alla accepterat
 app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) => {
