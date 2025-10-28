@@ -171,117 +171,96 @@ export default function CompareCalendar({
 
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
+    if (!myToken) {
+      setError('Du måste vara inloggad för att jämföra kalendrar');
+      return;
+    }
+
+    setIsLoadingAvailability(true);
+    setError(null);
+    setHasSearched(true);
+
     try {
-      // FIX: använd let (vi utökar listan nedan)
-      let tokens = [myToken, ...(Array.isArray(invitedTokens) ? invitedTokens : [])].filter(Boolean);
-      if (!Array.isArray(tokens) || tokens.length === 0) {
-        console.warn('[CompareCalendar] Hoppar över fetchAvailability: tom token-lista');
-        return;
-      }
+      const tokensAll = [myToken, ...invitedTokens].filter(Boolean);
+      
+      console.log('Comparing calendars - sending tokens to backend:', tokensAll.length);
 
-      if (!isOnline) {
-        setError('Ingen internetanslutning. Kontrollera din anslutning och försök igen.');
-        return;
-      }
-
-      setIsLoadingAvailability(true);
-      setHasSearched(true);
-      setError(null);
-
-      // Validering för flerdagars-möten
-      if (isMultiDay) {
-        if (!multiDayStart || !multiDayEnd) {
-          setError('Ange startdatum och slutdatum för flerdagars-mötet.');
-          setAvailability([]);
-          setIsLoadingAvailability(false);
-          return;
-        }
-        if (new Date(multiDayStart) >= new Date(multiDayEnd)) {
-          setError('Slutdatum måste vara efter startdatum.');
-          setAvailability([]);
-          setIsLoadingAvailability(false);
-          return;
-        }
-      } else if (!timeMin || !timeMax) {
-        setError('Ange ett datumintervall.');
-        setAvailability([]);
-        setIsLoadingAvailability(false);
-        return;
-      }
-
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-        // OBS: Ta bort providers-heuristik (den var fel för Microsoft-token)
-        // const providers = [userProvider, ...];  // BORTTAGET
-
-        // Hämta grupptokens och slå ihop
-        if (groupId) {
-          try {
-            const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
-            if (groupTokensRes.ok) {
-              const groupTokensData = await groupTokensRes.json();
-              tokens = Array.from(new Set([...tokens, ...(groupTokensData.tokens || [])]));
-            }
-          } catch (err) {
-            console.log('Could not fetch group tokens, using provided tokens:', err);
-          }
-        }
-
-        tokens = Array.from(new Set(tokens.filter(Boolean)));
-
-        const requestBody = {
-          tokens,
-          // Viktigt: låt backend auto-detektera provider per token → skicka inte providers
-          duration: meetingDuration,
+      const response = await fetch('https://www.onebookr.se/api/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokens: tokensAll,
+          timeMin: timeMin || undefined,
+          timeMax: timeMax || undefined,
+          duration: parseInt(meetingDuration, 10),
           dayStart,
           dayEnd,
           isMultiDay,
-          ...(isMultiDay
-            ? {
-                timeMin: new Date(multiDayStart + 'T00:00:00').toISOString(),
-                timeMax: new Date(multiDayEnd + 'T23:59:59').toISOString(),
-                multiDayStart,
-                multiDayEnd
-              }
-            : {
-                timeMin: new Date(timeMin).toISOString(),
-                timeMax: new Date(timeMax).toISOString()
-              })
-        };
+          multiDayStart: isMultiDay ? multiDayStart : undefined,
+          multiDayEnd: isMultiDay ? multiDayEnd : undefined
+        })
+      });
 
-        const res = await fetch(`${API_BASE_URL}/api/availability`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
+      // NYTT: Hantera TOKEN_EXPIRED från backend
+      if (response.status === 401) {
+        const errorData = await response.json().catch(() => ({}));
+        
+        if (errorData.error === 'TOKEN_EXPIRED' || errorData.error === 'TOKEN_VALIDATION_FAILED') {
+          console.log('⚠️ Token har gått ut - omdirigerar till login');
+          
+          // Spara nuvarande URL för återkomst
+          localStorage.setItem('bookr_return_url', window.location.href);
+          localStorage.removeItem('bookr_user');
+          sessionStorage.removeItem('hasTriedSession');
+          
+          // Visa meddelande
+          setToast({
+            open: true,
+            message: '⚠️ Din session har gått ut. Loggar ut...',
+            severity: 'warning'
+          });
+          
+          // Vänta 2 sekunder och redirecta
+          setTimeout(() => {
+            window.location.href = 'https://www.onebookr.se/auth/logout';
+          }, 2000);
+          
+          return;
+        }
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Backend error: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Availability response:', data);
+
+      if (Array.isArray(data) && data.length > 0) {
+        setAvailability(data);
+        setToast({
+          open: true,
+          message: `✅ Hittade ${data.length} gemensamma lediga tider!`,
+          severity: 'success'
         });
-
-        clearTimeout(timeoutId);
-        const data = await res.json();
-
-        if (res.ok) {
-          setAvailability(Array.isArray(data) ? data : []);
-          setError(null);
-          setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} lediga tider`, severity: 'success' });
-        } else {
-          setAvailability([]);
-          setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
-        }
-      } catch (err) {
+      } else {
         setAvailability([]);
-        if (err.name === 'AbortError') {
-          setError('Förfrågan tog för lång tid. Försök igen.');
-        } else {
-          setError(isOnline ? 'Tekniskt fel vid hämtning av tillgänglighet.' : 'Ingen internetanslutning.');
-        }
-      } finally {
-        setIsLoadingAvailability(false);
+        setToast({
+          open: true,
+          message: 'Inga gemensamma lediga tider hittades',
+          severity: 'info'
+        });
       }
     } catch (err) {
-      setAvailability([]);
-      setError('Kunde inte hämta tillgänglighet. Försök igen senare.');
+      console.error('Error fetching availability:', err);
+      setError('Fel vid hämtning av lediga tider: ' + err.message);
+      setToast({
+        open: true,
+        message: 'Fel vid hämtning av lediga tider',
+        severity: 'error'
+      });
+    } finally {
       setIsLoadingAvailability(false);
     }
   };
@@ -671,53 +650,53 @@ export default function CompareCalendar({
 
   // Separat fetch-funktion för auto-laddning (utan validering)
   const fetchAvailabilityAuto = async (start, end) => {
-    let tokens = [myToken, ...invitedTokens];
-    
-    // För team-möten eller grupper, hämta alla tokens från gruppen
-    if (groupId) {
-      try {
-        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
-        if (groupTokensRes.ok) {
-          const groupTokensData = await groupTokensRes.json();
-          tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
-        }
-      } catch (err) {
-        console.log('Could not fetch group tokens for auto-load:', err);
-      }
-    }
-    
-    tokens = Array.from(new Set(tokens.filter(Boolean)));
-    if (tokens.length < 1) return;
-    
+    if (!myToken) return;
+
     try {
-      const res = await fetch(`${API_BASE_URL}/api/availability`, {
+      const tokensAll = [myToken, ...invitedTokens].filter(Boolean);
+
+      const response = await fetch('https://www.onebookr.se/api/availability', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tokens,
-          timeMin: start.toISOString(),
-          timeMax: end.toISOString(),
-          duration: meetingDuration,
+          tokens: tokensAll,
+          timeMin: start,
+          timeMax: end,
+          duration: parseInt(meetingDuration, 10),
           dayStart,
-          dayEnd,
-        }),
+          dayEnd
+        })
       });
-      const data = await res.json();
-      if (res.ok) {
+
+      // NYTT: Samma token-expiry hantering här
+      if (response.status === 401) {
+        const errorData = await response.json().catch(() => ({}));
+        
+        if (errorData.error === 'TOKEN_EXPIRED' || errorData.error === 'TOKEN_VALIDATION_FAILED') {
+          console.log('⚠️ Token har gått ut vid auto-load - omdirigerar till login');
+          localStorage.setItem('bookr_return_url', window.location.href);
+          localStorage.removeItem('bookr_user');
+          sessionStorage.removeItem('hasTriedSession');
+          
+          setTimeout(() => {
+            window.location.href = 'https://www.onebookr.se/auth/logout';
+          }, 1000);
+          
+          return;
+        }
+      }
+
+      if (!response.ok) {
+        console.warn('Auto-load failed:', response.status);
+        return;
+      }
+
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
         setAvailability(data);
-        setError(null);
-        setHasSearched(true);
-      } else {
-        setAvailability([]);
-        setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
-        setHasSearched(true);
       }
     } catch (err) {
-      setAvailability([]);
-      setError('Tekniskt fel vid hämtning av tillgänglighet.');
-      setHasSearched(true);
+      console.error('Error in auto-load:', err);
     }
   };
 
@@ -1620,1187 +1599,770 @@ export default function CompareCalendar({
           {suggestions.length === 0 && !isLoadingAvailability && (
             <Typography variant="body2" color="text.secondary">Inga tider föreslagna ännu.</Typography>
           )}
-          {isLoadingAvailability && <SuggestionSkeleton />}
-          {suggestions.map(s => {
-            // Hämta alla e-postadresser i gruppen (invited + creator)
-            const allEmails =
-              (s.votes
-                ? Object.keys(s.votes)
-                : []
-              )
-                .concat(
-                  (window.groupStatus && window.groupStatus.invited) ? window.groupStatus.invited : []
-                )
-                .concat(user.email ? [user.email] : [])
-                .filter((v, i, arr) => arr.indexOf(v) === i);
-
-            // Om groupStatus finns, använd den för invited-listan
-            let groupInvited = [];
-            if (window.groupStatus && window.groupStatus.invited) {
-              groupInvited = window.groupStatus.invited;
-            }
-
-            // Lista på alla som är med i gruppen (invited + creator)
-            let groupAll = [];
-            if (window.groupStatus && window.groupStatus.invited) {
-              groupAll = [window.groupStatus.invited, window.groupStatus.joined].flat();
-            }
-
-            // Försök att använda groupStatus från Dashboard om tillgänglig
-            let emailsInGroup = [];
-            if (window.groupStatus && window.groupStatus.invited) {
-              emailsInGroup = [window.groupStatus.creator, ...window.groupStatus.invited].filter(Boolean);
-            } else if (groupInvited.length > 0) {
-              emailsInGroup = groupInvited;
-            } else if (allEmails.length > 0) {
-              emailsInGroup = allEmails;
-            }
-
-            // Lista på de som inte har svarat
-            const notAnswered = emailsInGroup.filter(
-              email => !(s.votes && s.votes[email])
-            );
-
+          {suggestions.map((suggestion, index) => {
+            const start = new Date(suggestion.start);
+            const end = new Date(suggestion.end);
+            const durationMinutes = Math.round((end - start) / 60000);
+            const isFinalized = suggestion.finalized;
+            const meetLink = suggestion.meetLink || suggestion.link;
+            
             return (
-              <Fade in={true} timeout={800}>
-                <Card
-                  key={s.id}
-                  sx={{
-                    mb: 3,
-                    borderRadius:  3,
-                    border: s.finalized ? '2px solid #4caf50' : '1px solid #e0e3e7',
-                    boxShadow: s.finalized ? '0 4px 20px rgba(76, 175, 80, 0.15)' : '0 2px 8px rgba(60,64,67,.06)',
-
-
-
-                    background: s.finalized ? 'linear-gradient(135deg, #f8fff8 0%, #e8f5e8 100%)' : '#fff',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: s.finalized ? '0 8px 32px rgba(76, 175, 80, 0.25)' : '0 8px 24px rgba(0,0,0,0.15)'
-                    }
-                  }}
+              <Grow 
+                in={true} 
+                timeout={300 + index * 100}
+                key={suggestion.id}
               >
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="h6" gutterBottom sx={{
-                    fontWeight: 600,
-                    color: s.finalized ? '#2e7d32' : '#0a2540',
-                    fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-                    fontSize: 18
-                  }}>
-                    {s.title || 'Föreslaget möte'}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
+                    bgcolor: isFinalized ? '#e8f5e9' : theme.colors.surface,
+                    border: `1px solid ${isFinalized ? '#4caf50' : theme.colors.border}`,
+                    borderRadius: 2,
+                    p: { xs: 2, sm: 2.5 },
+                    minHeight: 'auto',
+                    width: '100%',
+                    cursor: groupId ? 'pointer' : 'default',
+                    transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    '&:hover': groupId ? { 
+                      bgcolor: theme.isDark ? '#2a2a2a' : '#e0f2f1',
+                      transform: { xs: 'none', sm: 'translateY(-2px)' },
+                      boxShadow: theme.isDark ? '0 4px 15px rgba(0,0,0,0.4)' : '0 4px 15px rgba(0,0,0,0.15)'
+                    } : {},
+                    gap: 1
+                  }}
+                  onClick={groupId ? () => voteSuggestion(suggestion.id, isFinalized ? 'rejected' : 'accepted') : undefined}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <Typography sx={{ fontWeight: 700, color: isFinalized ? '#4caf50' : '#1976d2', fontSize: 16, mb: 1 }}>
+                      {isFinalized ? 'Möte bokat!' : 'Tidsförslag'}
+                    </Typography>
+                    {isFinalized && meetLink && (
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        size="small"
+                        sx={{ 
+                          borderRadius: 999,
+                          height: 36,
+                          minWidth: 0,
+                          px: 2,
+                          fontWeight: 600,
+                          fontSize: 12,
+                          ml: 1
+                        }}
+                        onClick={e => {
+                          e.stopPropagation();
+                          window.open(meetLink, '_blank');
+                        }}
+                      >
+                        Gå till mötet
+                      </Button>
+                    )}
+                  </Box>
+                  <Typography sx={{ fontWeight: 600, fontSize: 18, mb: 1 }}>
+                    {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </Typography>
-                  {s.isMultiDay ? (
-                    <>
-                      <Typography variant="body1" sx={{
-                        color: '#425466',
-                        mb: 2,
-                        fontWeight: 500,
-                        fontSize: 15
-                      }}>
-                        Flerdagars möte: {new Date(s.multiDayStart).toLocaleDateString('sv-SE')} - {new Date(s.multiDayEnd).toLocaleDateString('sv-SE')}
-                      </Typography>
-                      <Typography variant="body1" sx={{
-                        color: '#1976d2',
-                        fontWeight: 600,
-                        fontSize: 16,
-                        mb: 1
-                      }}>
-                        {s.dayStart && s.dayEnd && s.multiDayStart && s.multiDayEnd ? (() => {
-                          const [startHour, startMin] = s.dayStart.split(':').map(Number);
-                          const [endHour, endMin] = s.dayEnd.split(':').map(Number);
-                          const hoursPerDay = (endHour * 60 + endMin - startHour * 60 - startMin) / 60;
-                          const days = Math.ceil((new Date(s.multiDayEnd) - new Date(s.multiDayStart)) / (1000 * 60 * 60 * 24));
-                          return `${days * hoursPerDay} timmar totalt`;
-                        })() : `${Math.ceil((new Date(s.multiDayEnd) - new Date(s.multiDayStart)) / (1000 * 60 * 60 * 24)) * (s.durationPerDay ||  0)} timmar totalt`}
-                      </Typography>
-                      <Typography variant="body2" sx={{
-                        color: '#666',
-                        fontWeight: 500,
-                        fontSize: 14,
-                        mb: 2
-                      }}>
-                        Arbetstid: {s.dayStart} - {s.dayEnd} varje dag
-                      </Typography>
-                    </>
-                  ) : (
-                    <>
-                      <Typography variant="body1" sx={{
-                        color: '#425466',
-                        mb: 2,
-                        fontWeight: 500,
-                        fontSize: 15
-                      }}>
-                        {new Date(s.start).toLocaleDateString('sv-SE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                      </Typography>
-                      <Typography variant="body1" sx={{
-                        color: '#1976d2',
-                        fontWeight: 600,
-                        fontSize: 16,
-                        mb: 2
-                      }}>
-                        {new Date(s.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(s.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </Typography>
-                    </>
+                  <Typography sx={{ color: '#666', fontSize: 14 }}>
+                    {durationMinutes} minuter • {start.toLocaleDateString('sv-SE', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </Typography>
+                  {isFinalized && (
+                    <Typography sx={{ color: '#4caf50', fontWeight: 600, fontSize: 14, mt: 1 }}>
+                      Bokad av: {suggestion.email}
+                    </Typography>
                   )}
-                  {s.finalized ? (
-                    <Box sx={{
-                      bgcolor: 'rgba(76, 175, 80,  0.08)',
-                      border: '1px solid rgba(76, 175, 80, 0.3)',
-                      borderRadius: 3,
-                      p: 3,
-                      mt: 2,
-                    }}>
-                      <Typography sx={{
-                        color: '#2e7d32',
-                        fontWeight: 700,
-                        mb: 2,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        fontSize: 16
-                      }}>
-                        <span style={{
-                          fontSize: 24,
-                          marginRight: 8,
-                        }}>🎉</span>
-                        Mötet är bokat!
-                      </Typography>
-                      <Typography sx={{ color: '#1b5e20', fontWeight: 500, mb: 2, fontSize: 14 }}>
-                        Alla har accepterat tiden. Kalenderinbjudan och möteslänk skickas ut via mejl.
-                      </Typography>
-                                           {s.withMeet && s.meetLink && (
-                        <Box sx={{
-                          bgcolor: '#fff',
-                          border: '1px solid #e0e3e7',
-                          borderRadius: 2,
-                          p: 2,
-                          mt: 2
-                        }}>
-                          <Typography sx={{ color: '#1976d2', fontWeight: 600, mb: 1, fontSize: 14 }}>
-                            Google Meet-länk:
-                          </Typography>
-                          <Typography sx={{
-                            wordBreak: 'break-all',
-                            fontSize: 13,
-                            fontFamily: 'monospace',
-                            bgcolor: '#f5f5f5',
-                            p: 1,
-                            borderRadius: 1
-                          }}>
-                            <a
-                              href={s.meetLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: '#1976d2', textDecoration: 'none' }}
-                            >
-                              {s.meetLink}
-                            </a>
-                          </Typography>
-                        </Box>
-                      )}
-                      {!s.withMeet && s.location && (
-                        <Typography sx={{ color: '#666', fontWeight: 500, mt: 2, fontSize: 14 }}>
-                          📍 Plats: {s.location}
-                        </Typography>
-                      )}
+                  {!isFinalized && (
+                    <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        size="small"
+                        sx={{ 
+                          borderRadius: 999,
+                          height: 36,
+                          minWidth: 0,
+                          px: 2,
+                          fontWeight: 600,
+                          fontSize: 12,
+                          flex: 1
+                        }}
+                        onClick={e => {
+                          e.stopPropagation();
+                          voteSuggestion(suggestion.id, 'accepted');
+                        }}
+                      >
+                        Acceptera
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        size="small"
+                        sx={{ 
+                          borderRadius: 999,
+                          height: 36,
+                          minWidth: 0,
+                          px: 2,
+                          fontWeight: 600,
+                          fontSize: 12,
+                          flex: 1
+                        }}
+                        onClick={e => {
+                          e.stopPropagation();
+                          voteSuggestion(suggestion.id, 'rejected');
+                        }}
+                      >
+                        Avböj
+                      </Button>
                     </Box>
-                  ) : (
-                    <>
-                      {!s.withMeet && s.location && (
-                        <Typography sx={{ color: '#666', fontWeight: 500, mb: 2, fontSize: 14 }}>
-                          📍 Plats: {s.location}
-                        </Typography>
-                      )}
-                      <Box sx={{ mt: 2 }}>
-                        {Object.entries(s.votes || {}).map(([email, vote]) => (
-                          <Typography key={email} variant="body2" sx={{
-                            mb: 0.5,
-                            color: vote === 'accepted' ? '#2e7d32' : vote === 'declined' ? '#d32f2f' : '#666',
-                            fontWeight: 500
-                          }}>
-                            {vote === 'accepted' ? '✅' : vote === 'declined' ? '❌' : '⏳'} {email}
-                          </Typography>
-                        ))}
-                        {notAnswered.length > 0 && (
-                          <Box sx={{ mt: 2, p: 2, bgcolor: theme.isDark ? '#2d2d00' : '#fff3e0', borderRadius: 2, border: `1px solid ${theme.colors.warning}` }}>
-                            <Typography variant="body2" sx={{ color: theme.colors.warning, fontWeight: 600, mb: 1 }}>
-                              ⏳ Väntar på svar från:
-                            </Typography>
-                            {notAnswered.map(email => (
-                              <Typography key={email} variant="body2" sx={{ color: theme.isDark ? '#ffab40' : '#bf360c', ml: 1 }}>
-                                • {email}
-                              </Typography>
-                            ))}
-                          </Box>
-                        )}
-                        {!s.votes?.[user.email] && (
-                          <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
-                            <Zoom in={true} timeout={300}>
-                              <Button
-                                size="medium"
-                                variant="contained"
-                                className={successAnimation === 'vote' ? 'success-animation' : ''}
-                                sx={{
-                                  bgcolor: theme.colors.success,
-                                  '&:hover': { 
-                                    bgcolor: theme.isDark ? '#66bb6a' : '#45a049',
-                                    transform: 'scale(1.08) translateY(-2px)',
-                                    boxShadow: '0 6px 20px rgba(76, 175, 80, 0.3)'
-                                  },
-                                  fontWeight: 600,
-                                  px: 3,
-                                  borderRadius: 2,
-                                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-                                }}
-                                onClick={() => {
-                                  setSuccessAnimation('vote');
-                                  setTimeout(() => setSuccessAnimation(null), 600);
-                                  voteSuggestion(s.id, 'accepted');
-                                }}
-                              >
-                                ✅ Acceptera
-                              </Button>
-                            </Zoom>
-                            <Button
-                              size="medium"
-                              variant="outlined"
-                              sx={{
-                                borderColor: theme.colors.error,
-                                color: theme.colors.error,
-                                '&:hover': { 
-                                  bgcolor: theme.isDark ? '#2d1b1b' : '#ffebee', 
-                                  borderColor: theme.isDark ? '#f48fb1' : '#d32f2f',
-                                  transform: 'scale(1.08) translateY(-2px)',
-                                  boxShadow: '0 6px 20px rgba(244, 67, 54, 0.3)'
-                                },
-                                fontWeight: 600,
-                                px: 3,
-                                borderRadius: 2,
-                                transition: 'all 0.2s ease'
-                              }}
-                              onClick={() => voteSuggestion(s.id, 'declined')}
-                            >
-                              ❌ Neka
-                            </Button>
-                          </Box>
-                        )}
-                        {s.fromEmail === (user.email || user.emails?.[0]?.value || user.emails?.[0]) && (
-                          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                            <Button
-                              size="small"
-                              variant="text"
-                              color="error"
-                              onClick={async () => {
-                                if (window.confirm('Är du säker på att du vill ta bort detta tidsförslag?')) {
-                                  try {
-                                    const response = await fetch(`${API_BASE_URL}/api/group/${groupId}/suggestion/${s.id}`, {
-                                      method: 'DELETE',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ email: user.email || user.emails?.[0]?.value || user.emails?.[0] })
-                                    });
-                                    if (response.ok) {
-                                      setSuggestions(prev => prev.filter(suggestion => suggestion.id !== s.id));
-                                      setToast({ open: true, message: 'Tidsförslag borttaget', severity: 'success' });
-                                    } else {
-                                      const errorData = await response.json();
-                                      setToast({ open: true, message: errorData.error || 'Kunde inte ta bort förslag', severity: 'error' });
-                                    }
-                                  } catch (error) {
-                                    setToast({ open: true, message: 'Kunde inte ta bort förslag', severity: 'error' });
-                                  }
-                                }
-                              }}
-                              sx={{ fontSize: 12 }}
-                            >
-                              🗑️ Ta bort förslag
-                            </Button>
-                          </Box>
-                        )}
-                      </Box>
-                    </>
                   )}
-                </CardContent>
-                </Card>
-              </Fade>
+                </Box>
+              </Grow>
             );
           })}
         </Box>
       )}
 
-      <Dialog 
-        open={suggestDialog.open} 
-        onClose={() => setSuggestDialog({ open: false, slot: null })}
-        maxWidth="sm"
-        fullWidth
-        fullScreen={window.innerWidth < 600}
-        PaperProps={{
-          sx: {
-            borderRadius: { xs: 0, sm: 3 },
-            boxShadow: theme.isDark ? '0 8px 32px rgba(0,0,0,0.4)' : '0 8px 32px rgba(0,0,0,0.12)',
-            background: theme.isDark ? 'linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%)' : 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-            m: { xs: 0, sm: 2 }
-          }
-        }}
-      >
-        <DialogTitle sx={{
-          background: 'linear-gradient(135deg, #1976d2 0%, #635bff 100%)',
-          color: 'white',
-          fontWeight: 700,
-          fontSize: 20,
-          textAlign: 'center',
-          py: 3
-        }}>
-          Föreslå mötestid
-        </DialogTitle>
-        <Box sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 3, mt: 1 }}>
-          {suggestDialog.slot && (
-            <>
-              {/* Tidsvisning med modern design */}
-              <Box sx={{
-                background: theme.isDark ? 'linear-gradient(135deg, #1a237e 0%, #4a148c 100%)' : 'linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%)',
-                borderRadius: 3,
-                p: 3,
-                border: `2px solid ${theme.colors.primary}`,
-                textAlign: 'center'
-              }}>
-                <Typography sx={{ 
-                  fontSize: 14, 
-                  color: theme.colors.textSecondary, 
-                  fontWeight: 600, 
-                  mb: 1,
-                  textTransform: 'uppercase',
-                  letterSpacing: 1
-                }}>
-                  Vald tid
-                </Typography>
-                {suggestDialog.slot.isMultiDay ? (
-                  <>
-                    <Typography sx={{
-                      fontWeight: 600,
-                      fontSize: 18,
-                      color: theme.colors.text,
-                      mb: 0.5
-                    }}>
-                      Flerdagars möte
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center', justifyContent: 'center' }}>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography sx={{ fontSize: 12, color: theme.colors.textSecondary, fontWeight: 600, mb: 0.5 }}>DATUM</Typography>
-                        <Typography sx={{ fontSize: 16, color: theme.colors.text, fontWeight: 700 }}>
-                          {suggestDialog.slot.multiDayStart && suggestDialog.slot.multiDayEnd ? 
-                            `${new Date(suggestDialog.slot.multiDayStart).toLocaleDateString('sv-SE')} - ${new Date(suggestDialog.slot.multiDayEnd).toLocaleDateString('sv-SE')}` :
-                            'Ej angivet'
-                          }
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography sx={{ fontSize: 12, color: theme.colors.textSecondary, fontWeight: 600, mb: 0.5 }}>ARBETSTID</Typography>
-                        <Typography sx={{ fontSize: 16, color: theme.colors.text, fontWeight: 700 }}>
-                          {suggestDialog.slot.dayStart && suggestDialog.slot.dayEnd ? 
-                            `${suggestDialog.slot.dayStart} - ${suggestDialog.slot.dayEnd}` :
-                            'Ej angivet'
-                          }
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography sx={{ fontSize: 12, color: theme.colors.textSecondary, fontWeight: 600, mb: 0.5 }}>TOTAL TID</Typography>
-                        <Typography sx={{ fontSize: 16, color: theme.colors.text, fontWeight: 700 }}>
-                          {suggestDialog.slot.dayStart && suggestDialog.slot.dayEnd && suggestDialog.slot.multiDayStart && suggestDialog.slot.multiDayEnd ? (() => {
-                            const [startHour, startMin] = suggestDialog.slot.dayStart.split(':').map(Number);
-                            const [endHour, endMin] = suggestDialog.slot.dayEnd.split(':').map(Number);
-                            const hoursPerDay = (endHour * 60 + endMin - startHour * 60 - startMin) / 60;
-                            const days = Math.ceil((new Date(suggestDialog.slot.multiDayEnd) - new Date(suggestDialog.slot.multiDayStart)) / (1000 * 60 * 60 * 24));
-                            return `${days * hoursPerDay} h totalt`;
-                          })() : 'Ej angivet'}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </>
-                ) : (
-                  <>
-                    <Typography sx={{
-                      fontWeight: 600,
-                      fontSize: 18,
-                      color: theme.colors.text,
-                      mb: 0.5
-                    }}>
-                      {new Date(suggestDialog.slot.start).toLocaleDateString('sv-SE', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}
-                    </Typography>
-                    <Typography sx={{
-                      fontSize: 16,
-                      color: theme.colors.text,
-                      fontWeight: 700
-                    }}>
-                      {new Date(suggestDialog.slot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(suggestDialog.slot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Typography>
-                  </>
-                )}
-              </Box>
-
-              {/* Mötesnamn med förbättrad design */}
-              <TextField
-                label="Mötesnamn"
-                value={meetingTitle}
-                onChange={e => setMeetingTitle(e.target.value)}
-                fullWidth
-                placeholder="Ex: Projektmöte, Lunch, Planering..."
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 2,
-                    background: theme.colors.surface,
-                    border: `1px solid ${theme.colors.border}`,
-                    color: theme.colors.text,
-                    '&:hover': {
-                      background: theme.isDark ? '#2a2a2a' : '#f1f3f4',
-                      borderColor: theme.colors.primary
-                    },
-                    '&.Mui-focused': {
-                      background: theme.colors.bg,
-                      boxShadow: `0 0 0 3px ${theme.colors.primary}20`
-                    }
+      {/* Kalender */}
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: 2, 
+        width: '100%', 
+        maxWidth: 1200, 
+        margin: '0 auto',
+        position: 'relative',
+        overflow: 'hidden',
+        borderRadius: 2,
+        border: `1px solid ${theme.colors.border}`,
+        boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
+        bgcolor: theme.colors.surface,
+        p: 2,
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0
+      }}>
+        {/* Mobil meny för kalendervy */}
+        {isMobile && (
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            width: '100%', 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            zIndex: 10,
+            px: 2,
+            py: 1,
+            bgcolor: theme.colors.surface,
+            borderBottom: `1px solid ${theme.colors.border}`,
+            borderTopLeftRadius: 2,
+            borderTopRightRadius: 2
+          }}>
+            <Button
+              variant={calendarView === 'month' ? 'contained' : 'outlined'}
+              onClick={() => setCalendarView('month')}
+              size="small"
+              sx={{
+                borderRadius: 999,
+                px: 3,
+                py: 1,
+                fontWeight: 600,
+                fontSize: 12,
+                flex: 1,
+                mr: 1,
+                transition: 'all 0.2s ease',
+                ...(calendarView === 'month' ? {
+                  bgcolor: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+                  color: '#fff',
+                  boxShadow: '0 2px 8px rgba(99,91,255,0.13)',
+                  '&:hover': {
+                    bgcolor: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                    boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)',
+                    transform: 'scale(1.03)',
                   },
-                  '& .MuiInputLabel-root': {
-                    fontWeight: 600,
-                    color: theme.colors.textSecondary
-                  }
-                }}
-              />
-
-              {/* Checkbox med förbättrad design */}
-              <Box sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                p: 2.5,
-                background: theme.colors.surface,
-                borderRadius: 2,
-                border: `1px solid ${theme.colors.border}`,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': {
-                  background: theme.isDark ? '#2a2a2a' : '#e9ecef',
-                  borderColor: theme.colors.primary
-                }
+                  '&:active': {
+                    bgcolor: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+                    boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)',
+                    transform: 'scale(0.98)',
+                  },
+                } : {}),
               }}
-              onClick={() => setWithMeet(!withMeet)}>
-                <Box sx={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: 1,
-                  border: withMeet ? `2px solid ${theme.colors.primary}` : `2px solid ${theme.colors.border}`,
-                  background: withMeet ? theme.colors.primary : 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  mr: 2,
-                  transition: 'all 0.2s'
-                }}>
-                  {withMeet && (
-                    <Typography sx={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>✓</Typography>
-                  )}
-                </Box>
-                <Box>
-                  <Typography sx={{ fontWeight: 600, color: theme.colors.text, fontSize: 15 }}>
-                    Skicka ut Google Meet-länk
-                  </Typography>
-                  <Typography sx={{ fontSize: 13, color: theme.colors.textSecondary, mt: 0.5 }}>
-                    Automatiskt videomöte skapas och skickas till alla deltagare
-                  </Typography>
-                </Box>
-              </Box>
+            >
+              <EventIcon sx={{ fontSize: 18, mr: 1 }} />
+              Kalendervy
+            </Button>
+            <Button
+              variant={calendarView === 'agenda' ? 'contained' : 'outlined'}
+              onClick={() => setCalendarView('agenda')}
+              size="small"
+              sx={{
+                borderRadius: 999,
+                px: 3,
+                py: 1,
+                fontWeight: 600,
+                fontSize: 12,
+                flex: 1,
+                ml: 1,
+                transition: 'all 0.2s ease',
+                ...(calendarView === 'agenda' ? {
+                  bgcolor: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+                  color: '#fff',
+                  boxShadow: '0 2px 8px rgba(99,91,255,0.13)',
+                  '&:hover': {
+                    bgcolor: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                    boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)',
+                    transform: 'scale(1.03)',
+                  },
+                  '&:active': {
+                    bgcolor: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+                    boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)',
+                    transform: 'scale(0.98)',
+                  },
+                } : {}),
+              }}
+            >
+              <GroupIcon sx={{ fontSize: 18, mr: 1 }} />
+              Listvy
+            </Button>
+          </Box>
+        )}
 
-              {/* Plats-fält med förbättrad design */}
-              {!withMeet && (
-                <TextField
-                  label="Plats för mötet"
-                  value={meetingLocation}
-                  onChange={e => setMeetingLocation(e.target.value)}
-                  fullWidth
-                  placeholder="Ex: Kontoret, Café, Rum 101..."
-                  required
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                      background: '#fff3e0',
-                      border: '2px solid #ffcc02',
-                      '&:hover': {
-                        background: '#fff8e1',
-                        borderColor: '#ffa000'
-                      },
-                      '&.Mui-focused': {
-                        background: '#fff',
-                        borderColor: '#ff9800',
-                        boxShadow: '0 0 0 3px rgba(255, 152, 0, 0.1)'
-                      }
-                    },
-                    '& .MuiInputLabel-root': {
-                      fontWeight: 600,
-                      color: '#e65100'
-                    }
-                  }}
-
-                />
-              )}
-            </>
-          )}
-        </Box>
-        <DialogActions sx={{ 
-          p: 3, 
-          pt: 0, 
-          gap: 2,
-          justifyContent: 'center'
-        }}>
-          <Button 
-            onClick={() => setSuggestDialog({ open: false, slot: null })}
-            sx={{
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            width: '100%',
+            position: 'relative',
+            zIndex: 1,
+            overflow: 'hidden',
+            borderRadius: 2,
+            border: `1px solid ${theme.colors.border}`,
+            boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
+            bgcolor: theme.colors.surface,
+            p: 2,
+            borderTopLeftRadius: 0,
+            borderTopRightRadius: 0
+          }}
+        >
+          {/* Kalender komponent */}
+          <Calendar
+            localizer={localizer}
+            events={[]}
+            startAccessor="start"
+            endAccessor="end"
+            style={{ 
+              height: isMobile ? 'auto' : 700, 
+              padding: isMobile ? '0 8px' : '0',
+              overflow: 'hidden',
               borderRadius: 2,
-              px: 4,
-              py: 1.5,
-              fontWeight: 600,
-              color: '#666',
-              border: '2px solid #e0e0e0',
-              '&:hover': {
-                background: '#f5f5f5',
-                borderColor: '#bdbdbd'
+              border: `1px solid ${theme.colors.border}`,
+              boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
+              background: theme.colors.surface
+            }}
+            views={{
+              month: true,
+              week: true,
+              day: true,
+              agenda: true
+            }}
+            view={calendarView}
+            onViewChange={setCalendarView}
+            date={calendarDate}
+            onNavigate={(date) => setCalendarDate(date)}
+            components={{
+              toolbar: (props) => (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <Button
+                    onClick={() => {
+                      const newDate = new Date(calendarDate);
+                      newDate.setMonth(newDate.getMonth() - 1);
+                      setCalendarDate(newDate);
+                    }}
+                    sx={{ 
+                      borderRadius: 999,
+                      px: 3,
+                      py: 1,
+                      fontWeight: 600,
+                      fontSize: 12,
+                      minWidth: 0,
+                      color: theme.colors.text,
+                      border: `1px solid ${theme.colors.border}`,
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        bgcolor: theme.colors.primary,
+                        color: '#fff',
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 2px 8px rgba(25, 118, 210, 0.2)',
+                      },
+                      '&:active': {
+                        transform: 'translateY(0)',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                      },
+                    }}
+                  >
+                    <ChevronLeftIcon />
+                    Föregående
+                  </Button>
+                  <Typography variant="h6" sx={{ flex: 1, textAlign: 'center', fontWeight: 600, fontSize: 16 }}>
+                    {calendarView === 'month' && calendarDate.toLocaleString('sv-SE', { month: 'long', year: 'numeric' })}
+                    {calendarView === 'week' && `Vecka ${moment(calendarDate).isoWeek()} - ${calendarDate.getFullYear()}`}
+                    {calendarView === 'day' && calendarDate.toLocaleString('sv-SE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    {calendarView === 'agenda' && 'Kommande händelser'}
+                  </Typography>
+                  <Button
+                    onClick={() => {
+                      const newDate = new Date(calendarDate);
+                      newDate.setMonth(newDate.getMonth() + 1);
+                      setCalendarDate(newDate);
+                    }}
+                    sx={{ 
+                      borderRadius: 999,
+                      px: 3,
+                      py: 1,
+                      fontWeight: 600,
+                      fontSize: 12,
+                      minWidth: 0,
+                      color: theme.colors.text,
+                      border: `1px solid ${theme.colors.border}`,
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        bgcolor: theme.colors.primary,
+                        color: '#fff',
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 2px 8px rgba(25, 118, 210, 0.2)',
+                      },
+                      '&:active': {
+                        transform: 'translateY(0)',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                      },
+                    }}
+                  >
+                    Nästa
+                    <ChevronLeftIcon sx={{ transform: 'rotate(180deg)' }} />
+                  </Button>
+                </div>
+              ),
+              event: (eventProps) => {
+                const { event } = eventProps;
+                return (
+                  <Tooltip
+                    title={
+                      <Box sx={{ p: 1, bgcolor: 'background.paper', borderRadius: 1, boxShadow: 2 }}>
+                        <Typography sx={{ fontWeight: 600, color: '#1976d2' }}>
+                          {event.title}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#666' }}>
+                          {new Date(event.start).toLocaleString('sv-SE', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {' - '}
+                          {new Date(event.end).toLocaleString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+                        {event.location && (
+                          <Typography variant="body2" sx={{ color: '#666' }}>
+                            Plats: {event.location}
+                          </Typography>
+                        )}
+                        {event.meetLink && (
+                          <Typography variant="body2" sx={{ color: '#1976d2', fontWeight: 500, mt: 0.5 }}>
+                            <a href={event.meetLink} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                              Gå till mötet
+                            </a>
+                          </Typography>
+                        )}
+                      </Box>
+                    }
+                    arrow
+                    placement="top"
+                    sx={{ zIndex: 1300 }}
+                  >
+                    <div {...eventProps} />
+                  </Tooltip>
+                );
+              },
+              agenda: {
+                event: (eventProps) => {
+                  const { event } = eventProps;
+                  return (
+                    <Tooltip
+                      title={
+                        <Box sx={{ p: 1, bgcolor: 'background.paper', borderRadius: 1, boxShadow: 2 }}>
+                          <Typography sx={{ fontWeight: 600, color: '#1976d2' }}>
+                            {event.title}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#666' }}>
+                            {new Date(event.start).toLocaleString('sv-SE', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {' - '}
+                            {new Date(event.end).toLocaleString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
+                          </Typography>
+                          {event.location && (
+                            <Typography variant="body2" sx={{ color: '#666' }}>
+                              Plats: {event.location}
+                            </Typography>
+                          )}
+                          {event.meetLink && (
+                            <Typography variant="body2" sx={{ color: '#1976d2', fontWeight: 500, mt: 0.5 }}>
+                              <a href={event.meetLink} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                                Gå till mötet
+                              </a>
+                            </Typography>
+                          )}
+                        </Box>
+                      }
+                      arrow
+                      placement="top"
+                      sx={{ zIndex: 1300 }}
+                    >
+                      <div {...eventProps} />
+                    </Tooltip>
+                  );
+                }
               }
             }}
-            variant="outlined"
-          >
-            Avbryt
-          </Button>
-          <Button 
-            onClick={confirmSuggest} 
-            variant="contained"
-            disabled={isSubmittingSuggestion}
-            sx={{
-              borderRadius: 2,
-              px: 4,
-              py: 1.5,
-              fontWeight: 700,
-              fontSize: 15,
-              background: 'linear-gradient(135deg, #1976d2 0%, #635bff 100%)',
-              boxShadow: '0 4px 16px rgba(25, 118, 210, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #1565c0 0%, #5e35b1 100%)',
-                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
-                transform: 'translateY(-1px)'
-              },
-              '&:disabled': {
-                background: '#ccc',
-                transform: 'none',
-                boxShadow: 'none'
-              },
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1
-            }}
-          >
-            {isSubmittingSuggestion && <CircularProgress size={16} sx={{ color: 'white' }} />}
-            {isSubmittingSuggestion ? 'Skickar...' : 'Föreslå denna tiden'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+            popup
+            onSelectSlot={handleCalendarSelectSlot}
+            onSelectEvent={handleCalendarSelectEvent}
+            style={{ borderRadius: '10px', overflow: 'hidden' }}
+          />
 
-      {/* Kalender */}
-      {/* Visa information om direktbokning eller team-möte */}
-      {directAccess && contactEmail && (
-        <Box sx={{
-          mb: 4,
-          p: 3,
-          bgcolor: '#e8f5e8',
-          borderRadius: 3,
-          border: '2px solid #4caf50'
-        }}>
-          <Typography variant="h6" sx={{ color: '#2e7d32', fontWeight: 600, mb: 1 }}>
-            🤝 Direktbokning med {contactName || contactEmail}
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#1b5e20' }}>
-            Du kan boka möten direkt utan att skicka inbjudan först eftersom {contactName || contactEmail} har gett dig tillgång till sin kalender.
-          </Typography>
-        </Box>
-      )}
-      
-      {teamName && (
-        <Box sx={{
-          mb: 4,
-          p: 3,
-          bgcolor: '#e3f2fd',
-          borderRadius: 3,
-          border: '2px solid #1976d2'
-        }}>
-          <Typography variant="h6" sx={{ color: '#1976d2', fontWeight: 600, mb: 1 }}>
-            👥 {teamName} - Teammöte
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#1565c0' }}>
-            Hitta en tid som passar alla i teamet.
-          </Typography>
-        </Box>
-      )}
-      
-      <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
-        Kalender
-      </Typography>
-
-      {/* Vy-väljare */}
-      <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
-        {(isMobile ? [
-          { key: 'agenda', label: 'Lista' },
-          { key: 'day', label: 'Dag' }
-        ] : [
-          { key: 'month', label: 'Månad' },
-          { key: 'work_week', label: 'Arbetsvecka' },
-          { key: 'week', label: 'Vecka' },
-          { key: 'day', label: 'Dag' },
-          { key: 'agenda', label: 'Agenda' }
-        ]).map(view => (
-          <Button
-            key={view.key}
-            variant={calendarView === view.key ? 'contained' : 'outlined'}
-            size="small"
-            onClick={() => setCalendarView(view.key)}
-            sx={{
-              fontWeight: 600,
-              borderRadius: 2,
-              px: { xs: 1.5, sm: 2 },
-              py: 1,
-              fontSize: { xs: 12, sm: 14 }
-            }}
-          >
-            {view.label}
-          </Button>
-        ))}
-      </Box>
-
-      <div style={{ height: isMobile ? '400px' : '500px', marginTop: '20px', marginBottom: 100, width: '100%', overflowX: 'auto', position: 'relative' }} data-tutorial="calendar">
-        <Paper elevation={1} sx={{
-          borderRadius: 2,
-          overflow: 'hidden',
-          border: `1px solid ${calendarBorder}`,
-          background: calendarBg,
-          minWidth: { xs: '320px', md: 'auto' },
-          position: 'relative'
-        }}>
+          {/* Fullscreen knapp */}
           <IconButton
             onClick={() => setIsCalendarFullscreen(!isCalendarFullscreen)}
             sx={{
               position: 'absolute',
-              top: 8,
-              right: 8,
-              zIndex: 1000,
-              backgroundColor: 'rgba(255, 255, 255, 0.9)',
-              backdropFilter: 'blur(4px)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              top: 16,
+              right: 16,
+              zIndex: 1200,
+              bgcolor: theme.colors.surface,
+              color: theme.colors.text,
+              borderRadius: 999,
+              width: 40,
+              height: 40,
+              boxShadow: theme.isDark ? '0 4px 15px rgba(0,0,0,0.4)' : '0 2px 8px rgba(60,64,67,.06)',
+              transition: 'all 0.3s ease',
               '&:hover': {
-                backgroundColor: 'rgba(255, 255, 255, 1)',
-                transform: 'scale(1.1)'
+                bgcolor: theme.colors.primary,
+                color: '#fff',
+                transform: 'translateY(-2px)',
+                boxShadow: '0 4px 15px rgba(25, 118, 210, 0.2)',
               },
-              transition: 'all 0.2s ease'
+              '&:active': {
+                transform: 'translateY(0)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              },
             }}
           >
-            <FullscreenIcon />
+            {isCalendarFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
           </IconButton>
-          <Calendar
-            localizer={localizer}
-            events={availability.map((slot, index) => ({
-              id: `slot-${index}`,
-              title: 'Ledig tid',
-              start: new Date(slot.start),
-              end: new Date(slot.end),
-              resource: {
-                color: '#e3f2fd',
-                textColor: '#1976d2'
-              }
-            }))}
-            startAccessor="start"
-            endAccessor="end"
-            style={{ height: 500, background: 'transparent', border: 'none' }}
-            selectable={!!groupId}
-            scrollToTime={(() => {
-              const scrollTime = new Date();
-              scrollTime.setHours(8, 0, 0, 0);
-              return scrollTime;
-            })()}
-            onSelectSlot={groupId ? handleCalendarSelectSlot : undefined}
-            onSelectEvent={groupId ? handleCalendarSelectEvent : undefined}
-            eventPropGetter={(event) => ({
-              style: {
-                backgroundColor: event.resource?.color || '#e3f2fd',
-                color: event.resource?.textColor || '#1976d2'
-              }
-            })}
-            popup={false}
-            longPressThreshold={1}
-            selectAllow={() => true}
-            views={['month', 'week', 'work_week', 'day', 'agenda']}
-            view={calendarView}
-            onView={setCalendarView}
-            date={calendarDate}
-            onNavigate={setCalendarDate}
+        </Box>
 
-          />
-        </Paper>
-      </div>
-
-      {isCalendarFullscreen && (
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: '#fff',
-            zIndex: 9999,
-            display: 'flex',
-            flexDirection: 'column',
-            p: 2
-          }}
-        >
-          <Box sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            mb: 2,
-            pb: 2,
-            borderBottom: '1px solid #e0e3e7'
-          }}>
-            <Typography variant="h5" sx={{ fontWeight: 600, color: '#1976d2' }}>
-              Kalender - Fullskärm
-            </Typography>
-            <IconButton
-              onClick={() => setIsCalendarFullscreen(false)}
+        {/* Sidomeny (desktop) */}
+        {!isMobile && (
+          <Grow in={sidebarOpen} timeout={300}>
+            <Paper
               sx={{
-                backgroundColor: 'rgba(244, 67, 54, 0.1)',
-                color: '#d32f2f',
-                '&:hover': {
-                  backgroundColor: 'rgba(244, 67, 54, 0.2)',
-                  transform: 'scale(1.1)'
-                }
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                width: 400,
+                height: '100%',
+                bgcolor: theme.colors.surface,
+                borderLeft: `1px solid ${theme.colors.border}`,
+                borderTopRightRadius: 2,
+                borderBottomRightRadius: 2,
+                boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
+                overflowY: 'auto',
+                p: 2,
+                zIndex: 1100
               }}
             >
-              <FullscreenExitIcon />
-            </IconButton>
-          </Box>
-          <Box sx={{ flex: 1, overflow: 'hidden' }}>
-            <Paper elevation={1} sx={{
-              height: '100%',
-              borderRadius: 2,
-              overflow: 'hidden',
-              border: `1px solid ${calendarBorder}`,
-              background: calendarBg
-            }}>
-              <Calendar
-                localizer={localizer}
-                events={availability.map((slot, index) => ({
-                  id: `slot-${index}`,
-                  title: 'Ledig tid',
-                  start: new Date(slot.start),
-                  end: new Date(slot.end),
-                  resource: {
-                    color: '#e3f2fd',
-                    textColor: '#1976d2'
-                  }
-                }))}
-                startAccessor="start"
-                endAccessor="end"
-                style={{ height: '100%', background: 'transparent', border: 'none' }}
-                selectable={!!groupId}
-                scrollToTime={(() => {
-                  const scrollTime = new Date();
-                  scrollTime.setHours(8, 0, 0, 0);
-                  return scrollTime;
-                })()}
-                onSelectSlot={groupId ? handleCalendarSelectSlot : undefined}
-                onSelectEvent={groupId ? handleCalendarSelectEvent : undefined}
-                eventPropGetter={(event) => ({
-                  style: {
-                    backgroundColor: event.resource?.color || '#e3f2fd',
-                    color: event.resource?.textColor || '#1976d2'
-                  }
-                })}
-                popup={false}
-                longPressThreshold={1}
-                selectAllow={() => true}
-                views={['month', 'week', 'work_week', 'day', 'agenda']}
-                view={calendarView}
-                onView={setCalendarView}
-                date={calendarDate}
-                onNavigate={setCalendarDate}
-              />
-            </Paper>
-          </Box>
-        </Box>
-      )}
-      {/* Floating Notification Icon */}
-      <IconButton
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        sx={{
-          position: 'fixed',
-          top: '50%',
-          right: 20,
-          transform: 'translateY(-50%)',
-          width: 60,
-          height: 60,
-          backgroundColor: '#635bff',
-          color: 'white',
-          boxShadow: '0 4px 20px rgba(99, 91, 255, 0.3)',
-          zIndex: 1200,
-          '&:hover': {
-            backgroundColor: '#7a5af8',
-            boxShadow: '0 6px 25px rgba(99, 91, 255, 0.4)',
-            transform: 'translateY(-50%) scale(1.1)'
-          },
-          transition: 'all 0.3s ease'
-        }}
-      >
-        <Badge 
-          badgeContent={invitations.length + timeProposals.length} 
-          color="error"
-          sx={{
-            '& .MuiBadge-badge': {
-              fontSize: '10px',
-              minWidth: '18px',
-              height: '18px',
-              top: -8,
-              right: -8
-            }
-          }}
-        >
-          <NotificationsIcon sx={{ fontSize: 28 }} />
-        </Badge>
-      </IconButton>
-
-      {/* Sidebar Modal */}
-      {sidebarOpen && (
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 1300,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          onClick={() => setSidebarOpen(false)}
-        >
-          <Box
-            sx={{
-              width: 400,
-              maxHeight: '80vh',
-              backgroundColor: '#fff',
-              borderRadius: 3,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <Box sx={{ p: 3, borderBottom: '1px solid #e0e3e7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6" sx={{ fontWeight: 600, color: '#1976d2' }}>
-                Notifikationer
-              </Typography>
-              <IconButton onClick={() => setSidebarOpen(false)} size="small">
-                <ChevronLeftIcon />
-              </IconButton>
-            </Box>
-
-            {/* Tabs */}
-            <Box sx={{ display: 'flex', borderBottom: '1px solid #e0e3e7' }}>
-              <Button
-                onClick={() => setSidebarTab('invitations')}
-                sx={{
-                  flex: 1,
-                  py: 2,
-                  borderRadius: 0,
-                  borderBottom: sidebarTab === 'invitations' ? '2px solid #1976d2' : 'none',
-                  color: sidebarTab === 'invitations' ? '#1976d2' : '#666',
-                  fontWeight: sidebarTab === 'invitations' ? 600 : 400,
-                  fontSize: 12
-                }}
-                startIcon={<GroupIcon />}
-              >
-                Inbjudningar
-              </Button>
-              <Button
-                onClick={() => setSidebarTab('proposals')}
-                sx={{
-                  flex: 1,
-                  py: 2,
-                  borderRadius: 0,
-                  borderBottom: sidebarTab === 'proposals' ? '2px solid #1976d2' : 'none',
-                  color: sidebarTab === 'proposals' ? '#1976d2' : '#666',
-                  fontWeight: sidebarTab === 'proposals' ? 600 : 400,
-                  fontSize: 12
-                }}
-                startIcon={<EventIcon />}
-              >
-                Tidsförslag
-              </Button>
-            </Box>
-
-            {/* Content */}
-            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-              {sidebarTab === 'invitations' ? (
-                <Box>
-                  <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
-                    Inbjudningar till kalenderjämförelse
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, color: theme.colors.text }}>
+                    Inbjudningar
                   </Typography>
-                  {invitations.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: '#999', textAlign: 'center', mt: 4 }}>
-                      Inga inbjudningar just nu
-                    </Typography>
-                  ) : (
-                    invitations.map((invitation) => (
+                  <IconButton
+                    onClick={() => setSidebarOpen(false)}
+                    sx={{
+                      color: theme.colors.text,
+                      '&:hover': {
+                        bgcolor: theme.colors.primary,
+                        color: '#fff',
+                      },
+                    }}
+                  >
+                    <ChevronLeftIcon />
+                  </IconButton>
+                </Box>
+                
+                {/* Flikmeny */}
+                <Box sx={{ display: 'flex', borderBottom: `1px solid ${theme.colors.border}`, mb: 1 }}>
+                  <Button
+                    onClick={() => setSidebarTab('invitations')}
+                    sx={{
+                      flex: 1,
+                      borderRadius: 999,
+                      py: 1.2,
+                      fontWeight: 600,
+                      fontSize: 14,
+                      color: sidebarTab === 'invitations' ? '#1976d2' : theme.colors.text,
+                      bgcolor: sidebarTab === 'invitations' ? 'transparent' : 'none',
+                      border: sidebarTab === 'invitations' ? `1px solid ${theme.colors.primary}` : 'none',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        bgcolor: sidebarTab === 'invitations' ? 'transparent' : theme.colors.primary,
+                        color: '#fff',
+                      },
+                    }}
+                  >
+                    Inbjudningar
+                  </Button>
+                  <Button
+                    onClick={() => setSidebarTab('contacts')}
+                    sx={{
+                      flex: 1,
+                      borderRadius: 999,
+                      py: 1.2,
+                      fontWeight: 600,
+                      fontSize: 14,
+                      color: sidebarTab === 'contacts' ? '#1976d2' : theme.colors.text,
+                      bgcolor: sidebarTab === 'contacts' ? 'transparent' : 'none',
+                      border: sidebarTab === 'contacts' ? `1px solid ${theme.colors.primary}` : 'none',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        bgcolor: sidebarTab === 'contacts' ? 'transparent' : theme.colors.primary,
+                        color: '#fff',
+                      },
+                    }}
+                  >
+                    Kontakter
+                  </Button>
+                </Box>
+
+                {/* Innehåll för flikarna */}
+                {sidebarTab === 'invitations' && (
+                  <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {invitations.length === 0 && (
+                      <Typography variant="body2" color="text.secondary">
+                        Inga nya inbjudningar.
+                      </Typography>
+                    )}
+                    {invitations.map((invitation) => (
                       <Paper
                         key={invitation.id}
                         sx={{
                           p: 2,
-                          mb: 2,
                           borderRadius: 2,
-                          border: '1px solid #e0e3e7',
-                          '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }
+                          border: `1px solid ${theme.colors.border}`,
+                          bgcolor: theme.colors.surface,
+                          boxShadow: theme.isDark ? '0 4px 15px rgba(0,0,0,0.2)' : 'none',
+                          transition: 'transform 0.2s, box-shadow 0.2s',
+                          '&:hover': {
+                            transform: 'translateY(-2px)',
+                            boxShadow: theme.isDark ? '0 6px 20px rgba(0,0,0,0.3)' : '0 4px 15px rgba(60,64,67,.15)',
+                          },
                         }}
                       >
-                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
-                          {invitation.fromEmail}
+                        <Typography sx={{ fontWeight: 600, color: theme.colors.text }}>
+                          Du har fått en ny inbjudan
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', fontWeight: 600 }}>
-                          {invitation.groupName}
+                        <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
+                          Från: {invitation.from}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
-                          Vill jämföra kalendrar med dig
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#999', fontSize: 11 }}>
-                          {new Date(invitation.createdAt).toLocaleDateString()}
-                        </Typography>
-                        <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                          <Button 
-                            size="small" 
-                            variant="contained" 
-                            sx={{ fontSize: 12 }}
-                            onClick={() => window.location.href = `/?group=${invitation.groupId}&invitee=${invitation.inviteeId}`}
-                          >
-                            Gå med
-                          </Button>
-                          <Button 
-                            size="small" 
-                            variant="outlined" 
-                            sx={{ fontSize: 12 }}
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(`${API_BASE_URL}/api/invitation/${invitation.id}/respond`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ response: 'decline' })
-                                });
-                                if (res.ok) {
-                                  fetchInvitations();
-                                  setToast({ open: true, message: 'Inbjudan nekad', severity: 'info' });
-                                }
-                              } catch (error) {
-                                setToast({ open: true, message: 'Kunde inte neka inbjudan', severity: 'error' });
-                              }
-                            }}
-                          >
-                            Neka
-                          </Button>
-                        </Box>
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="small"
+                          onClick={() => handleInvitationResponse(invitation.id, 'accept')}
+                          sx={{
+                            borderRadius: 999,
+                            px: 3,
+                            py: 1,
+                            fontWeight: 600,
+                            fontSize: 12,
+                            minWidth: 0,
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              bgcolor: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                              boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)',
+                              transform: 'scale(1.03)',
+                            },
+                            '&:active': {
+                              bgcolor: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+                              boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)',
+                              transform: 'scale(0.98)',
+                            },
+                          }}
+                        >
+                          Acceptera
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          size="small"
+                          onClick={() => handleInvitationResponse(invitation.id, 'reject')}
+                          sx={{
+                            borderRadius: 999,
+                            px: 3,
+                            py: 1,
+                            fontWeight: 600,
+                            fontSize: 12,
+                            minWidth: 0,
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              bgcolor: 'rgba(211, 47, 47, 0.1)',
+                              color: '#d32f2f',
+                            },
+                            '&:active': {
+                              bgcolor: 'rgba(211, 47, 47, 0.2)',
+                            },
+                          }}
+                        >
+                          Avböj
+                        </Button>
                       </Paper>
-                    ))
-                  )}
-                </Box>
-              ) : (
-                <Box>
-                  <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
-                    Tidsförslag du har fått
-                  </Typography>
-                  {timeProposals.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: '#999', textAlign: 'center', mt: 4 }}>
-                      Inga tidsförslag just nu
-                    </Typography>
-                  ) : (
-                    timeProposals.map((proposal) => (
-                      <Paper
-                        key={proposal.id}
-                        sx={{
-                          p: 2,
-                          mb: 2,
-                          borderRadius: 2,
-                          border: '1px solid #e0e3e7',
-                          '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }
-                        }}
-                      >
-                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
-                          {proposal.title || 'Mötesförslag'}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#666', display: 'block' }}>
-                          Från: {proposal.fromEmail}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block' }}>
-                          {new Date(proposal.start).toLocaleDateString()} {new Date(proposal.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </Typography>
-                        <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                          <Button 
-                            size="small" 
-                            variant="contained" 
-                            sx={{ fontSize: 12 }}
-                            onClick={async () => {
-                              await voteSuggestion(proposal.id, 'accepted', proposal.groupId);
-                              fetchTimeProposals();
-                            }}
-                          >
-                            Acceptera
-                          </Button>
-                          <Button 
-                            size="small" 
-                            variant="outlined" 
-                            sx={{ fontSize: 12 }}
-                            onClick={async () => {
-                              await voteSuggestion(proposal.id, 'declined', proposal.groupId);
-                              fetchTimeProposals();
-                            }}
-                          >
-                            Neka
-                          </Button>
-                        </Box>
-                      </Paper>
-                    ))
-                  )}
-                </Box>
-              )}
-            </Box>
-          </Box>
-        </Box>
-      )}
+                    ))}
+                  </Box>
+                )}
+                {sidebarTab === 'contacts' && (
+                  <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <ContactBook 
+                      contacts={contacts} 
+                      onAddContact={addContact} 
+                      onRemoveContact={removeContact} 
+                      onUpdateContact={updateContact} 
+                      myEmail={user.email || user.emails?.[0]?.value || user.emails?.[0]}
+                      groupId={groupId}
+                      directAccess={directAccess}
+                      isMobile={isMobile}
+                    />
+                  </Box>
+                )}
+              </Box>
+            </Paper>
+          </Grow>
+        )}
+      </Box>  {/* ← DETTA ska stänga kalendersektionens Box */}
+    </div>  {/* ← DETTA stänger yttersta div från rad ~1570 */}
 
-      {/* Footer */}
-      <Box sx={{
-        mt: 8,
-        py: 4,
-        borderTop: `1px solid ${theme.colors.border}`,
-        textAlign: 'center',
-        bgcolor: theme.colors.surface
-      }}>
-        <Typography variant="body2" sx={{ color: theme.colors.textSecondary, mb: 2 }}>
-          © 2025 BookR - Kalenderjämförelse
-        </Typography>
-        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
-          <Button
-            component="a"
-            href="/privacy-policy"
-            target="_blank"
-            size="small"
-            sx={{ color: theme.colors.textSecondary, textDecoration: 'underline' }}
-          >
-            Integritetspolicy
-          </Button>
-          <Button
-            component="a"
-            href="/terms-of-service"
-            target="_blank"
-            size="small"
-            sx={{ color: theme.colors.textSecondary, textDecoration: 'underline' }}
-          >
-            Användarvillkor
-          </Button>
-        </Box>
-      </Box>
-
-      {/* Extra marginal i botten */}
-      <Box sx={{ height: 40 }} />
-      
-      {/* Toast-meddelanden */}
-      <Snackbar
-        open={toast.open}
-        autoHideDuration={4000}
-        onClose={() => setToast({ ...toast, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+    {/* Toast-meddelanden */}
+    <Snackbar
+      open={toast.open}
+      autoHideDuration={6000}
+      onClose={() => setToast({ ...toast, open: false })}
+      anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+    >
+      <Alert 
+        onClose={() => setToast({ ...toast, open: false })} 
+        severity={toast.severity} 
+        sx={{ 
+          width: '100%', 
+          maxWidth: 600, 
+          borderRadius: 2,
+          ...(toast.severity === 'success' && {
+            bgcolor: '#e8f5e9',
+            color: '#2e7d32',
+            border: '1px solid #4caf50',
+          }),
+          ...(toast.severity === 'error' && {
+            bgcolor: '#ffebee',
+            color: '#c62828',
+            border: '1px solid #f44336',
+          }),
+          ...(toast.severity === 'warning' && {
+            bgcolor: '#fff3e0',
+            color: '#e65100',
+            border: '1px solid #ff9800',
+          }),
+          ...(toast.severity === 'info' && {
+            bgcolor: '#e3f2fd',
+            color: '#0d47a1',
+            border: '1px solid #1976d2',
+          }),
+        }}
       >
-        <Alert
-          onClose={() => setToast({ ...toast, open: false })}
-          severity={toast.severity}
-          sx={{ width: '100%', borderRadius: 2 }}
-        >
-          {toast.message}
-        </Alert>
-      </Snackbar>
+        {toast.message}
+      </Alert>
+    </Snackbar>
 
-      {/* Tutorial overlay */}
-      {showTutorial && tutorialStep >= 0 && (
-        <>
-          <Box
-            sx={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              zIndex: 9999,
-              pointerEvents: 'none'
+    {/* Tutorial overlay */}
+    {showTutorial && (
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          bgcolor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1400,
+          p: 2,
+        }}
+      >
+        <Paper
+          sx={{
+            bgcolor: theme.colors.surface,
+            borderRadius: 2,
+            p: 3,
+            maxWidth: 400,
+            width: '100%',
+            boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
+          }}
+        >
+          <Typography variant="h6" sx={{ fontWeight: 600, color: theme.colors.text, mb: 2 }}>
+            {tutorialSteps[tutorialStep].title}
+          </Typography>
+          <Typography variant="body2" sx={{ color: theme.colors.text, mb: 2 }}>
+            {tutorialSteps[tutorialStep].content}
+          </Typography>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={nextTutorialStep}
+            sx={{ 
+              borderRadius: 999,
+              px: 3,
+              py: 1.5,
+              fontWeight: 600,
+              fontSize: 14,
+              width: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                bgcolor: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
+                boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)',
+                transform: 'scale(1.03)',
+              },
+              '&:active': {
+                bgcolor: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
+                boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)',
+                transform: 'scale(0.98)',
+              },
             }}
-          />
-          {(() => {
-            const currentStep = tutorialSteps[tutorialStep];
-            const targetElement = document.querySelector(currentStep.target);
-            if (!targetElement) return null;
-            
-            const rect = targetElement.getBoundingClientRect();
-            const isBottom = rect.top > window.innerHeight / 2;
-            const popupLeft = Math.max(20, Math.min(rect.left, window.innerWidth - 320));
-            
-            return (
-              <Paper
-                sx={{
-                  position: 'absolute',
-                  top: isBottom ? rect.top + window.scrollY - 200 : rect.bottom + window.scrollY + 20,
-                  left: popupLeft,
-                  width: 300,
-                  p: 3,
-                  zIndex: 10000,
-                  borderRadius: 3,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    [isBottom ? 'bottom' : 'top']: -10,
-                    left: Math.max(10, rect.left + rect.width/2 - popupLeft),
-                    width: 0,
-                    height: 0,
-                    borderLeft: '10px solid transparent',
-                    borderRight: '10px solid transparent',
-                    [isBottom ? 'borderTop' : 'borderBottom']: '10px solid white'
-                  }
-                }}
-              >
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: '#1976d2' }}>
-                  {currentStep.title}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 3, color: '#666', lineHeight: 1.5 }}>
-                  {currentStep.content}
-                </Typography>
-               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="caption" sx={{ color: '#999' }}>
-                    {tutorialStep + 1} av {tutorialSteps.length}
-                  </Typography>
-                </Box>
-              </Paper>
-            );
-          })()}
-        </>
-      )}
-    </div>
+          >
+            {tutorialStep === tutorialSteps.length - 1 ? 'Avsluta' : 'Nästa steg'}
+          </Button>
+          <Button
+            onClick={closeTutorial}
+            sx={{ 
+              color: theme.colors.textSecondary,
+              mt: 1,
+              textTransform: 'none',
+              '&:hover': {
+                bgcolor: 'transparent',
+                color: theme.colors.primary,
+              },
+            }}
+          >
+            Hoppa över tutorial
+          </Button>
+        </Paper>
+      </Box>
+    )}
     </>
   );
 }

@@ -72,6 +72,29 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   // Validera token innan någon kalenderjämförelse
   useEffect(() => {
     const validateToken = async () => {
+      // NYTT: Kolla om vi har auth-parameter i URL (från Microsoft callback)
+      const urlParams = new URLSearchParams(window.location.search);
+      const authParam = urlParams.get('auth');
+      
+      if (authParam && !user?.accessToken) {
+        try {
+          // Dekoda auth-token från URL
+          const decoded = JSON.parse(atob(authParam));
+          if (decoded.user && decoded.user.accessToken) {
+            console.log('Found auth token in URL, using it');
+            // Spara i localStorage som backup
+            localStorage.setItem('bookr_user', JSON.stringify(decoded.user));
+            // Rensa URL
+            window.history.replaceState({}, '', window.location.pathname);
+            // Ladda om för att använda den sparade användaren
+            window.location.reload();
+            return;
+          }
+        } catch (e) {
+          console.error('Failed to decode auth token:', e);
+        }
+      }
+
       if (!user || !user.accessToken) {
         setIsValidatingToken(false);
         setTokenExpired(false);
@@ -79,7 +102,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       }
 
       try {
-        // Välj rätt endpoint per provider
         const endpoint =
           derivedProvider === 'microsoft'
             ? 'https://graph.microsoft.com/v1.0/me'
@@ -90,7 +112,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         });
 
         if (response.status === 401) {
-          console.log(`Token has expired in Dashboard for provider=${derivedProvider}, clearing and redirecting...`);
+          console.log(`Token has expired (401) for provider=${derivedProvider}`);
           setTokenExpired(true);
           setIsValidatingToken(false);
 
@@ -103,15 +125,19 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
             window.location.href = 'https://www.onebookr.se/auth/logout';
           }, 2000);
           return;
+        } else if (response.status === 403 && derivedProvider === 'microsoft') {
+          console.log('Microsoft 403 - requesting calendar permissions');
+          const currentUrl = window.location.href;
+          localStorage.setItem('bookr_return_url', currentUrl);
+          window.location.href = 'https://www.onebookr.se/auth/microsoft?prompt=consent';
+          return;
         } else {
-          // Vid 2xx/3xx/403 etc: betrakta token som giltig (endast 401 ska logga ut)
-          console.log(`Token is valid in Dashboard for provider=${derivedProvider} (status ${response.status})`);
+          console.log(`Token is valid for provider=${derivedProvider}`);
           setTokenExpired(false);
           setIsValidatingToken(false);
         }
       } catch (error) {
-        console.error('Error validating token in Dashboard:', error);
-        // Vid nätverksfel, fortsätt ändå men logga felet
+        console.error('Error validating token:', error);
         setTokenExpired(false);
         setIsValidatingToken(false);
       }
