@@ -42,7 +42,7 @@ export default function CompareCalendar({
   myToken,
   invitedTokens = [],
   user,
-  groupId: propGroupId,
+  groupId: propGroupId, // Använd prop istället
   directAccess,
   contactEmail,
   contactName,
@@ -130,7 +130,6 @@ export default function CompareCalendar({
   const [undoAction, setUndoAction] = useState(null);
   const [successAnimation, setSuccessAnimation] = useState(null);
   const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
-  const [tokenError, setTokenError] = useState(false);
   
   // Ta bort denna rad - groupId kommer från props
   // const urlParams = new URLSearchParams(window.location.search);
@@ -173,6 +172,7 @@ export default function CompareCalendar({
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
     try {
+      // FIX: använd let (vi utökar listan nedan)
       let tokens = [myToken, ...(Array.isArray(invitedTokens) ? invitedTokens : [])].filter(Boolean);
       if (!Array.isArray(tokens) || tokens.length === 0) {
         console.warn('[CompareCalendar] Hoppar över fetchAvailability: tom token-lista');
@@ -264,17 +264,7 @@ export default function CompareCalendar({
         if (res.ok) {
           setAvailability(Array.isArray(data) ? data : []);
           setError(null);
-          setTokenError(false); // NYTT: Rensa token-fel vid lyckad request
           setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} lediga tider`, severity: 'success' });
-        } else if (res.status === 401) {
-          // NYTT: Hantera token-fel utan att tvinga logout
-          if (data.tokenExpired === true) {
-            setTokenError(true);
-            setError('Din inloggning har gått ut. Vänligen logga in igen.');
-          } else {
-            setError(data.error || 'Problem med autentisering. Försök igen.');
-          }
-          setAvailability([]);
         } else {
           setAvailability([]);
           setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
@@ -1002,43 +992,53 @@ export default function CompareCalendar({
 
   return (
     <>
-      {/* NYTT: Visa varning vid token-fel */}
-      {tokenError && (
-        <Alert 
-          severity="warning" 
-          sx={{ mb: 2, borderRadius: 2 }}
-          action={
-            <Button 
-              color="inherit" 
-              size="small" 
-              onClick={() => {
-                const provider = user?.provider === 'microsoft' ? 'microsoft' : 'google';
-                window.location.href = `${API_BASE_URL}/auth/${provider}`;
-              }}
-            >
-              Logga in igen
-            </Button>
-          }
+    <div style={{ 
+      marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
+      transition: 'margin-right 0.3s ease',
+      minHeight: '100vh',
+      padding: isMobile ? '8px' : '0'
+    }}>
+
+
+      <Slide direction="up" in={true} timeout={800}>
+        <Box
+          sx={{
+            bgcolor: theme.colors.surface,
+            borderRadius: { xs: 2, sm: 3 },
+            boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
+            border: `1px solid ${theme.colors.border}`,
+            p: { xs: 2, sm: 3 },
+            mb: { xs: 8, sm: 15 },
+            maxWidth: { xs: '100%', sm: 800 },
+            mx: 0,
+            transition: 'all 0.3s ease'
+          }}
         >
-          Din session har gått ut. Klicka för att logga in igen.
-        </Alert>
-      )}
-      
-      <div style={{ 
-        marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
-        transition: 'margin-right 0.3s ease',
-        minHeight: '100vh',
-        padding: isMobile ? '8px' : '0'
-      }}>
-
-
-        <Slide direction="up" in={true} timeout={800}>
-          <Box
-            sx={{
-              bgcolor: theme.colors.surface,
-              borderRadius: { xs: 2, sm: 3 },
-              boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
-              border: `1px solid ${theme.colors.border}`,
+        <Box
+          component="form"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            mb: 0,
+            maxWidth: 600,
+          }}
+        >
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }} data-tutorial="date-inputs">
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
+              <TextField
+                label="Från"
+                type="date"
+                InputLabelProps={{ shrink: true }}
+                value={timeMin ? timeMin.slice(0, 10) : ''}
+                onChange={e => {
+                  const date = e.target.value;
+                  const time = timeMin ? timeMin.slice(11, 16) : '00:00';
+                  setTimeMin(date ? `${date}T${time}` : '');
+                }}
+                fullWidth
+                sx={{
+                  '& .MuiOutlinedInput-root': {
                     borderRadius: 999,
                     background: theme.colors.bg,
                     color: theme.colors.text,
@@ -1054,7 +1054,7 @@ export default function CompareCalendar({
                   }
                 }}
                 variant="outlined"
-              />
+                />
               <TextField
                 label="Tid"
                 type="time"
@@ -1077,7 +1077,7 @@ export default function CompareCalendar({
                     }
                   },
                   '& .MuiInputBase-root': {
-                    borderRadius: 999,
+                    borderRadius: 999
                   },
                   '& .MuiInputLabel-root': {
                     color: theme.colors.textSecondary
@@ -1139,7 +1139,7 @@ export default function CompareCalendar({
                     }
                   },
                   '& .MuiInputBase-root': {
-                    borderRadius: 999,
+                    borderRadius: 999
                   },
                   '& .MuiInputLabel-root': {
                     color: theme.colors.textSecondary
