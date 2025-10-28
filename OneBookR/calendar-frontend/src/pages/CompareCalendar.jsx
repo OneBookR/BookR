@@ -2023,7 +2023,6 @@ export default function CompareCalendar({
             popup
             onSelectSlot={handleCalendarSelectSlot}
             onSelectEvent={handleCalendarSelectEvent}
-            style={{ borderRadius: '10px', overflow: 'hidden' }}
           />
 
           {/* Fullscreen knapp */}
