@@ -311,23 +311,33 @@ app.get('/auth/google/callback',
   }
 );
 
-app.get('/api/user', (req, res) => {
+app.get('/api/user', async (req, res) => {
   console.log('API /user called:', {
-    isAuthenticated: req.isAuthenticated(),
+    isAuthenticated: req.isAuthenticated?.(),
     sessionID: req.sessionID,
     user: req.user ? 'User exists' : 'No user',
-    sessionUser: req.session.user ? 'Session user exists' : 'No session user',
+    sessionUser: req.session?.user ? 'Session user exists' : 'No session user',
     cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
   });
-  
-  // Kolla både passport auth och session
-  const user = req.user || req.session.user;
-  
-  if (user) {
-    res.json({ user: user, token: user.accessToken });
-  } else {
-    res.status(401).json({ error: 'Not authenticated' });
+
+  // 1) Session/Passport user
+  const sessionUser = req.user || req.session?.user;
+  if (sessionUser) {
+    return res.json({ user: sessionUser, token: sessionUser.accessToken });
   }
+
+  // 2) Authorization: Bearer <token> fallback
+  const headerUser = await resolveUserFromAuthHeader(req);
+  if (headerUser) {
+    try {
+      // Persist for subsequent requests
+      req.session.user = headerUser;
+    } catch (_) {}
+    return res.json({ user: headerUser, token: headerUser.accessToken });
+  }
+
+  // 3) No auth found
+  return res.status(401).json({ error: 'Not authenticated' });
 });
 
 app.get('/auth/logout', (req, res) => {
@@ -1803,110 +1813,55 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
   }
 });
 
-// Nya helper endpoints för calendar API
-app.post('/api/calendar/events', async (req, res) => {
+// Helper: resolve user profile from Authorization header (Bearer <token>)
+async function resolveUserFromAuthHeader(req) {
   try {
-    const { token, timeMin, timeMax, maxResults } = req.body;
-    if (!token) return res.status(400).json({ error: 'Token krävs' });
-
-    const provider = detectProvider(token);
-    console.log(`Fetching calendar events for provider: ${provider}`);
-
-    let result;
-    if (provider === 'microsoft') {
-      result = await fetchMicrosoftEvents(token, timeMin, timeMax);
-      if (result.ok) {
-        const items = result.events.slice(0, maxResults || 50);
-        return res.json({ items });
-      }
-    } else {
-      result = await fetchGoogleEvents(token, timeMin, timeMax);
-      if (result.ok) {
-        const items = result.events.slice(0, maxResults || 50);
-        return res.json({ items });
-      }
-    }
-
-    res.json({ items: [] });
-  } catch (error) {
-    console.error('Error in calendar/events:', error);
-    res.status(500).json({ error: 'Kunde inte hämta kalenderehändelser' });
-  }
-});
-
-app.post('/api/calendar/freeBusy', async (req, res) => {
-  try {
-    const { token, timeMin, timeMax, items } = req.body;
-    if (!token) return res.status(400).json({ error: 'Token krävs' });
-
-    const provider = detectProvider(token);
-    console.log(`Fetching freeBusy for provider: ${provider}`);
-
-    if (provider === 'microsoft') {
-      const result = await fetchMicrosoftEvents(token, timeMin, timeMax);
-      if (result.ok) {
-        return res.json({
-          calendars: {
-            primary: { busy: normalizeMicrosoftEventsToBusy(result.events) }
-          }
-        });
-      }
-    } else {
-      const result = await fetchGoogleEvents(token, timeMin, timeMax);
-      if (result.ok) {
-        return res.json({
-          calendars: {
-            primary: { busy: normalizeGoogleEventsToBusy(result.events) }
-          }
-        });
-      }
-    }
-
-    res.json({ calendars: {} });
-  } catch (error) {
-    console.error('Error in calendar/freeBusy:', error);
-    res.status(500).json({ error: 'Kunde inte hämta fri/upptagen-status' });
-  }
-});
-
-app.post('/api/calendar/timezone', async (req, res) => {
-  try {
-    const { token } = req.body;
-    if (!token) return res.status(400).json({ error: 'Token krävs' });
-
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Bearer ')) return null;
+    const token = auth.slice(7).trim();
     const provider = detectProvider(token);
 
     if (provider === 'microsoft') {
-      try {
-        const tzRes = await fetch('https://graph.microsoft.com/v1.0/me/mailboxSettings', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (tzRes.ok) {
-          const data = await tzRes.json();
-          return res.json({ timezone: data?.timeZone || 'UTC' });
-        }
-      } catch (e) {
-        console.log('Could not fetch MS timezone');
-      }
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const email = data.mail || data.userPrincipalName;
+      if (!email) return null;
+      return {
+        email,
+        displayName: data.displayName || email,
+        provider: 'microsoft',
+        accessToken: token
+      };
     } else {
-      try {
-        const tzRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (tzRes.ok) {
-          const data = await tzRes.json();
-          return res.json({ timezone: data?.value || 'UTC' });
-        }
-      } catch (e) {
-        console.log('Could not fetch Google timezone');
-      }
+      // Google
+      const resp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const email = data.email;
+      if (!email) return null;
+      return {
+        email,
+        displayName: data.name || email,
+        provider: 'google',
+        accessToken: token
+      };
     }
-
-    res.json({ timezone: 'UTC' });
-  } catch (error) {
-    console.error('Error in calendar/timezone:', error);
-    res.json({ timezone: 'UTC' });
+  } catch (_) {
+    return null;
   }
+}
+
+// Expose detectProvider for testing
+app.get('/api/test/provider', (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(400).json({ error: 'Token required' });
+  const provider = detectProvider(token);
+  res.json({ provider });
 });
 
 app.listen(PORT, () => {
