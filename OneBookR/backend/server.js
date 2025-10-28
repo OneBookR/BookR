@@ -47,32 +47,19 @@ app.get('/terms-of-service', (req, res) => {
 });
 
 // Middleware
-// Replace fixed origin with dynamic allow-list to support both apex and www
 app.use(cors({
-  origin: (origin, callback) => {
-    const allowed = [
-      'https://www.onebookr.se',
-      'https://onebookr.se',
-      'http://localhost:5173',
-      'http://localhost:3000'
-    ];
-    // Allow same-origin or tools like curl (no origin)
-    if (!origin || allowed.includes(origin)) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'));
-  },
+  origin: 'https://www.onebookr.se',
   credentials: true
 }));
-
-// Ensure cookie works across subdomains and survives redirects
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: true,
   cookie: {
-    sameSite: 'lax', // works with top-level redirects from OAuth; if you need cross-site iframes, switch back to 'none'
+    sameSite: 'none',
     secure: true,
-    httpOnly: true,
-    domain: '.onebookr.se' // make cookie valid for both www.onebookr.se and onebookr.se
+    httpOnly: true
+    // Ta bort maxAge för att göra cookien till en session-cookie (försvinner när webbläsaren stängs)
   }
 }));
 app.use(passport.initialize());
@@ -229,25 +216,10 @@ app.get('/auth/microsoft/callback',
       user: req.user,
       timestamp: Date.now()
     })).toString('base64');
-
-    // NEW: persist user into the session explicitly and set a readable cookie for client if needed
-    try {
-      req.session.user = req.user;
-      // Non-HTTPOnly cookie only if your frontend needs to read it; keep minimal lifetime
-      res.cookie('bookr_auth', authToken, {
-        httpOnly: false,
-        sameSite: 'lax',
-        secure: true,
-        domain: '.onebookr.se',
-        maxAge: 30 * 60 * 1000
-      });
-    } catch (e) {
-      console.warn('Failed to set session user/cookie for Microsoft:', e);
-    }
-
+    
     const state = req.session.oauthState;
     delete req.session.oauthState;
-
+    
     let redirectUrl = `/?auth=${authToken}`;
     
     if (state) {
@@ -264,8 +236,7 @@ app.get('/auth/microsoft/callback',
     }
 
     const frontendUrl = 'https://www.onebookr.se';
-    // Ensure session is saved before redirect
-    return req.session.save(() => res.redirect(`${frontendUrl}${redirectUrl}`));
+    res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
 
@@ -316,20 +287,6 @@ app.get('/auth/google/callback',
       timestamp: Date.now()
     })).toString('base64');
     
-    // NEW: persist user into the session explicitly and set a readable cookie for client if needed
-    try {
-      req.session.user = req.user;
-      res.cookie('bookr_auth', authToken, {
-        httpOnly: false,
-        sameSite: 'lax',
-        secure: true,
-        domain: '.onebookr.se',
-        maxAge: 30 * 60 * 1000
-      });
-    } catch (e) {
-      console.warn('Failed to set session user/cookie for Google:', e);
-    }
-
     // Hämta state från session
     const state = req.session.oauthState;
     delete req.session.oauthState;
@@ -350,8 +307,7 @@ app.get('/auth/google/callback',
     }
 
     const frontendUrl = 'https://www.onebookr.se';
-    // Ensure session is saved before redirect
-    return req.session.save(() => res.redirect(`${frontendUrl}${redirectUrl}`));
+    res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
 
@@ -374,31 +330,11 @@ app.get('/api/user', (req, res) => {
   }
 });
 
-app.post('/auth/session', async (req, res) => {
-  try {
-    const { auth } = req.body || {};
-    if (!auth) return res.status(400).json({ error: 'Missing auth token' });
-    const decoded = JSON.parse(Buffer.from(auth, 'base64').toString('utf8'));
-    if (!decoded?.user) return res.status(400).json({ error: 'Invalid token' });
-    req.session.user = decoded.user;
-    return req.session.save(() => res.json({ ok: true }));
-  } catch (e) {
-    console.error('Failed to set session from auth token:', e);
-    return res.status(400).json({ error: 'Invalid token' });
-  }
-});
-
 app.get('/auth/logout', (req, res) => {
   req.logout((err) => {
     if (err) {
       return res.status(500).json({ error: 'Logout failed' });
     }
-    // Clear our helper cookie too
-    res.clearCookie('bookr_auth', {
-      domain: '.onebookr.se',
-      secure: true,
-      sameSite: 'lax'
-    });
     req.session.destroy(() => {
       res.redirect('https://www.onebookr.se/');
     });
@@ -1512,6 +1448,70 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         });
       }
     }
+  } catch (error) {
+    console.error('Error voting on suggestion:', error);
+    res.status(500).json({ error: 'Kunde inte rösta på förslag' });
+  }
+});
+
+// Hjälpfunktion: Skapa Microsoft Calendar event med Teams
+async function createMicrosoftCalendarEvent(token, eventData) {
+  try {
+    console.log('Creating Microsoft Calendar event with Teams...');
+    
+    const microsoftEvent = {
+      subject: eventData.summary || 'Möte',
+      body: {
+        contentType: 'HTML',
+        content: eventData.description || 'Bokat via BookR'
+      },
+      start: {
+        dateTime: eventData.start.dateTime,
+        timeZone: eventData.start.timeZone || 'Europe/Stockholm'
+      },
+      end: {
+        dateTime: eventData.end.dateTime,
+        timeZone: eventData.end.timeZone || 'Europe/Stockholm'
+      },
+      location: eventData.location ? {
+        displayName: eventData.location
+      } : undefined,
+      attendees: eventData.attendees?.map(email => ({
+        emailAddress: { address: email },
+        type: 'required'
+      })) || []
+    };
+
+    // Lägg till Teams meeting om conferenceData finns
+    if (eventData.conferenceData) {
+      microsoftEvent.isOnlineMeeting = true;
+      microsoftEvent.onlineMeetingProvider = 'teamsForBusiness';
+    }
+
+    const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(microsoftEvent)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Microsoft Graph API error:', errorData);
+      return null;
+    }
+
+    const createdEvent = await response.json();
+    console.log('✅ Microsoft Calendar event created:', createdEvent.id);
+
+    return {
+      success: true,
+      eventId: createdEvent.id,
+      meetLink: createdEvent.onlineMeeting?.joinUrl || null,
+      provider: 'microsoft'
+    };
   } catch (error) {
     console.error('Error creating Microsoft Calendar event:', error);
     return null;
