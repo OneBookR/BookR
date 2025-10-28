@@ -324,9 +324,45 @@ app.get('/api/user', (req, res) => {
   const user = req.user || req.session.user;
   
   if (user) {
-    res.json({ user: user, token: user.accessToken });
+    // NYTT: Validera token innan vi returnerar användaren
+    const token = user.accessToken;
+    const provider = user.provider || detectProvider(token);
+    
+    // Om token finns, validera den (men returnera användaren även om valideringen misslyckas tillfälligt)
+    if (token && provider) {
+      // Validera asynkront i bakgrunden - logga bara resultatet
+      (async () => {
+        try {
+          if (provider === 'microsoft') {
+            const testRes = await fetch('https://graph.microsoft.com/v1.0/me', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (testRes.status === 401) {
+              console.warn('Microsoft token expired for user:', user.email || user.mail || user.userPrincipalName);
+            } else if (testRes.ok) {
+              console.log('Microsoft token valid for user:', user.email || user.mail || user.userPrincipalName);
+            }
+          } else if (provider === 'google') {
+            const testRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (testRes.status === 401) {
+              console.warn('Google token expired for user:', user.email);
+            } else if (testRes.ok) {
+              console.log('Google token valid for user:', user.email);
+            }
+          }
+        } catch (err) {
+          console.log('Token validation error (non-critical):', err.message);
+        }
+      })();
+    }
+    
+    // Returnera användaren omedelbart utan att vänta på validering
+    res.json({ user: user, token: user.accessToken, provider: provider });
   } else {
-    res.status(401).json({ error: 'Not authenticated' });
+    // NYTT: Returnera 401 utan att tvinga redirect - frontend hanterar detta
+    res.status(401).json({ error: 'Not authenticated', shouldReauth: false });
   }
 });
 
@@ -341,21 +377,33 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
+// Förbättrad fetchMicrosoftCalendarEvents med bättre error handling
 const fetchMicrosoftCalendarEvents = async (token, min, max) => {
   try {
-    // Test token validity first
+    // Test token validity first med timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    
     const testResponse = await fetch(
       'https://graph.microsoft.com/v1.0/me',
       {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal: controller.signal
       }
     );
     
+    clearTimeout(timeoutId);
+    
     if (testResponse.status === 401) {
       console.error('Microsoft OAuth token expired or invalid');
-      return { events: [], timezone: 'Europe/Stockholm' };
+      return { events: [], timezone: 'Europe/Stockholm', tokenExpired: true };
+    }
+    
+    if (!testResponse.ok) {
+      console.error('Microsoft API error:', testResponse.status, testResponse.statusText);
+      return { events: [], timezone: 'Europe/Stockholm', error: testResponse.statusText };
     }
     
     // Hämta användarens tidszon
@@ -411,8 +459,12 @@ const fetchMicrosoftCalendarEvents = async (token, min, max) => {
 
     return { events: convertedEvents, timezone: userTimezone };
   } catch (err) {
+    if (err.name === 'AbortError') {
+      console.error('Microsoft API timeout');
+      return { events: [], timezone: 'Europe/Stockholm', error: 'timeout' };
+    }
     console.error('Fel vid hämtning av Microsoft kalenderhändelser:', err);
-    return { events: [], timezone: 'Europe/Stockholm' };
+    return { events: [], timezone: 'Europe/Stockholm', error: err.message };
   }
 };
 
@@ -1727,58 +1779,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           if (result?.success) {
             console.log(`✅ Event created for participant ${i + 1} (${provider})`);
             // Spara första möteslänken vi får (Teams eller Meet)
-            if (!unifiedMeetLink && result.meetLink) {
-              unifiedMeetLink = result.meetLink;
-              console.log(`📹 Unified meeting link set: ${unifiedMeetLink}`);
-            }
-          } else {
-            console.error(`❌ Failed to create event for participant ${i + 1} (${provider})`);
-          }
-        }
-        
-        console.log('✅ All calendar events created!');
-        console.log(`🎥 Final meeting type: ${meetingType}, link: ${unifiedMeetLink || 'N/A'}`);
-        
-        // Uppdatera suggestion med meet-länk
-        await updateSuggestion(suggestionId, {
-          meetLink: unifiedMeetLink,
-          meetingType, // Spara vilken typ av möte det är
-          finalized: true,
-          status: 'completed'
-        });
-
-        // Bygg mejltext med rätt videomötestyp
-        let mailText = `Alla har accepterat mötestiden!\n\n`;
-        mailText += `Möte: ${suggestion.title || 'Föreslaget möte'}\n`;
-        mailText += `Datum: ${new Date(suggestion.start).toLocaleString()} - ${new Date(suggestion.end).toLocaleString()}\n\n`;
-        
-        if (suggestion.withMeet && unifiedMeetLink) {
-          const meetingPlatform = meetingType === 'teams' ? 'Microsoft Teams' : 'Google Meet';
-          mailText += `🎥 ${meetingPlatform}-länk:\n${unifiedMeetLink}\n\n`;
-          mailText += `(Alla deltagare använder samma ${meetingPlatform}-länk)\n\n`;
-        }
-        
-        if (suggestion.location) {
-          mailText += `📍 Plats: ${suggestion.location}\n\n`;
-        }
-        mailText += `Deltagare:\n${allEmails.join('\n')}\n\n`;
-        mailText += `Du hittar även mötet i din kalender (Google Calendar eller Outlook).\n\nHälsningar,\nBookR-teamet`;
-
-        // Skicka mejl med retry
-        for (const recipientEmail of allEmails) {
-          let attempts = 0;
-          while (attempts < 3) {
-            attempts++;
-            try {
-              await resend.emails.send({
-                from: 'BookR <info@onebookr.se>',
-                to: recipientEmail,
-                subject: 'Möte bokat!',
-                text: mailText,
-              });
-              console.log(`Mötesmejl skickat till ${recipientEmail}`);
-              break;
-            } catch (err) {
               if (attempts ===  3) {
                 console.error(`Misslyckades skicka mejl till ${recipientEmail}:`, err);
               } else {

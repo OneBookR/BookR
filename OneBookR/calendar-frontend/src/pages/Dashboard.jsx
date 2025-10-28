@@ -6,7 +6,7 @@ import ShortcutDashboard from './ShortcutDashboard';
 import TeamDashboard from './TeamDashboard';
 import ContactManager from './ContactManager';
 import TeamContacts from './TeamContacts';
-import { Container, Typography, Box, Button, TextField } from '@mui/material';
+import { Container, Typography, Box, Button, TextField, Alert } from '@mui/material';
 import { useTheme } from '../hooks/useTheme';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { API_BASE_URL } from '../config';
@@ -26,6 +26,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   const [statusLoaded, setStatusLoaded] = useState(false);
   const [isValidatingToken, setIsValidatingToken] = useState(true);
   const [tokenExpired, setTokenExpired] = useState(false);
+  const [tokenError, setTokenError] = useState(false);
+  const [tokenErrorCount, setTokenErrorCount] = useState(0);
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
@@ -525,6 +527,28 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 
   return (
     <>
+      {/* Visa varning om token-problem utan att tvinga logout */}
+      {tokenError && (
+        <Alert 
+          severity="warning" 
+          sx={{ mb: 2 }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={() => {
+                const provider = user?.provider === 'microsoft' ? 'microsoft' : 'google';
+                window.location.href = `${API_BASE_URL}/auth/${provider}`;
+              }}
+            >
+              Logga in igen
+            </Button>
+          }
+        >
+          Din session har gått ut. Klicka för att logga in igen.
+        </Alert>
+      )}
+
       {((!groupId && directAccess !== 'true') || groupStatus.allJoined) && (
         <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: 4, px: { xs: 1, sm: 2, md: 3 } }}>
           {/* Clean Banner */}
