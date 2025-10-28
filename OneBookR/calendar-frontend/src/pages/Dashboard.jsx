@@ -26,8 +26,6 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   const [statusLoaded, setStatusLoaded] = useState(false);
   const [isValidatingToken, setIsValidatingToken] = useState(true);
   const [tokenExpired, setTokenExpired] = useState(false);
-  const [authReady, setAuthReady] = useState(false);  // NYTT
-  const [authError, setAuthError] = useState(null);   // NYTT
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
@@ -409,7 +407,9 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 		if (directAccess === 'true') return true;
 		if (!groupId) return true;
 		return statusLoaded && (groupStatus?.allJoined || (groupStatus?.expected ?? 1) <= 1);
-	}, [user?.accessToken, isValidatingToken, tokenExpired, directAccess, groupId, statusLoaded, groupStatus?.allJoined, groupStatus?.expected
+	}, [user?.accessToken, isValidatingToken, tokenExpired, directAccess, groupId, statusLoaded, groupStatus?.allJoined]);
+
+	// NYTT: frys props vid första "redo"-ögonblick
 	const [frozen, setFrozen] = useState(null);
 	useEffect(() => {
     // Ta bort tokenValidated-check
