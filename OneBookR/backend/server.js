@@ -311,33 +311,23 @@ app.get('/auth/google/callback',
   }
 );
 
-app.get('/api/user', async (req, res) => {
+app.get('/api/user', (req, res) => {
   console.log('API /user called:', {
-    isAuthenticated: req.isAuthenticated?.(),
+    isAuthenticated: req.isAuthenticated(),
     sessionID: req.sessionID,
     user: req.user ? 'User exists' : 'No user',
-    sessionUser: req.session?.user ? 'Session user exists' : 'No session user',
+    sessionUser: req.session.user ? 'Session user exists' : 'No session user',
     cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
   });
-
-  // 1) Session/Passport user
-  const sessionUser = req.user || req.session?.user;
-  if (sessionUser) {
-    return res.json({ user: sessionUser, token: sessionUser.accessToken });
+  
+  // Kolla både passport auth och session
+  const user = req.user || req.session.user;
+  
+  if (user) {
+    res.json({ user: user, token: user.accessToken });
+  } else {
+    res.status(401).json({ error: 'Not authenticated' });
   }
-
-  // 2) Authorization: Bearer <token> fallback
-  const headerUser = await resolveUserFromAuthHeader(req);
-  if (headerUser) {
-    try {
-      // Persist for subsequent requests
-      req.session.user = headerUser;
-    } catch (_) {}
-    return res.json({ user: headerUser, token: headerUser.accessToken });
-  }
-
-  // 3) No auth found
-  return res.status(401).json({ error: 'Not authenticated' });
 });
 
 app.get('/auth/logout', (req, res) => {
@@ -1813,56 +1803,153 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
   }
 });
 
-// Helper: resolve user profile from Authorization header (Bearer <token>)
-async function resolveUserFromAuthHeader(req) {
+// --- Provider autodetection helpers ---
+function looksLikeGoogleToken(token) {
+  if (!token) return false;
+  // Google short-lived access tokens often start with 'ya29.'
+  if (token.startsWith('ya29.')) return true;
+  // Try decode JWT payload to check issuer
   try {
-    const auth = req.headers.authorization;
-    if (!auth || !auth.startsWith('Bearer ')) return null;
-    const token = auth.slice(7).trim();
-    const provider = detectProvider(token);
-
-    if (provider === 'microsoft') {
-      const resp = await fetch('https://graph.microsoft.com/v1.0/me', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      const email = data.mail || data.userPrincipalName;
-      if (!email) return null;
-      return {
-        email,
-        displayName: data.displayName || email,
-        provider: 'microsoft',
-        accessToken: token
-      };
-    } else {
-      // Google
-      const resp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      const email = data.email;
-      if (!email) return null;
-      return {
-        email,
-        displayName: data.name || email,
-        provider: 'google',
-        accessToken: token
-      };
+    if (token.split('.').length >= 2 && token.startsWith('eyJ')) {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+      const iss = String(payload.iss || '').toLowerCase();
+      if (iss.includes('accounts.google.com')) return true;
     }
-  } catch (_) {
-    return null;
+  } catch (_) {}
+  return false;
+}
+
+function looksLikeMicrosoftToken(token) {
+  if (!token) return false;
+  // MS tokens can be JWT (eyJ...) or opaque 'Ew...'; treat both as possible MS
+  if (token.startsWith('Ew')) return true;
+  try {
+    if (token.split('.').length >= 2 && token.startsWith('eyJ')) {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+      const iss = String(payload.iss || '').toLowerCase();
+      if (iss.includes('login.microsoftonline.com') || iss.includes('sts.windows.net')) return true;
+      const aud = String(payload.aud || '').toLowerCase();
+      if (aud.includes('graph.microsoft.com')) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+function detectProvider(token) {
+  if (looksLikeGoogleToken(token) && !looksLikeMicrosoftToken(token)) return 'google';
+  if (looksLikeMicrosoftToken(token) && !looksLikeGoogleToken(token)) return 'microsoft';
+  // Unknown: prefer trying Google first for ya29 or JWT with google iss, else Microsoft
+  if (token && token.startsWith('ya29.')) return 'google';
+  if (token && token.startsWith('Ew')) return 'microsoft';
+  // Default to google (legacy), but we will fallback to ms if google fails
+  return 'google';
+}
+
+// --- Remote fetchers (minimal, robust error handling) ---
+async function fetchGoogleEvents(accessToken, timeMinISO, timeMaxISO) {
+  try {
+    const tzRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const tzData = tzRes.ok ? await tzRes.json() : null;
+    const tz = tzData?.value || 'UTC';
+
+    // calendarView (Google): get events flattened and expanded instances
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, events: [] };
+    }
+    if (!res.ok) return { ok: false, status: res.status, events: [] };
+    const data = await res.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    return { ok: true, status: 200, tz, events: items };
+  } catch (e) {
+    return { ok: false, status: 0, events: [] };
   }
 }
 
-// Expose detectProvider for testing
-app.get('/api/test/provider', (req, res) => {
-  const token = req.query.token;
-  if (!token) return res.status(400).json({ error: 'Token required' });
-  const provider = detectProvider(token);
-  res.json({ provider });
-});
+async function fetchMicrosoftEvents(accessToken, timeMinISO, timeMaxISO) {
+  try {
+    const tzPref = 'outlook.timezone="UTC"';
+    // Microsoft Graph calendarView
+    const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(timeMinISO)}&endDateTime=${encodeURIComponent(timeMaxISO)}&$top=1000&$orderby=start/dateTime`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Prefer: tzPref
+      }
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, events: [] };
+    }
+    if (!res.ok) return { ok: false, status: res.status, events: [] };
+    const data = await res.json();
+    const items = Array.isArray(data.value) ? data.value : [];
+    return { ok: true, status: 200, tz: 'UTC', events: items };
+  } catch (e) {
+    return { ok: false, status: 0, events: [] };
+  }
+}
+
+// Normalize events -> busy blocks [{start, end}]
+function normalizeGoogleEventsToBusy(items) {
+  const busy = [];
+  for (const ev of items) {
+    const startISO = ev?.start?.dateTime || ev?.start?.date;
+    const endISO = ev?.end?.dateTime || ev?.end?.date;
+    if (!startISO || !endISO) continue;
+    const start = new Date(startISO).getTime();
+    const end = new Date(endISO).getTime();
+    if (isFinite(start) && isFinite(end) && end > start) {
+      busy.push({ start, end, title: ev.summary || 'busy', isAllDay: !!ev?.start?.date });
+    }
+  }
+  return busy;
+}
+
+function normalizeMicrosoftEventsToBusy(items) {
+  const busy = [];
+  for (const ev of items) {
+    const startISO = ev?.start?.dateTime;
+    const endISO = ev?.end?.dateTime;
+    if (!startISO || !endISO) continue;
+    const start = new Date(startISO).getTime();
+    const end = new Date(endISO).getTime();
+    if (isFinite(start) && isFinite(end) && end > start) {
+      busy.push({ start, end, title: ev.subject || 'busy', isAllDay: ev?.isAllDay || false });
+    }
+  }
+  return busy;
+}
+
+// Try primary provider, then fallback to the other if needed
+async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
+  const detected = detectProvider(token);
+  console.log('fetchCalendarEvents auto-detect:', detected);
+
+  const tryOrder = detected === 'microsoft' ? ['microsoft', 'google'] : ['google', 'microsoft'];
+
+  for (const prov of tryOrder) {
+    const res = prov === 'google'
+      ? await fetchGoogleEvents(token, timeMinISO, timeMaxISO)
+      : await fetchMicrosoftEvents(token, timeMinISO, timeMaxISO);
+
+    if (res.ok && res.events.length > 0) {
+      const busy = prov === 'google'
+        ? normalizeGoogleEventsToBusy(res.events)
+        : normalizeMicrosoftEventsToBusy(res.events);
+      return { provider: prov, busy };
+    }
+
+    // If unauthorized/forbidden, try the other provider before giving up
+    if (res.status === 401 || res.status === 403) {
+      continue;
+    }
+  }
+  // Nothing worked → return empty busy list without breaking the whole flow
+  return { provider: detected, busy: [] };
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
