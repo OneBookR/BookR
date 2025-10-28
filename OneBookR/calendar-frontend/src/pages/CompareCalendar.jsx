@@ -142,7 +142,9 @@ export default function CompareCalendar({
   useEffect(() => {
     if (groupId) {
       const fetchSuggestions = () => {
-        fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
+        fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`, {
+          credentials: 'include'
+        })
           .then(res => res.json())
           .then((data) => {
             setSuggestions(data.suggestions || []);
@@ -219,7 +221,9 @@ export default function CompareCalendar({
         // Hämta grupptokens och slå ihop
         if (groupId) {
           try {
-            const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
+            const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`, {
+              credentials: 'include'
+            });
             if (groupTokensRes.ok) {
               const groupTokensData = await groupTokensRes.json();
               tokens = Array.from(new Set([...tokens, ...(groupTokensData.tokens || [])]));
@@ -255,7 +259,8 @@ export default function CompareCalendar({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody),
-          signal: controller.signal
+          signal: controller.signal,
+          credentials: 'include'
         });
 
         clearTimeout(timeoutId);
@@ -339,6 +344,7 @@ export default function CompareCalendar({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(suggestionData),
+        credentials: 'include'
       });
       
       if (response.ok) {
@@ -387,6 +393,7 @@ export default function CompareCalendar({
           email: user.email || user.emails?.[0]?.value || user.emails?.[0],
           vote,
         }),
+        credentials: 'include'
       });
       if (response.ok) {
         const result = await response.json();
@@ -404,7 +411,7 @@ export default function CompareCalendar({
         // Hämta alla förslag igen för att säkerställa synkronisering
         if (targetGroup === groupId) {
           setTimeout(() => {
-            fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
+            fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`, { credentials: 'include' })
               .then(res => res.json())
               .then(data => setSuggestions(data.suggestions || []));
           }, 1000);
@@ -676,7 +683,9 @@ export default function CompareCalendar({
     // För team-möten eller grupper, hämta alla tokens från gruppen
     if (groupId) {
       try {
-        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
+        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`, {
+          credentials: 'include'
+        });
         if (groupTokensRes.ok) {
           const groupTokensData = await groupTokensRes.json();
           tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
@@ -703,6 +712,7 @@ export default function CompareCalendar({
           dayStart,
           dayEnd,
         }),
+        credentials: 'include'
       });
       const data = await res.json();
       if (res.ok) {
@@ -884,7 +894,9 @@ export default function CompareCalendar({
       const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
       if (!userEmail) return;
       
-      const response = await fetch(`${API_BASE_URL}/api/invitations/${encodeURIComponent(userEmail)}`);
+      const response = await fetch(`${API_BASE_URL}/api/invitations/${encodeURIComponent(userEmail)}`, {
+        credentials: 'include'
+      });
       if (response.ok) {
         const data = await response.json();
         setInvitations(data.invitations.filter(inv => !inv.responded));
@@ -899,14 +911,18 @@ export default function CompareCalendar({
       const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
       if (!userEmail) return;
       
-      const invitationsResponse = await fetch(`${API_BASE_URL}/api/invitations/${encodeURIComponent(userEmail)}`);
+      const invitationsResponse = await fetch(`${API_BASE_URL}/api/invitations/${encodeURIComponent(userEmail)}`, {
+        credentials: 'include'
+      });
       if (invitationsResponse.ok) {
         const invitationsData = await invitationsResponse.json();
         const allProposals = [];
         
         for (const invitation of invitationsData.invitations) {
           if (invitation.accepted || invitation.responded) {
-            const suggestionsResponse = await fetch(`${API_BASE_URL}/api/group/${invitation.groupId}/suggestions`);
+            const suggestionsResponse = await fetch(`${API_BASE_URL}/api/group/${invitation.groupId}/suggestions`, {
+              credentials: 'include'
+            });
             if (suggestionsResponse.ok) {
               const suggestionsData = await suggestionsResponse.json();
               const userSuggestions = suggestionsData.suggestions.filter(s => 
@@ -929,7 +945,8 @@ export default function CompareCalendar({
       const res = await fetch(`${API_BASE_URL}/api/invitation/${invitationId}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response })
+        body: JSON.stringify({ response }),
+        credentials: 'include'
       });
       if (res.ok) {
         if (response === 'accept') {
@@ -955,7 +972,8 @@ export default function CompareCalendar({
         body: JSON.stringify({ 
           response,
           email: user.email || user.emails?.[0]?.value || user.emails?.[0]
-        })
+        }),
+        credentials: 'include'
       });
       if (res.ok) {
         fetchTimeProposals(); // Uppdatera listan
@@ -967,412 +985,394 @@ export default function CompareCalendar({
     }
   };
 
-  // Lägg till saknade event handlers innan return
-  const handleCalendarSelectSlot = (slotInfo) => {
-    if (!groupId) return;
-    setSuggestDialog({
-      open: true,
-      slot: {
-        start: slotInfo.start,
-        end: slotInfo.end
-      }
-    });
-  };
-
-  const handleCalendarSelectEvent = (event) => {
-    if (!groupId) return;
-    setSuggestDialog({
-      open: true,
-      slot: {
-        start: event.start,
-        end: event.end
-      }
-    });
-  };
-
-  return (
-    <>
-    <div style={{ 
-      marginRight: isMobile ? 0 : (sidebarOpen ? 400 : 60), 
-      transition: 'margin-right 0.3s ease',
-      minHeight: '100vh',
-      padding: isMobile ? '8px' : '0'
-    }}>
-
-
-      <Slide direction="up" in={true} timeout={800}>
-        <Box
-          sx={{
-            bgcolor: theme.colors.surface,
-            borderRadius: { xs: 2, sm: 3 },
-            boxShadow: theme.isDark ? '0 4px 20px rgba(0,0,0,0.3)' : '0 2px 8px rgba(60,64,67,.06)',
-            border: `1px solid ${theme.colors.border}`,
-            p: { xs: 2, sm: 3 },
-            mb: { xs: 8, sm: 15 },
-            maxWidth: { xs: '100%', sm: 800 },
-            mx: 0,
-            transition: 'all 0.3s ease'
-          }}
-        >
-        <Box
-          component="form"
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            mb: 0,
-            maxWidth: 600,
-          }}
-        >
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }} data-tutorial="date-inputs">
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
-              <TextField
-                label="Från"
-                type="date"
-                InputLabelProps={{ shrink: true }}
-                value={timeMin ? timeMin.slice(0, 10) : ''}
-                onChange={e => {
-                  const date = e.target.value;
-                  const time = timeMin ? timeMin.slice(11, 16) : '00:00';
-                  setTimeMin(date ? `${date}T${time}` : '');
-                }}
-                fullWidth
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 999,
-                    background: theme.colors.bg,
-                    color: theme.colors.text,
-                    '& fieldset': {
-                      borderColor: theme.colors.border
-                    }
-                  },
-                  '& .MuiInputBase-root': {
-                    borderRadius: 999,
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: theme.colors.textSecondary
-                  }
-                }}
-                variant="outlined"
-              />
-              <TextField
-                label="Tid"
-                type="time"
-                InputLabelProps={{ shrink: true }}
-                value={timeMin ? timeMin.slice(11, 16) : ''}
-                onChange={e => {
-                  if (timeMin) {
-                    setTimeMin(timeMin.slice(0, 10) + 'T' + e.target.value);
-                  }
-                }}
-                sx={{
-                  minWidth: 120,
-                  maxWidth: 160,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 999,
-                    background: theme.colors.bg,
-                    color: theme.colors.text,
-                    '& fieldset': {
-                      borderColor: theme.colors.border
-                    }
-                  },
-                  '& .MuiInputBase-root': {
-                    borderRadius: 999,
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: theme.colors.textSecondary
-                  }
-                }}
-                variant="outlined"
-              />
-            </Box>
-            <Typography sx={{ mx: 1, fontWeight: 600, color: '#888', fontSize: 22, userSelect: 'none', display: { xs: 'none', sm: 'block' } }}>–</Typography>
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 1, width: '100%' }}>
-              <TextField
-                label="Till"
-                type="date"
-                InputLabelProps={{ shrink: true }}
-                value={timeMax ? timeMax.slice(0, 10) : ''}
-                onChange={e => {
-                  const date = e.target.value;
-                  const time = timeMax ? timeMax.slice(11, 16) : '23:59';
-                  setTimeMax(date ? `${date}T${time}` : '');
-                }}
-                fullWidth
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 999,
-                    background: theme.colors.bg,
-                    color: theme.colors.text,
-                    '& fieldset': {
-                      borderColor: theme.colors.border
-                    }
-                  },
-                  '& .MuiInputBase-root': {
-                    borderRadius: 999,
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: theme.colors.textSecondary
-                  }
-                }}
-                variant="outlined"
-              />
-              <TextField
-                label="Tid"
-                type="time"
-                InputLabelProps={{ shrink: true }}
-                value={timeMax ? timeMax.slice(11, 16) : ''}
-                onChange={e => {
-                  if (timeMax) {
-                    setTimeMax(timeMax.slice(0, 10) + 'T' + e.target.value);
-                  }
-                }}
-                sx={{
-                  minWidth: 120,
-                  maxWidth: 160,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 999,
-                    background: theme.colors.bg,
-                    color: theme.colors.text,
-                    '& fieldset': {
-                      borderColor: theme.colors.border
-                    }
-                  },
-                  '& .MuiInputBase-root': {
-                    borderRadius: 999,
-                  },
-                  '& .MuiInputLabel-root': {
-                    color: theme.colors.textSecondary
-                  }
-                }}
-                variant="outlined"
-              />
-            </Box>
-          </Box>
-          <Typography
-            variant="caption"
-            sx={{
-              color: '#888',
-              mb: 0.3,
-              mt: 2,
-              pl: 1.0 // Flytta texten lite till höger
-            }}
-          >
-            Om du inte anger något datumintervall visas automatiskt alla lediga tider från idag och 30 dagar framåt.
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, gap: 2, mt: 1 }}>
-            <TextField
-              label={isMultiDay ? "Timmar per dag" : "Mötestid (minuter)"}
-              type="number"
-              value={meetingDuration}
-              onChange={(e) => setMeetingDuration(Number(e.target.value))}
-              data-tutorial="duration"
-              sx={{
-                flex: 1,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 999,
-                  background: theme.colors.bg,
-                  color: theme.colors.text,
-                  '& fieldset': {
-                    borderColor: theme.colors.border
-                  }
-                },
-                '& .MuiInputBase-root': {
-                  borderRadius: 999,
-                },
-                '& .MuiInputLabel-root': {
-                  color: theme.colors.textSecondary
-                }
-              }}
-              variant="outlined"
-            />
-            <Button
-              variant={isMultiDay ? "contained" : "outlined"}
-              onClick={() => setIsMultiDay(!isMultiDay)}
-              sx={{
-                borderRadius: 999,
-                px: 3,
-                fontWeight: 600,
-                fontSize: 12
-              }}
-            >
-              Flera dagar
-            </Button>
-          </Box>
+  // Rösta på förslag
+  const voteSuggestion = async (suggestionId, vote, targetGroupId = null) => {
+    const targetGroup = targetGroupId || groupId;
+    if (!targetGroup) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/group/${targetGroup}/suggestion/${suggestionId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email || user.emails?.[0]?.value || user.emails?.[0],
+          vote,
+        }),
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const result = await response.json();
+        const voteText = vote === 'accepted' ? 'accepterat' : 'nekat';
+        setToast({ open: true, message: `Du har ${voteText} tidsförslaget!`, severity: 'success' });
+        
+        // Uppdatera förslag direkt med det returnerade förslaget
+        if (result.suggestion) {
+          console.log('Updated suggestion received:', result.suggestion);
+          setSuggestions(prev => prev.map(s => 
+            s.id === suggestionId ? result.suggestion : s
+          ));
+        }
+        
+        // Hämta alla förslag igen för att säkerställa synkronisering
+        if (targetGroup === groupId) {
+          setTimeout(() => {
+            fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`, { credentials: 'include' })
+              .then(res => res.json())
+              .then(data => setSuggestions(data.suggestions || []));
+          }, 1000);
+        }
+        
+        // Visa notifikation om mötet är bokat
+        if (result.suggestion && result.suggestion.finalized) {
+          showNotification('Möte bokat!', {
+            body: 'Alla har accepterat tiden. Kalenderinbjudan skickas ut via mejl.',
+            tag: 'meeting-booked'
+          });
           
-          {isMultiDay && (
-            <Box sx={{ mt: 2, p: 2, bgcolor: '#e3f2fd', borderRadius: 2, border: '1px solid #1976d2' }}>
-              <Typography variant="body2" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
-                Flerdagars-möte
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                <TextField
-                  label="Startdatum"
-                  type="date"
-                  value={multiDayStart}
-                  onChange={e => setMultiDayStart(e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                  sx={{
-                    flex: 1,
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 999,
-                      background: '#fff',
-                    },
-                  }}
-                />
-                <Typography sx={{ color: '#1976d2', fontWeight: 600 }}>–</Typography>
-                <TextField
-                  label="Slutdatum"
-                  type="date"
-                  value={multiDayEnd}
-                  onChange={e => setMultiDayEnd(e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                  sx={{
-                    flex: 1,
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 999,
-                      background: '#fff',
-                    },
-                  }}
-                />
-              </Box>
-              <Typography variant="caption" sx={{ color: '#666', mt: 1, display: 'block' }}>
-                Ange hur många timmar per dag mötet ska vara och välj datumintervall
-              </Typography>
-            </Box>
-          )}
-          <TextField
-            label="Från (dagens starttid)"
-            type="time"
-            value={dayStart}
-            onChange={e => setDayStart(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            data-tutorial="day-hours"
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 999,
-                background: theme.colors.bg,
-                color: theme.colors.text,
-                '& fieldset': {
-                  borderColor: theme.colors.border
-                }
-              },
-              '& .MuiInputBase-root': {
-                borderRadius: 999,
-              },
-              '& .MuiInputLabel-root': {
-                color: theme.colors.textSecondary
-              }
-            }}
-            variant="outlined"
-          />
-          <TextField
-            label="Till (dagens sluttid)"
-            type="time"
-            value={dayEnd}
-            onChange={e => setDayEnd(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 999,
-                background: theme.colors.bg,
-                color: theme.colors.text,
-                '& fieldset': {
-                  borderColor: theme.colors.border
-                }
-              },
-              '& .MuiInputBase-root': {
-                borderRadius: 999,
-              },
-              '& .MuiInputLabel-root': {
-                color: theme.colors.textSecondary
-              }
-            }}
-            variant="outlined"
-          />
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={fetchAvailability}
-            disabled={isLoadingAvailability}
-            data-tutorial="compare-button"
-            sx={{
-              fontWeight: 600,
-              fontSize: '1.08rem',
-              letterSpacing: 0.5,
-              borderRadius: 999,
-              minWidth: 0,
-              minHeight: 0,
-              height: 48,
-              width: '100%',
-              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-              color: '#fff',
-              boxShadow: '0 2px 8px 0 rgba(99,91,255,0.13)',
-              transition: 'background 0.2s, box-shadow 0.2s, transform 0.1s',
-              '&:hover': {
-                background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
-                boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)',
-                transform: 'scale(1.03)',
-              },
-              '&:active': {
-                background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-                boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)',
-                transform: 'scale(0.98)',
-              },
-              '&:disabled': {
-                background: '#ccc',
-                transform: 'none',
-                boxShadow: 'none'
-              },
-              py: 1.2,
-              mt: 1,
-              mb: 3,
-              textTransform: 'none',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: 1
-            }}
-          >
-            {isLoadingAvailability && <CircularProgress size={20} sx={{ color: 'white' }} />}
-            {isLoadingAvailability ? 'Jämför kalendrar...' : 'Jämför kalendrar'}
-            {!isOnline && ' (Offline)'}
-          </Button>
-        </Box>
-        </Box>
-      </Slide>
+          // Visa success toast med mer information
+          setToast({ 
+            open: true, 
+            message: '🎉 Möte bokat! Alla har accepterat tiden. Kalenderinbjudan och möteslänk skickas ut via mejl.', 
+            severity: 'success' 
+          });
+        }
+      }
+    } catch (error) {
+      setToast({ open: true, message: 'Kunde inte registrera röst. Försök igen.', severity: 'error' });
+    }
+  };
 
-      {/* Offline indikator */}
-      {!isOnline && (
-        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-          🚫 Ingen internetanslutning - vissa funktioner kan vara begränsade
-        </Alert>
-      )}
-      
-      {/* Undo-knapp */}
-      {undoAction && (
-        <Alert 
-          severity="info" 
-          sx={{ mb: 2, borderRadius: 2 }}
-          action={
-            <Button 
-              color="inherit" 
-              size="small" 
-              onClick={() => {
-                // Implementera undo-logik här
-                setUndoAction(null);
-                setToast({ open: true, message: 'Tidsförslag ångrat', severity: 'info' });
-              }}
-            >
-              ÅNGRA
-            </Button>
-          }
-        >
-          Tidsförslag skickat - du kan ångra inom 10 sekunder
-        </Alert>
-      )}
-      
-      {error && (
+  // Spara vy och datum i state för att kunna byta vy och navigera
+  const [calendarView, setCalendarView] = useState('week');
+  const [calendarDate, setCalendarDate] = useState(new Date());
+  const [isMobile, setIsMobile] = useState(false);
+
+
+
+  // Anpassa react-big-calendar: ta bort vy-knappar, ersätt med Select
+  // --- NYTT: Anpassa kalenderns komponenter med CSS-in-JS ---
+  useEffect(() => {
+    const styleId = "modern-calendar-style";
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement("style");
+    style.id = styleId;
+    const isDark = theme.isDark;
+    const calendarBgColor = isDark ? theme.colors.surface : calendarBg;
+    const calendarBorderColor = isDark ? theme.colors.border : calendarBorder;
+    const calendarTextColor = isDark ? theme.colors.text : '#000';
+    const calendarHeaderBgColor = isDark ? theme.colors.bg : calendarHeaderBg;
+    
+    style.innerHTML = `
+      .rbc-calendar, .rbc-time-view, .rbc-agenda-view, .rbc-month-view {
+        font-family: ${calendarFontFamily} !important;
+        background: ${calendarBgColor};
+        border-radius: 10px;
+        border: 1px solid ${calendarBorderColor};
+        box-shadow: 0 2px 8px 0 rgba(60,64,67,.06);
+        color: ${calendarTextColor};
+      }
+      .rbc-toolbar {
+        font-family: ${calendarFontFamily} !important;
+        background: ${calendarHeaderBgColor};
+        border-bottom: 1px solid ${calendarBorderColor};
+        border-radius: 10px 10px 0 0;
+        padding: 10px 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        color: ${calendarTextColor};
+      }
+      /* Dölj vy-knapparna */
+      .rbc-toolbar .rbc-btn-group:last-of-type {
+        display: none !important;
+      }
+      /* Justera label så att den får plats bredvid selecten */
+      .rbc-toolbar .rbc-toolbar-label {
+        margin-right: 16px;
+        font-size: 1.05rem;
+        font-weight: 400;
+        color: ${calendarAccent};
+        letter-spacing: -0.5px;
+        padding: 0 8px;
+      }
+      /* NYTT: Gör så att knapparna i grupperna inte har egen border */
+      .rbc-btn-group button {
+        font-family: ${calendarFontFamily} !important;
+        font-size: 1.01rem;
+        border-radius: 999px !important;
+        border: none !important;
+        background: linear-gradient(90deg, #635bff 0%, #6c47ff 100%) !important;
+        color: #fff !important;
+        margin-right: 8px !important;
+        margin-bottom: 2px !important;
+        padding: 7px 18px !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 8px 0 rgba(99,91,255,0.13) !important;
+        transition: background 0.2s, box-shadow 0.2s, transform 0.1s !important;
+        outline: none !important;
+        border-width: 0 !important;
+      }
+      .rbc-btn-group button:last-child {
+        margin-right: 0 !important;
+      }
+      .rbc-btn-group button.rbc-active, .rbc-btn-group button:active {
+        background: linear-gradient(90deg, #7a5af8 0%, #635bff 100%) !important;
+        color: #fff !important;
+        box-shadow: 0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18) !important;
+        transform: scale(1.03) !important;
+      }
+      .rbc-btn-group button:hover {
+        background: linear-gradient(90deg, #7a5af8 0%, #635bff 100%) !important;
+        color: #fff !important;
+        box-shadow: 0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18) !important;
+        transform: scale(1.03) !important;
+      }
+      .rbc-header {
+        background: ${calendarHeaderBgColor};
+        color: ${calendarTextColor};
+        font-weight: 400;
+        font-size: 0.98rem;
+        border-bottom: 1px solid ${calendarBorderColor};
+        padding: 7px 0;
+      }
+      .rbc-today {
+        background: ${calendarTodayBg} !important;
+        border-bottom: 2px solid ${calendarAccent};
+      }
+      .rbc-event {
+        background-color: #e3f2fd !important;
+        color: #1976d2 !important;
+        border: 1px solid #1976d2 !important;
+        border-radius: 4px !important;
+        font-size: 12px !important;
+        font-weight: 500 !important;
+        padding: 2px 4px !important;
+      }
+      .rbc-event:hover {
+        background-color: #bbdefb !important;
+      }
+      /* Speciella stilar för upptagna tider */
+      .rbc-event[data-busy="true"] {
+        background-color: #ffebee !important;
+        border: 2px solid #f44336 !important;
+        color: #d32f2f !important;
+        z-index: 1000 !important;
+        cursor: default !important;
+      }
+      .rbc-event[data-busy="true"]:hover {
+        transform: none !important;
+        box-shadow: 0 2px 8px 0 rgba(244, 67, 54, 0.3) !important;
+      }
+      /* Flerdagars events */
+      .rbc-event[data-multiday="true"] {
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        min-height: 24px !important;
+      }
+      .rbc-agenda-view table {
+        font-family: ${calendarFontFamily} !important;
+        font-size: 0.98rem;
+      }
+      .rbc-agenda-date-cell, .rbc-agenda-time-cell, .rbc-agenda-event-cell {
+        padding: 7px 10px;
+      }
+      .rbc-row-segment {
+        padding: 2px 0;
+      }
+      .rbc-time-header-content, .rbc-time-content {
+        border-radius: 0 0 10px 10px;
+      }
+      .rbc-time-slot {
+        min-height: 28px;
+        position: relative;
+        border-color: ${calendarBorderColor};
+      }
+      .rbc-time-gutter, .rbc-time-header-gutter {
+        background: ${calendarHeaderBgColor};
+        color: ${calendarTextColor};
+      }
+      .rbc-timeslot-group {
+        border-bottom: 1px solid ${calendarBorderColor};
+      }
+      .rbc-day-slot .rbc-time-slot {
+        border-top: 1px solid ${calendarBorderColor};
+      }
+      .rbc-time-content {
+        background: ${calendarBgColor};
+      }
+      .rbc-time-header-content {
+        background: ${calendarHeaderBgColor};
+      }
+      .rbc-allday-cell {
+        background: ${calendarHeaderBgColor};
+      }
+      .rbc-day-bg {
+        background: ${calendarBgColor};
+      }
+      .rbc-month-row {
+        background: ${calendarBgColor};
+      }
+      .rbc-date-cell {
+        color: ${calendarTextColor};
+      }
+      .rbc-button-link {
+        color: ${calendarTextColor};
+      }
+      /* Förbättra visning av överlappande events */
+      .rbc-event-overlaps {
+        margin-left: 2px !important;
+        margin-right: 2px !important;
+      }
+      .rbc-off-range-bg {
+        background: #f4f6f8;
+      }
+      .rbc-show-more {
+        color: ${calendarAccent};
+        font-weight: 400;
+      }
+      /* Navigeringspilar och Today-knapp */
+      .rbc-btn-group button {
+        background: #f7f9fc !important;
+        color: #495057 !important;
+        border: 1px solid rgba(0, 0, 0, 0.23) !important;
+        border-radius: 4px !important;
+        font-weight: 500 !important;
+        padding: 8px 16px !important;
+        margin: 0 4px !important;
+        transition: all 0.2s ease !important;
+      }
+      .rbc-btn-group button:hover {
+        background: linear-gradient(90deg, #635bff 0%, #6c47ff 100%) !important;
+        color: #fff !important;
+        border-color: #635bff !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 2px 8px rgba(99,91,255,0.2) !important;
+      }
+      .rbc-btn-group button:active {
+        transform: translateY(0) !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      if (document.getElementById(styleId)) {
+        document.getElementById(styleId).remove();
+      }
+    };
+  }, [theme.isDark]);
+
+  // NYTT: Visa automatiskt alla lediga tider från idag och 30 dagar framåt vid första render
+  useEffect(() => {
+    if (!timeMin && !timeMax && myToken) {
+      const now = new Date();
+      const start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(now);
+      end.setDate(end.getDate() + 30);
+      end.setHours(23, 59, 59, 999);
+      setTimeMin(start.toISOString().slice(0, 16));
+      setTimeMax(end.toISOString().slice(0, 16));
+      // Kör fetchAvailability automatiskt
+      setTimeout(() => {
+        fetchAvailabilityAuto(start, end);
+      }, 0);
+    }
+    // eslint-disable-next-line
+  }, [myToken]);
+
+  // Separat fetch-funktion för auto-laddning (utan validering)
+  const fetchAvailabilityAuto = async (start, end) => {
+    let tokens = [myToken, ...invitedTokens];
+    
+    // För team-möten eller grupper, hämta alla tokens från gruppen
+    if (groupId) {
+      try {
+        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`, {
+          credentials: 'include'
+        });
+        if (groupTokensRes.ok) {
+          const groupTokensData = await groupTokensRes.json();
+          tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
+        }
+      } catch (err) {
+        console.log('Could not fetch group tokens for auto-load:', err);
+      }
+    }
+    
+    tokens = Array.from(new Set(tokens.filter(Boolean)));
+    if (tokens.length < 1) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/availability`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tokens,
+          timeMin: start.toISOString(),
+          timeMax: end.toISOString(),
+          duration: meetingDuration,
+          dayStart,
+          dayEnd,
+        }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAvailability(data);
+        setError(null);
+        setHasSearched(true);
+      } else {
+        setAvailability([]);
+        setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
+        setHasSearched(true);
+      }
+    } catch (err) {
+      setAvailability([]);
+      setError('Tekniskt fel vid hämtning av tillgänglighet.');
+      setHasSearched(true);
+    }
+  };
+
+  // Logga ut-funktion
+  const handleLogout = () => {
+    window.location.href = `${API_BASE_URL}/auth/logout`;
+  };
+
+  // Logga in-funktion
+  const handleLogin = () => {
+    window.location.href = `${API_BASE_URL}/auth/google?redirect=` + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+  };
+
+  // Tutorial-steg
+  const tutorialSteps = [
+    {
+      target: '[data-tutorial="date-inputs"]',
+      title: 'Välj datumintervall',
+      content: 'Ange från vilket datum till vilket datum du vill hitta lediga tider. Om du lämnar tomt visas automatiskt de närmaste 30 dagarna.'
+    },
+    {
+      target: '[data-tutorial="duration"]',
+      title: 'Mötestid',
+      content: 'Ange hur lång tid mötet ska vara i minuter. Standard är 60 minuter.'
+    },
+    {
+      target: '[data-tutorial="day-hours"]',
+      title: 'Arbetstider',
+      content: 'Ställ in vilka tider på dagen som ska räknas som arbetstid. Endast lediga tider inom detta intervall visas.'
+    },
+    {
+      target: '[data-tutorial="compare-button"]',
+      title: 'Jämför kalendrar',
+      content: 'Klicka här för att jämföra alla inbjudna personers kalendrar och hitta gemensamma lediga tider.'
+    },
+    {
+      target: '[data-tutorial="time-slots"]',
+      title: 'Lediga tider',
+      content: 'Här visas alla gemensamma lediga tider. Klicka på en tid för att föreslå den som mötestid till gruppen.'
+    },
+    {
         <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
           {error}
         </Alert>
