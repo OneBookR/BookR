@@ -769,10 +769,11 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
 }
 
 app.post('/api/availability', async (req, res) => {
-  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd } = req.body;
+  const { tokens, providers, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd } = req.body;
 
   console.log('=== AVAILABILITY API DEBUG ===');
   console.log('Tokens mottagna av backend:', Array.isArray(tokens) ? tokens.length : 0, 'tokens');
+  console.log('Providers mottagna:', providers);
 
   if (!Array.isArray(tokens) || tokens.length === 0) {
     return res.json([]);
@@ -785,10 +786,11 @@ app.post('/api/availability', async (req, res) => {
   const allCalendarsBusy = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
-    const detected = detectProvider(token);
-    console.log(`Fetching calendar events for token ${i + 1}/${tokens.length}, detected provider: ${detected}`);
-    const { provider, busy } = await fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO);
-    console.log(`Token ${i + 1} processed ${busy.length} events (provider used: ${provider})`);
+    // Använd providers-array om tillgänglig, annars detektera
+    const provider = providers && providers[i] ? providers[i] : detectProvider(token);
+    console.log(`Fetching calendar events for token ${i + 1}/${tokens.length}, provider: ${provider}`);
+    const { provider: usedProvider, busy } = await fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO, provider);
+    console.log(`Token ${i + 1} processed ${busy.length} events (provider used: ${usedProvider})`);
     allCalendarsBusy.push(busy);
   }
 
@@ -1304,8 +1306,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
             timeZone: 'Europe/Stockholm'
           },
           location: suggestion.location || undefined,
-          attendees: allEmails
-        };
 
         let unifiedMeetLink = null;
 

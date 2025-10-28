@@ -169,6 +169,22 @@ export default function CompareCalendar({
     }
   }, [groupId]);
 
+  // NYTT: Detektera provider från token-format
+  function detectTokenProvider(token) {
+    if (!token) return 'google';
+    if (token.startsWith('Ew')) return 'microsoft';
+    if (token.startsWith('ya29.')) return 'google';
+    try {
+      if (token.split('.').length >= 2 && token.startsWith('eyJ')) {
+        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+        const iss = String(payload.iss || '').toLowerCase();
+        if (iss.includes('login.microsoftonline.com') || iss.includes('sts.windows.net')) return 'microsoft';
+        if (iss.includes('accounts.google.com')) return 'google';
+      }
+    } catch (_) {}
+    return 'google';
+  }
+
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
     try {
@@ -213,8 +229,9 @@ export default function CompareCalendar({
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        // OBS: Ta bort providers-heuristik (den var fel för Microsoft-token)
-        // const providers = [userProvider, ...];  // BORTTAGET
+        // NYTT: Detektera providers för varje token
+        const providers = tokens.map(t => detectTokenProvider(t));
+        console.log('Detected providers:', providers);
 
         // Hämta grupptokens och slå ihop
         if (groupId) {
@@ -233,7 +250,8 @@ export default function CompareCalendar({
 
         const requestBody = {
           tokens,
-          // Viktigt: låt backend auto-detektera provider per token → skicka inte providers
+          // NYTT: Skicka providers som backend kan använda
+          providers: tokens.map(t => detectTokenProvider(t)),
           duration: meetingDuration,
           dayStart,
           dayEnd,
@@ -250,6 +268,8 @@ export default function CompareCalendar({
                 timeMax: new Date(timeMax).toISOString()
               })
         };
+
+        console.log('Sending availability request with:', { tokensCount: tokens.length, providers: requestBody.providers });
 
         const res = await fetch(`${API_BASE_URL}/api/availability`, {
           method: 'POST',
@@ -1564,26 +1584,6 @@ export default function CompareCalendar({
                         transition: 'all 0.2s ease',
                         animation: index === 0 && diffMs < 1000 * 60 * 60 * 24 ? 'pulse 2s infinite' : 'none',
                         '@keyframes pulse': {
-                          '0%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0.4)' },
-                          '70%': { boxShadow: '0 0 0 10px rgba(25, 118, 210, 0)' },
-                          '100%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0)' }
-                        },
-                        '&:hover': {
-                          transform: { xs: 'none', sm: 'scale(1.02)' },
-                          boxShadow: '0 2px 8px rgba(25, 118, 210, 0.3)'
-                        }
-                      }}
-                      onClick={e => {
-                        e.stopPropagation();
-                        handleSuggest(slot);
-                      }}
-                    >
-                      Föreslå denna tiden
-                    </Button>
-                  )}
-                  </Box>
-                </Grow>
-              );
             })}
           </Box>
           {!showAll && sortedFutureSlots.length > 4 && (
