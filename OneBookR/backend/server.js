@@ -1858,6 +1858,69 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
   }
 });
 
+// Hjälpfunktion: Skapa Microsoft Calendar event med Teams
+async function createMicrosoftCalendarEvent(token, eventData) {
+  try {
+    console.log('Creating Microsoft Calendar event with Teams...');
+    
+    const microsoftEvent = {
+      subject: eventData.summary || 'Möte',
+      body: {
+        contentType: 'HTML',
+        content: eventData.description || 'Bokat via BookR'
+      },
+      start: {
+        dateTime: eventData.start.dateTime,
+        timeZone: eventData.start.timeZone || 'Europe/Stockholm'
+      },
+      end: {
+        dateTime: eventData.end.dateTime,
+        timeZone: eventData.end.timeZone || 'Europe/Stockholm'
+      },
+      location: eventData.location ? {
+        displayName: eventData.location
+      } : undefined,
+      attendees: eventData.attendees?.map(email => ({
+        emailAddress: { address: email },
+        type: 'required'
+      })) || []
+    };
+
+    // Lägg till Teams meeting om conferenceData finns
+    if (eventData.conferenceData) {
+      microsoftEvent.isOnlineMeeting = true;
+      microsoftEvent.onlineMeetingProvider = 'teamsForBusiness';
+    }
+
+    const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(microsoftEvent)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Microsoft Graph API error:', errorData);
+      return null;
+    }
+
+    const createdEvent = await response.json();
+    console.log('✅ Microsoft Calendar event created:', createdEvent.id);
+
+    return {
+      success: true,
+      eventId: createdEvent.id,
+      meetLink: createdEvent.onlineMeeting?.joinUrl || null,
+      provider: 'microsoft'
+    };
+  } catch (error) {
+    console.error('Error creating Microsoft Calendar event:', error);
+    return null;
+  }
+}
 
 // Hjälpfunktion: Skapa Google Calendar event (kan vara med eller utan Meet)
 async function createGoogleCalendarEvent(token, eventData, existingMeetLink = null) {
