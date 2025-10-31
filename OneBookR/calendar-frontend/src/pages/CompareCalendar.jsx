@@ -1556,6 +1556,11 @@ export default function CompareCalendar({
                           '100%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0)' }
                         },
                         '&:hover': {
+                          transform: 'scale(1.05)',
+                          boxShadow: '0 4px 15px rgba(25, 118, 210, 0.3)'
+                        }
+                      }}
+                      onClick={() => handleSuggest(slot)}
                     >
                       Föreslå denna tiden
                     </Button>

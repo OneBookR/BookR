@@ -26,421 +26,128 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
   const [statusLoaded, setStatusLoaded] = useState(false);
   const [isValidatingToken, setIsValidatingToken] = useState(true);
   const [tokenExpired, setTokenExpired] = useState(false);
+  
   const urlParams = new URLSearchParams(window.location.search);
   const groupId = urlParams.get('group');
   const inviteeId = urlParams.get('invitee');
   const directAccess = urlParams.get('directAccess');
-  const contactEmails = urlParams.getAll('contactEmail'); // Changed to getAll
+  const contactEmails = urlParams.getAll('contactEmail');
   const contactName = urlParams.get('contactName');
   const teamName = urlParams.get('teamName');
   const teamMembers = urlParams.get('members');
   
   const handleNavigateToMeeting = onNavigateToMeeting || ((type) => {
-    if (type === 'task') {
-      setCurrentView('task');
-    } else if (type === '1v1') {
-      // Navigera till InviteFriend för 1v1 möten
-      setCurrentView('invite');
-    } else if (type === 'group') {
-      // Navigera till InviteFriend för gruppmöten
-      setCurrentView('invite');
-    } else if (type === 'team') {
-      // Navigera till TeamContacts
-      setCurrentView('team');
-    }
+    window.location.href = `/?meetingType=${type}`;
   });
   
   // Set initial view based on URL params
   useEffect(() => {
-    const meetingType = urlParams.get('meetingType');
-    if (meetingType === 'team') {
+    if (groupId) {
+      setCurrentView('compare');
+    } else if (teamName) {
       setCurrentView('team');
-    } else if (groupId || meetingType || directAccess === 'true') { // Added directAccess check
-      setCurrentView('dashboard');
+    } else {
+      setCurrentView('shortcut');
     }
-  }, [groupId, directAccess]);
+  }, [groupId, teamName]);
   
   // Härleder provider (fallback om props saknar provider)
   const derivedProvider = React.useMemo(() => {
-    const p = user?.provider;
-    if (p) return p.toLowerCase();
-    const em = (user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || '').toLowerCase();
-    if (/@(outlook|hotmail|live|msn|office365)\./.test(em)) return 'microsoft';
+    if (user?.provider) return user.provider;
+    if (user?.email?.includes('@')) return 'google';
+    if (user?.emails?.[0]) return 'google';
     return 'google';
   }, [user?.provider, user?.email, user?.emails]);
 
   // Validera token innan någon kalenderjämförelse
   useEffect(() => {
-    const validateToken = async () => {
-      // NYTT: Kolla om vi har auth-parameter i URL (från Microsoft callback)
-      const urlParams = new URLSearchParams(window.location.search);
-      const authParam = urlParams.get('auth');
-      
-      if (authParam && !user?.accessToken) {
-        try {
-          // Dekoda auth-token från URL
-          const decoded = JSON.parse(atob(authParam));
-          if (decoded.user && decoded.user.accessToken) {
-            console.log('Found auth token in URL, using it');
-            // Spara i localStorage som backup
-            localStorage.setItem('bookr_user', JSON.stringify(decoded.user));
-            // Rensa URL
-            window.history.replaceState({}, '', window.location.pathname);
-            // Ladda om för att använda den sparade användaren
-            window.location.reload();
-            return;
-          }
-        } catch (e) {
-          console.error('Failed to decode auth token:', e);
-        }
-      }
-
-      if (!user || !user.accessToken) {
-        setIsValidatingToken(false);
-        setTokenExpired(false);
-        return;
-      }
-
-      try {
-        // NYTT: Använd rätt endpoint baserat på provider
-        const endpoint = derivedProvider === 'microsoft'
-          ? 'https://graph.microsoft.com/v1.0/me'
-          : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
-
-        const response = await fetch(endpoint, {
-          headers: { Authorization: `Bearer ${user.accessToken}` },
-        });
-
-        if (response.status === 401) {
-          console.log(`Token has expired (401) for provider=${derivedProvider}`);
-          setTokenExpired(true);
-          setIsValidatingToken(false);
-
-          const currentUrl = window.location.href;
-          localStorage.setItem('bookr_return_url', currentUrl);
-          localStorage.removeItem('bookr_user');
-          sessionStorage.removeItem('hasTriedSession');
-
-          setTimeout(() => {
-            window.location.href = 'https://www.onebookr.se/auth/logout';
-          }, 2000);
-          return;
-        } else if (response.status === 403 && derivedProvider === 'microsoft') {
-          console.log('Microsoft 403 - requesting calendar permissions');
-          const currentUrl = window.location.href;
-          localStorage.setItem('bookr_return_url', currentUrl);
-          // NYTT: Refresh Microsoft token med consent prompt
-          window.location.href = 'https://www.onebookr.se/auth/microsoft?prompt=consent';
-          return;
-        } else {
-          console.log(`Token is valid for provider=${derivedProvider}`);
-          setTokenExpired(false);
-          setIsValidatingToken(false);
-        }
-      } catch (error) {
-        console.error('Error validating token:', error);
-        setTokenExpired(false);
-        setIsValidatingToken(false);
-      }
-    };
-
-    validateToken();
-  }, [user?.accessToken, derivedProvider]);
- 
-  useEffect(() => {
-    // VIKTIGT: Hämta ALLTID den inloggade användarens e-post (INTE fromUser!)
-    let email = user?.email;
-    if (!email && user?.emails && user.emails.length > 0) {
-      email = user.emails[0]?.value || user.emails[0];
-    }
-    
-    // Om användaren inte har en giltig email ännu, vänta
-    if (!email || !email.includes('@')) {
-      console.log('⚠️ Waiting for valid user email...', { user, hasEmail: !!user?.email });
+    if (!user?.accessToken) {
+      setIsValidatingToken(false);
       return;
     }
     
-    console.log('✅ Dashboard useEffect - Logged in user email:', email, 'GroupId:', groupId, 'InviteeId:', inviteeId);
-
-    // Hantera direktåtkomst för team eller enskilda kontakter
-    if (directAccess === 'true' && contactEmails.length > 0) {
-      console.log('Handling direct access for contacts:', contactEmails);
-      
-      // För direktåtkomst använder vi bara användarens egen token
-      // Direktåtkomst betyder att vi kan se andras kalendrar utan att de behöver logga in
-      setGroupTokens([user.accessToken]);
-      setGroupStatus({
-        allJoined: true,
-        current: 1 + contactEmails.length, // Simulera att alla är med
-        expected: 1 + contactEmails.length,
-        invited: contactEmails,
-        groupName: teamName || `Möte med ${contactName || contactEmails[0]}`
-      });
-      setStatusLoaded(true);
-      
-      console.log('Direct access setup complete - using only user token');
-      return; // Stop further execution in this effect
-    }
+    const validateToken = async () => {
+      try {
+        const endpoint = derivedProvider === 'microsoft' 
+          ? 'https://graph.microsoft.com/v1.0/me'
+          : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
+        
+        const response = await fetch(endpoint, {
+          headers: { Authorization: `Bearer ${user.accessToken}` }
+        });
+        
+        if (response.status === 401) {
+          setTokenExpired(true);
+          console.log('Token expired, redirecting to login');
+          setTimeout(() => {
+            window.location.href = '/auth/logout';
+          }, 1500);
+        } else {
+          setTokenExpired(false);
+        }
+      } catch (error) {
+        console.error('Token validation error:', error);
+      } finally {
+        setIsValidatingToken(false);
+      }
+    };
     
-    if (groupId) {
-      // Hantera direktbokning (gammal logik, kan tas bort eller behållas för bakåtkompatibilitet)
-      if (directAccess === 'true' && contactEmails.length === 1) {
-        // Skapa en simulerad grupp för direktbokning
-        setGroupTokens([user.accessToken]); // Bara din token för nu
-        setGroupStatus({
-          allJoined: true,
-          current: 1,
-          expected: 1,
-          invited: contactEmails,
-          groupName: `Möte med ${contactName || contactEmails[0]}`
-        });
-        setStatusLoaded(true);
-        return;
-      }
-      
-      // Kontrollera om inbjudaren har direkttillgång till min kalender
-      if (groupId && !directAccess) {
-        // Hämta alla mina kontakt-inställningar
-        const myContactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
-        
-        // Hitta kontakt som matchar inbjudarens email
-        const myContacts = JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
-        const inviterContact = myContacts.find(contact => contact.email === email);
-        
-        if (inviterContact && myContactSettings[inviterContact.id]?.hasCalendarAccess) {
-          // Inbjudaren har direkttillgång - hoppa över väntrum
-          setGroupTokens([user.accessToken]);
-          setGroupStatus({
-            allJoined: true,
-            current: 1,
-            expected: 1,
-            invited: [email],
-            groupName: `Möte med ${email}`
-          });
-          setStatusLoaded(true);
-          return;
-        }
-      }
-      
-      // Kontrollera om inbjudaren har direktåtkomst via Team-kontakter
-      fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
-        .then(res => res.json())
-        .then(groupData => {
-          if (groupData && groupData.creatorEmail) {
-            const teamContactsKey = `bookr_team_contacts_${email}`;
-            const teamContacts = JSON.parse(localStorage.getItem(teamContactsKey) || '[]');
-            const inviterContact = teamContacts.find(c => c.email.toLowerCase() === groupData.creatorEmail.toLowerCase());
-
-            if (inviterContact?.directAccess) {
-              console.log(`Ansluter automatiskt eftersom ${groupData.creatorEmail} har direktåtkomst.`);
-              
-              // Anslut automatiskt och sätt upp direktåtkomst
-              fetch('https://www.onebookr.se/api/group/join', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  groupId,
-                  token: user.accessToken,
-                  invitee: inviteeId,
-                  email: email,
-                }),
-              })
-              .then(joinRes => joinRes.json())
-              .then(joinData => {
-                if (joinData.success) {
-                  // Sätt upp direktåtkomst-läge
-                  setGroupTokens([user.accessToken]);
-                  setGroupStatus({
-                    allJoined: true,
-                    current: 2, // Du och inbjudaren
-                    expected: 2,
-                    invited: [groupData.creatorEmail],
-                    groupName: groupData.groupName || 'Direktåtkomst-möte'
-                  });
-                  setStatusLoaded(true);
-                  console.log('Direktåtkomst aktiverat för grupp:', groupId);
-                }
-              })
-              .catch(err => console.error('Error joining with direct access:', err));
-              
-              return; // Stoppa vanlig grupplogik
-            }
-          }
-          // Fortsätt med vanlig grupplogik om ingen direktåtkomst
-          continueNormalGroupJoin();
-        })
-        .catch(err => {
-          console.error('Error checking group status for direct access:', err);
-          continueNormalGroupJoin();
-        });
-
-      // Hoistad deklaration så att anrop ovan fungerar utan ReferenceError
-      function continueNormalGroupJoin() {
-        // Hantera team-möten
-        if (teamName && teamMembers) {
-          const memberEmails = teamMembers.split(',');
-          setGroupStatus({
-            allJoined: false,
-            current: 1,
-            expected: memberEmails.length + 1,
-            invited: memberEmails,
-            groupName: `${teamName} - Teammöte`
-          });
-          setStatusLoaded(true);
-          // Fortsätt med vanlig grupplogik för team-möten
-        }
-
-        console.log('Joining group normally:', { groupId, email, inviteeId });
-        
-        // Kontrollera om gruppen existerar först
-        fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
-          .then(res => {
-            console.log('Group status response:', res.status);
-            if (!res.ok) {
-              console.error('Group not found');
-              return;
-            }
-            return res.json();
-          })
-          .then(statusData => {
-            if (!statusData) return;
-            console.log('Group exists, joining...');
-            
-            // Gruppen finns, fortsätt med join
-            return fetch('https://www.onebookr.se/api/group/join', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                groupId,
-                token: user.accessToken,
-                invitee: inviteeId,
-                email: email, // <-- DENNA email är från user-objektet (den inloggade användaren)
-              }),
-            });
-          })
-          .then(joinRes => {
-            if (joinRes) {
-              console.log('Join response:', joinRes.status);
-              return fetch(`https://www.onebookr.se/api/group/${groupId}/tokens`);
-            }
-          })
-          .then(tokensRes => {
-            if (tokensRes) {
-              return tokensRes.json();
-            }
-          })
-          .then(data => {
-            if (data) {
-              console.log('Group tokens:', data.tokens);
-              setGroupTokens(data.tokens || []);
-            }
-          })
-          .catch(error => {
-            console.error('Error in group join flow:', error);
-          });
-      } // End of continueNormalGroupJoin function
-    }
-  }, [groupId, user.accessToken, inviteeId, user.email, user.emails, directAccess, teamName]);
-
+    validateToken();
+  }, [user?.accessToken, derivedProvider]);
+ 
+  // Hämta grupp status och tokens
   useEffect(() => {
-    if (groupId) {
-      // Hämta status för gruppen
-      const pollStatus = async () => {
-        try {
-          const [statusRes, joinedRes] = await Promise.all([
-            fetch(`https://www.onebookr.se/api/group/${groupId}/status`),
-            fetch(`https://www.onebookr.se/api/group/${groupId}/joined`)
-          ]);
-
-          if (statusRes.ok) {
-            const status = await statusRes.json();
-            console.log('Group status updated:', status);
-            
-            // Kontrollera explicit om alla har anslutit
-            if (status.current >= status.expected) {
-              status.allJoined = true;
-            }
-            
-            setGroupStatus(status);
-            setStatusLoaded(true);
-          }
-
-          if (joinedRes.ok) {
-            const data = await joinedRes.json();
-            setJoinedEmails(data.joined || []);
-          }
-        } catch (err) {
-          console.error('Status poll failed:', err);
+    if (!groupId || !user?.accessToken) return;
+    
+    const fetchGroupStatus = async () => {
+      try {
+        const response = await fetch(`https://www.onebookr.se/api/group/${groupId}/status`);
+        if (response.ok) {
+          const data = await response.json();
+          setGroupStatus(data);
+          setJoinedEmails(data.joined || []);
         }
-      };
-
-      pollStatus();
-      const interval = setInterval(pollStatus, 3000); // Snabbare polling
-      return () => clearInterval(interval);
-    }
-  }, [groupId]);
+      } catch (error) {
+        console.error('Failed to fetch group status:', error);
+      }
+    };
+    
+    const fetchTokens = async () => {
+      try {
+        const response = await fetch(`https://www.onebookr.se/api/group/${groupId}/tokens`);
+        if (response.ok) {
+          const data = await response.json();
+          setGroupTokens(data.tokens || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch tokens:', error);
+      }
+    };
+    
+    fetchGroupStatus();
+    fetchTokens();
+    setStatusLoaded(true);
+  }, [groupId, user?.accessToken]);
 
   // Navigera automatiskt till jämförelse när alla är inne
   useEffect(() => {
-    if (groupId && groupStatus.allJoined) {
-      console.log('All joined! Showing calendar comparison...');
-      // Remove hash-based navigation and page reload
-      setStatusLoaded(true);
-      // Force re-render of calendar component
-      setGroupTokens(prevTokens => [...prevTokens]);
+    if (groupId && groupStatus.allJoined && statusLoaded) {
+      setShowCompare(true);
     }
-  }, [groupId, groupStatus.allJoined]);
+  }, [groupId, groupStatus.allJoined, statusLoaded]);
 
   // Beräkna tokens och gör props stabila
-	const tokensAll = (groupId || directAccess === 'true') ? groupTokens : [user.accessToken];
-	const invitedTokensRaw = tokensAll.filter(token => token !== user.accessToken);
+	const tokensAll = (groupId || directAccess === 'true') ? groupTokens : [user?.accessToken];
+	const invitedTokensRaw = tokensAll.filter(token => token !== user?.accessToken);
 
 	// Nytt: memoiserad och städad invitedTokens
-	const safeInvitedTokens = useMemo(
+	const safeInvitedTokens = React.useMemo(
 		() => (Array.isArray(invitedTokensRaw) ? invitedTokensRaw.filter(Boolean) : []),
 		[invitedTokensRaw]
 	);
 
 	// Lås montering och frys props för CompareCalendar
 	const [compareMounted, setCompareMounted] = useState(false);
-	const canRenderCompare = useMemo(() => {
-		const haveMyToken = typeof user?.accessToken === 'string' && user.accessToken.length > 0;
-		if (!haveMyToken) return false;
-		// NYTT: Blockera om token fortfarande valideras eller har gått ut
-		if (isValidatingToken || tokenExpired) return false;
-		if (directAccess === 'true') return true;
-		if (!groupId) return true;
-		return statusLoaded && (groupStatus?.allJoined || (groupStatus?.expected ?? 1) <= 1);
-	}, [user?.accessToken, isValidatingToken, tokenExpired, directAccess, groupId, statusLoaded, groupStatus?.allJoined, groupStatus?.expected
-	// NYTT: frys props vid första "redo"-ögonblick
-	const [frozen, setFrozen] = useState(null);
-	useEffect(() => {
-    // Ta bort tokenValidated-check
-    if (canRenderCompare && !compareMounted) {
-      setFrozen({
-        key: `cmp-${groupId || 'nogroup'}-${directAccess === 'true'}`,
-        myToken: user.accessToken,
-        invitedTokens: safeInvitedTokens,
-        groupId,
-        directAccess: directAccess === 'true',
-        contactEmail: (contactEmails && contactEmails.length > 0) ? contactEmails[0] : undefined,
-        contactEmails,
-        contactName,
-        teamName,
-      });
-      setCompareMounted(true);
-    }
-  }, [
-    canRenderCompare,
-    compareMounted,
-    user.accessToken,
-    safeInvitedTokens,
-    groupId,
-    directAccess,
-    contactEmails,
-    contactName,
-    teamName
-  ]);
 
   // Visa laddningsskärm under token-validering
   if (isValidatingToken) {
