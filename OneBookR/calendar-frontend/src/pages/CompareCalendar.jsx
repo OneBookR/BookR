@@ -197,7 +197,8 @@ export default function CompareCalendar({
           dayEnd,
           isMultiDay,
           multiDayStart: isMultiDay ? multiDayStart : undefined,
-          multiDayEnd: isMultiDay ? multiDayEnd : undefined
+          multiDayEnd: isMultiDay ? multiDayEnd : undefined,
+          provider: userProvider // NYTT: Skicka provider för bättre error handling på backend
         })
       });
 
@@ -213,17 +214,17 @@ export default function CompareCalendar({
           localStorage.removeItem('bookr_user');
           sessionStorage.removeItem('hasTriedSession');
           
-          // Visa meddelande
-          setToast({
-            open: true,
-            message: '⚠️ Din session har gått ut. Loggar ut...',
-            severity: 'warning'
-          });
-          
-          // Vänta 2 sekunder och redirecta
-          setTimeout(() => {
-            window.location.href = 'https://www.onebookr.se/auth/logout';
-          }, 2000);
+          // För Microsoft: försök med consent prompt
+          if (userProvider === 'microsoft') {
+            setTimeout(() => {
+              window.location.href = 'https://www.onebookr.se/auth/microsoft?prompt=consent';
+            }, 1500);
+          } else {
+            // För Google: normal logout
+            setTimeout(() => {
+              window.location.href = 'https://www.onebookr.se/auth/logout';
+            }, 1500);
+          }
           
           return;
         }
@@ -664,7 +665,8 @@ export default function CompareCalendar({
           timeMax: end,
           duration: parseInt(meetingDuration, 10),
           dayStart,
-          dayEnd
+          dayEnd,
+          provider: userProvider // NYTT: Skicka provider
         })
       });
 
@@ -678,9 +680,15 @@ export default function CompareCalendar({
           localStorage.removeItem('bookr_user');
           sessionStorage.removeItem('hasTriedSession');
           
-          setTimeout(() => {
-            window.location.href = 'https://www.onebookr.se/auth/logout';
-          }, 1000);
+          if (userProvider === 'microsoft') {
+            setTimeout(() => {
+              window.location.href = 'https://www.onebookr.se/auth/microsoft?prompt=consent';
+            }, 1000);
+          } else {
+            setTimeout(() => {
+              window.location.href = 'https://www.onebookr.se/auth/logout';
+            }, 1000);
+          }
           
           return;
         }
@@ -1548,14 +1556,6 @@ export default function CompareCalendar({
                           '100%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0)' }
                         },
                         '&:hover': {
-                          transform: { xs: 'none', sm: 'scale(1.02)' },
-                          boxShadow: '0 2px 8px rgba(25, 118, 210, 0.3)'
-                        }
-                      }}
-                      onClick={e => {
-                        e.stopPropagation();
-                        handleSuggest(slot);
-                      }}
                     >
                       Föreslå denna tiden
                     </Button>

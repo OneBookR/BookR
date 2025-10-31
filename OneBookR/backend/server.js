@@ -773,7 +773,7 @@ function filterSlotsByDayTime(slots, dayStart, dayEnd) {
 }
 
 app.post('/api/availability', async (req, res) => {
-  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd } = req.body;
+  const { tokens, timeMin, timeMax, duration, dayStart, dayEnd, isMultiDay, multiDayStart, multiDayEnd, provider } = req.body;
 
   console.log('=== AVAILABILITY API DEBUG ===');
   console.log('Tokens mottagna av backend:', Array.isArray(tokens) ? tokens.length : 0, 'tokens');

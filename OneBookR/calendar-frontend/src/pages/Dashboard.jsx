@@ -102,10 +102,10 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       }
 
       try {
-        const endpoint =
-          derivedProvider === 'microsoft'
-            ? 'https://graph.microsoft.com/v1.0/me'
-            : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
+        // NYTT: Använd rätt endpoint baserat på provider
+        const endpoint = derivedProvider === 'microsoft'
+          ? 'https://graph.microsoft.com/v1.0/me'
+          : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
 
         const response = await fetch(endpoint, {
           headers: { Authorization: `Bearer ${user.accessToken}` },
@@ -129,6 +129,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           console.log('Microsoft 403 - requesting calendar permissions');
           const currentUrl = window.location.href;
           localStorage.setItem('bookr_return_url', currentUrl);
+          // NYTT: Refresh Microsoft token med consent prompt
           window.location.href = 'https://www.onebookr.se/auth/microsoft?prompt=consent';
           return;
         } else {
@@ -410,8 +411,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
 		if (directAccess === 'true') return true;
 		if (!groupId) return true;
 		return statusLoaded && (groupStatus?.allJoined || (groupStatus?.expected ?? 1) <= 1);
-	}, [user?.accessToken, isValidatingToken, tokenExpired, directAccess, groupId, statusLoaded, groupStatus?.allJoined, groupStatus?.expected]);
-
+	}, [user?.accessToken, isValidatingToken, tokenExpired, directAccess, groupId, statusLoaded, groupStatus?.allJoined, groupStatus?.expected
 	// NYTT: frys props vid första "redo"-ögonblick
 	const [frozen, setFrozen] = useState(null);
 	useEffect(() => {
