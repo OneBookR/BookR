@@ -40,3 +40,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Firebase credentials
+OneBookR/backend/firebase-key.json
