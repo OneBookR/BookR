@@ -4,6 +4,8 @@
 **/*firebase-adminsdk*.json
 **/*serviceaccount*.json
 **/*service-account*.json
+**/*.pem
+**/*.p12
 twilio_2FA_recovery_code.txt
 
 # Tunga mappar
