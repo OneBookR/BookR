@@ -1,6 +1,18 @@
+# Env/keys/secrets
+**/.env
+**/firebase-key.json
+**/*firebase-adminsdk*.json
+**/*serviceaccount*.json
+**/*service-account*.json
+twilio_2FA_recovery_code.txt
+
+# Tunga mappar
 node_modules
 */node_modules
 **/node_modules
+dist
+build
+
+# Onödig metadata
 .git
-.env
 README.md

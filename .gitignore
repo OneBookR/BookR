@@ -45,8 +45,10 @@ Thumbs.db
 OneBookR/backend/firebase-key.json
 **/firebase-key.json
 **/*firebase-adminsdk*.json
+**/*serviceaccount*.json
+**/*service-account*.json
 
-# Env-filer överallt (säkerhetsnät)
+# Env-filer
 **/.env
 OneBookR/backend/.env
 
