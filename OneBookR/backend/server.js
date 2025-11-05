@@ -17,10 +17,13 @@ import path from 'path';
 import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData, createUser, getUser, updateUserLastLogin } from './firestore.js';
 
 const app = express();
-app.set('trust proxy', 1); // NYTT: Behövs för secure cookies bakom proxy (Railway/Heroku/Render)
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
+
+// NYTT: Miljöflagg för dev vs prod
+const isDevelopment = process.env.NODE_ENV !== 'production';
 
 // Maintenance mode
 const MAINTENANCE_MODE = process.env.MAINTENANCE_MODE === 'true';
@@ -48,18 +51,21 @@ app.get('/terms-of-service', (req, res) => {
 
 // Middleware
 app.use(cors({
-  origin: 'https://www.onebookr.se',
+  origin: isDevelopment
+    ? ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000']
+    : 'https://www.onebookr.se',
   credentials: true
 }));
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
-  saveUninitialized: true,
+  saveUninitialized: false,
   cookie: {
-    sameSite: 'none',
-    secure: true,
-    httpOnly: true
-    // Ta bort maxAge för att göra cookien till en session-cookie (försvinner när webbläsaren stängs)
+    sameSite: isDevelopment ? 'lax' : 'none',
+    secure: !isDevelopment,
+    httpOnly: true,
+    // domain bara i prod
+    ...(isDevelopment ? {} : { domain: '.onebookr.se' })
   }
 }));
 app.use(passport.initialize());
@@ -99,10 +105,11 @@ app.use((req, res, next) => {
 passport.use('google', new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
-  callbackURL: 'https://www.onebookr.se/auth/google/callback',
+  // NYTT: Använd env i dev, fallback prod
+  callbackURL: process.env.GOOGLE_CALLBACK_URL || 'https://www.onebookr.se/auth/google/callback',
   accessType: 'offline',
-  prompt: 'consent',  // Force refresh token
-  includeGrantedScopes: true  // Enable incremental authorization
+  prompt: 'consent',
+  includeGrantedScopes: true
 }, (accessToken, refreshToken, profile, done) => {
   // Sätt alltid profile.email till första e-post om den finns
   if (!profile.email && profile.emails && profile.emails.length > 0) {
@@ -124,7 +131,8 @@ passport.use('google', new GoogleStrategy({
 passport.use('microsoft', new MicrosoftStrategy({
   clientID: process.env.MICROSOFT_CLIENT_ID,
   clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
-  callbackURL: 'https://www.onebookr.se/auth/microsoft/callback',
+  // NYTT: Använd env i dev, fallback prod
+  callbackURL: process.env.MICROSOFT_CALLBACK_URL || 'https://www.onebookr.se/auth/microsoft/callback',
   scope: ['user.read', 'calendars.read', 'calendars.readwrite'],
   tenant: 'common' // Tillåter både personliga och arbets-/skolkonton
 }, (accessToken, refreshToken, profile, done) => {
@@ -235,7 +243,7 @@ app.get('/auth/microsoft/callback',
       }
     }
 
-    const frontendUrl = 'https://www.onebookr.se';
+    const frontendUrl = process.env.FRONTEND_URL || (isDevelopment ? 'http://localhost:5173' : 'https://www.onebookr.se');
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
@@ -306,7 +314,7 @@ app.get('/auth/google/callback',
       }
     }
 
-    const frontendUrl = 'https://www.onebookr.se';
+    const frontendUrl = process.env.FRONTEND_URL || (isDevelopment ? 'http://localhost:5173' : 'https://www.onebookr.se');
     res.redirect(`${frontendUrl}${redirectUrl}`);
   }
 );
@@ -330,13 +338,13 @@ app.get('/api/user', (req, res) => {
   }
 });
 
+// Logout → dynamisk redirect
 app.get('/auth/logout', (req, res) => {
   req.logout((err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Logout failed' });
-    }
+    if (err) return res.status(500).json({ error: 'Logout failed' });
     req.session.destroy(() => {
-      res.redirect('https://www.onebookr.se/');
+      const frontendUrl = process.env.FRONTEND_URL || (isDevelopment ? 'http://localhost:5173' : 'https://www.onebookr.se');
+      res.redirect(frontendUrl + '/');
     });
   });
 });
@@ -905,8 +913,8 @@ app.post('/api/invite', async (req, res) => {
       invitees.push({ id: inviteeId, email });
     }
 
-    // Skicka ut unika länkar
-    const frontendUrl = 'https://www.onebookr.se';
+    // Skicka ut unika länkar (dynamisk FRONTEND_URL)
+    const frontendUrl = process.env.FRONTEND_URL || (isDevelopment ? 'http://localhost:5173' : 'https://www.onebookr.se');
     const inviteLinks = invitees.map(inv =>
       `${frontendUrl}?group=${groupId}&invitee=${inv.id}`
     );
@@ -1803,6 +1811,17 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
   }
 });
 
+// NYTT: Version endpoint för att verifiera deployad kod
+app.get('/api/version', (req, res) => {
+  res.json({
+    version: '1.0.1', // ← Ändra detta nummer vid varje deploy
+    deployedAt: new Date().toISOString(),
+    nodeVersion: process.version,
+    environment: process.env.NODE_ENV,
+    lastCommit: 'bb63414' // Din senaste commit-hash
+  });
+});
+
 // --- Provider autodetection helpers ---
 function looksLikeGoogleToken(token) {
   if (!token) return false;
@@ -1952,5 +1971,5 @@ async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
 }
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
 });

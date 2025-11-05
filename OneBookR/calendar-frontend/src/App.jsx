@@ -25,6 +25,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SecurityIcon from '@mui/icons-material/Security';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
+import { API_BASE_URL } from './config';
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -73,7 +74,7 @@ function App() {
     sessionStorage.removeItem('hasTriedSession');
     sessionStorage.removeItem('currentGroupName');
     sessionStorage.removeItem('currentGroupMembers');
-    window.location.href = 'https://www.onebookr.se/auth/logout';
+    window.location.href = `${API_BASE_URL}/auth/logout`;
   };
 
   // Visa mobilsida om användaren är inloggad på mobil
@@ -141,7 +142,8 @@ function App() {
           
           // Omdirigera efter en kort delay
           setTimeout(() => {
-            window.location.href = 'https://www.onebookr.se/auth/logout';
+            // Ändra till API_BASE_URL
+            window.location.href = `${API_BASE_URL}/auth/logout`;
           }, 100);
         } else {
           setLoading(false);
@@ -182,7 +184,7 @@ function App() {
       const hasTriedSession = sessionStorage.getItem('hasTriedSession');
       if (!hasTriedSession) {
         sessionStorage.setItem('hasTriedSession', 'true');
-        fetch('https://www.onebookr.se/api/user', {
+        fetch(`${API_BASE_URL}/api/user`, {
           credentials: 'include'
         })
           .then(res => res.ok ? res.json() : null)
@@ -265,7 +267,7 @@ function App() {
     if (window.location.pathname === '/business-admin' && !user) {
       console.log('[DEBUG] Redirecting to Google-login for business-admin');
       const state = btoa(JSON.stringify({ type: 'business-admin' }));
-      window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
+      window.location.href = `${API_BASE_URL}/auth/google?state=${encodeURIComponent(state)}`;
     }
   }, [user]);
 
@@ -351,10 +353,10 @@ function App() {
     // NYTT: Business admin redirect
     if (window.location.pathname === '/business-admin') {
       const state = btoa(JSON.stringify({ type: 'business-admin' }));
-      window.location.href = `https://www.onebookr.se/auth/google?state=${encodeURIComponent(state)}`;
+      window.location.href = `${API_BASE_URL}/auth/google?state=${encodeURIComponent(state)}`;
       return null;
     }
-    let googleLoginUrl = 'https://www.onebookr.se/auth/google';
+    let googleLoginUrl = `${API_BASE_URL}/auth/google`;
     if (groupId) {
       const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
       googleLoginUrl += `?state=${encodeURIComponent(state)}`;
@@ -591,7 +593,7 @@ function App() {
                 <Button
                   variant="contained"
                   href={(() => {
-                    let microsoftLoginUrl = 'https://www.onebookr.se/auth/microsoft';
+                    let microsoftLoginUrl = `${API_BASE_URL}/auth/microsoft`;
                     if (groupId) {
                       const state = btoa(JSON.stringify({ groupId, inviteeId, hash: window.location.hash }));
                       microsoftLoginUrl += `?state=${encodeURIComponent(state)}`;

@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
 
+// Läs Firebase-konfiguration från miljövariabler
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -11,13 +11,25 @@ const firebaseConfig = {
   appId: process.env.FIREBASE_APP_ID
 };
 
-// Kontrollera att alla Firebase-variabler finns
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.error('Firebase configuration missing! Please set environment variables.');
-  process.exit(1);
+// För admin SDK (om du använder det), läs credentials från miljövariabler
+let adminCredentials = null;
+if (process.env.FIREBASE_PRIVATE_KEY) {
+  adminCredentials = {
+    type: process.env.FIREBASE_TYPE,
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'), // Konvertera \n till riktiga radbrytningar
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    client_id: process.env.FIREBASE_CLIENT_ID,
+    auth_uri: process.env.FIREBASE_AUTH_URI,
+    token_uri: process.env.FIREBASE_TOKEN_URI,
+    auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
+    client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL
+  };
 }
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const auth = getAuth(app);
-export default app;
+
+// Om du behöver admin credentials för något, exportera dem
+export { adminCredentials };
