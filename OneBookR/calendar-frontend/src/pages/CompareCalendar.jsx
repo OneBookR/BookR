@@ -1745,7 +1745,7 @@ export default function CompareCalendar({
                   )}
                   {s.finalized ? (
                     <Box sx={{
-                      bgcolor: 'rgba(76, 175, 80,  0.08)',
+                      bgcolor: 'rgba(76, 175, 80, 0.08)',
                       border: '1px solid rgba(76, 175, 80, 0.3)',
                       borderRadius: 3,
                       p: 3,
@@ -1769,36 +1769,54 @@ export default function CompareCalendar({
                       <Typography sx={{ color: '#1b5e20', fontWeight: 500, mb: 2, fontSize: 14 }}>
                         Alla har accepterat tiden. Kalenderinbjudan och möteslänk skickas ut via mejl.
                       </Typography>
-                                           {s.withMeet && s.meetLink && (
+                      
+                      {s.withMeet && s.meetLink ? (
                         <Box sx={{
                           bgcolor: '#fff',
-                          border: '1px solid #e0e3e7',
+                          border: '2px solid #4caf50',
                           borderRadius: 2,
                           p: 2,
                           mt: 2
                         }}>
-                          <Typography sx={{ color: '#1976d2', fontWeight: 600, mb: 1, fontSize: 14 }}>
-                            Google Meet-länk:
+                          <Typography sx={{ color: '#2e7d32', fontWeight: 700, mb: 1, fontSize: 15 }}>
+                            🎥 Google Meet-länk:
                           </Typography>
                           <Typography sx={{
                             wordBreak: 'break-all',
-                            fontSize: 13,
+                            fontSize: 14,
                             fontFamily: 'monospace',
-                            bgcolor: '#f5f5f5',
-                            p: 1,
-                            borderRadius: 1
+                            bgcolor: '#f1f8e9',
+                            p: 2,
+                            borderRadius: 1,
+                            border: '1px solid #9ccc65'
                           }}>
                             <a
                               href={s.meetLink}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{ color: '#1976d2', textDecoration: 'none' }}
+                              style={{ color: '#2e7d32', textDecoration: 'none', fontWeight: 600, fontSize: 13 }}
                             >
                               {s.meetLink}
                             </a>
                           </Typography>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => {
+                              navigator.clipboard.writeText(s.meetLink);
+                              setToast({ open: true, message: 'Meet-länk kopierad!', severity: 'success' });
+                            }}
+                            sx={{ mt: 2, fontWeight: 600 }}
+                          >
+                            📋 Kopiera länk
+                          </Button>
                         </Box>
-                      )}
+                      ) : s.withMeet ? (
+                        <Typography sx={{ color: '#d32f2f', fontWeight: 600, mt: 2 }}>
+                          ⚠️ Meet-länken hämtas ännu...
+                        </Typography>
+                      ) : null}
+                      
                       {!s.withMeet && s.location && (
                         <Typography sx={{ color: '#666', fontWeight: 500, mt: 2, fontSize: 14 }}>
                           📍 Plats: {s.location}

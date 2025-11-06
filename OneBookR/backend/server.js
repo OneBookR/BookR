@@ -1330,16 +1330,19 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           attendees: allEmails
         };
 
-        let unifiedMeetLink = null;
-
         // NYTT: Skapa FÖRSTA eventet för att få Meet-länken
+        let unifiedMeetLink = null;
         let firstGoogleTokenIndex = -1;
+
+        // Hitta första Google-token
         for (let i = 0; i < tokens.length; i++) {
           if (providers[i] === 'google') {
             firstGoogleTokenIndex = i;
             break;
           }
         }
+
+        console.log('First Google token index:', firstGoogleTokenIndex);
 
         // Skapa event för varje deltagare med SAMMA videomötestyp
         for (let i = 0; i < tokens.length; i++) {
@@ -1367,31 +1370,33 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
               };
               result = await createGoogleCalendarEvent(token, googleEventData, null);
             } else {
-              // NYTT: Endast Google-användare → skapa Meet ENDAST för första användaren, resten får samma länk
+              // ENDAST Google-användare → skapa Meet ENDAST för första användaren
               if (i === firstGoogleTokenIndex && !unifiedMeetLink) {
                 console.log('Creating FIRST Google event WITH NEW Meet link');
                 const googleEventData = {
                   ...baseEventData,
                   conferenceData: suggestion.withMeet ? {
                     createRequest: {
-                      requestId: meetEventId,
+                      requestId: suggestionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50),
                       conferenceSolutionKey: { type: 'hangoutsMeet' }
                     }
                   } : undefined
                 };
                 result = await createGoogleCalendarEvent(token, googleEventData, null);
                 
-                // Spara Meet-länken från första eventet
-                if (result?.meetLink) {
+                // VIKTIGT: Spara Meet-länken från första eventet
+                if (result?.success && result?.meetLink) {
                   unifiedMeetLink = result.meetLink;
                   console.log(`📹 Master Meet link created: ${unifiedMeetLink}`);
+                } else {
+                  console.warn('No meet link returned from first Google event');
                 }
-              } else {
+              } else if (i > firstGoogleTokenIndex || firstGoogleTokenIndex === -1) {
                 // Alla andra Google-användare får SAMMA Meet-länk
                 console.log('Creating Google event WITH EXISTING Meet link:', unifiedMeetLink);
                 const googleEventData = {
                   ...baseEventData,
-                  // TA BORT conferenceData här - vi lägger till länken manuellt i funktionen
+                  conferenceData: undefined // Ingen conferenceData för efterföljande events
                 };
                 result = await createGoogleCalendarEvent(token, googleEventData, unifiedMeetLink);
               }
@@ -1406,7 +1411,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
               console.log(`📹 Unified meeting link set: ${unifiedMeetLink}`);
             }
           } else {
-            console.error(`❌ Failed to create event for participant ${i + 1} (${provider})`);
+            console.error(`❌ Failed to create event for participant ${i + 1} (${provider}):`, result?.error);
           }
         }
         
@@ -1416,7 +1421,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         // Uppdatera suggestion med meet-länk
         await updateSuggestion(suggestionId, {
           meetLink: unifiedMeetLink,
-          meetingType, // Spara vilken typ av möte det är
+          meetingType,
           finalized: true,
           status: 'completed'
         });
@@ -1656,3 +1661,145 @@ async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
 });
+
+// --- Google Calendar Event Creation ---
+async function createGoogleCalendarEvent(token, eventData, existingMeetLink = null) {
+  try {
+    const event = {
+      summary: eventData.summary,
+      description: eventData.description,
+      start: {
+        dateTime: eventData.start.dateTime,
+        timeZone: eventData.start.timeZone || 'Europe/Stockholm'
+      },
+      end: {
+        dateTime: eventData.end.dateTime,
+        timeZone: eventData.end.timeZone || 'Europe/Stockholm'
+      },
+      location: eventData.location,
+      attendees: eventData.attendees?.map(email => ({ email })),
+      // VIKTIGT: Lägg ALLTID till conferenceData för att skapa Meet-länk
+    };
+
+    if (!existingMeetLink && eventData.conferenceData) {
+      event.conferenceData = eventData.conferenceData;
+    } else if (existingMeetLink) {
+      // Om vi redan har en Meet-länk, lägg till den direkt i description
+      event.description = (event.description || '') + `\n\n🎥 Google Meet: ${existingMeetLink}`;
+    }
+
+    console.log('Creating Google Calendar event with:', JSON.stringify({ summary: event.summary, hasConferenceData: !!event.conferenceData, hasExistingLink: !!existingMeetLink }));
+
+    const response = await fetch(
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(event)
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Google Calendar API error:', errorData);
+      return { success: false, error: errorData };
+    }
+
+    const createdEvent = await response.json();
+    console.log('Google Calendar event created:', createdEvent.id);
+    console.log('Full created event:', JSON.stringify(createdEvent, null, 2));
+
+    // VIKTIGT: Hämta Meet-länken från conferenceData
+    let meetLink = null;
+    
+    if (createdEvent.conferenceData?.entryPoints) {
+      // Hitta Google Meet-länken från entryPoints
+      const meetEntryPoint = createdEvent.conferenceData.entryPoints.find(ep => ep.entryPointType === 'video');
+      meetLink = meetEntryPoint?.uri || null;
+      console.log('Meet link from entryPoints:', meetLink);
+    }
+    
+    // Om ingen Meet-länk från conferenceData, kolla om den finns i description
+    if (!meetLink && existingMeetLink) {
+      meetLink = existingMeetLink;
+      console.log('Using existing meet link:', meetLink);
+    }
+
+    console.log('Final meet link:', meetLink);
+
+    return {
+      success: true,
+      eventId: createdEvent.id,
+      meetLink: meetLink || null,
+      event: createdEvent
+    };
+  } catch (error) {
+    console.error('Error creating Google Calendar event:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// --- Microsoft Calendar Event Creation ---
+async function createMicrosoftCalendarEvent(token, eventData) {
+  try {
+    const event = {
+      subject: eventData.summary,
+      bodyPreview: eventData.description,
+      body: {
+        contentType: 'text',
+        content: eventData.description
+      },
+      start: {
+        dateTime: eventData.start.dateTime,
+        timeZone: eventData.start.timeZone || 'Europe/Stockholm'
+      },
+      end: {
+        dateTime: eventData.end.dateTime,
+        timeZone: eventData.end.timeZone || 'Europe/Stockholm'
+      },
+      location: eventData.location ? { displayName: eventData.location } : undefined,
+      attendees: eventData.attendees?.map(email => ({
+        emailAddress: { address: email },
+        type: 'required'
+      })),
+      isOnlineMeeting: eventData.conferenceData ? true : false,
+      onlineMeetingProvider: eventData.conferenceData ? 'teamsForBusiness' : undefined
+    };
+
+    const response = await fetch(
+      'https://graph.microsoft.com/v1.0/me/events',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(event)
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Microsoft Graph API error:', errorData);
+      return { success: false, error: errorData };
+    }
+
+    const createdEvent = await response.json();
+    console.log('Microsoft Calendar event created:', createdEvent.id);
+
+    // Microsoft Teams-länken finns i onlineMeeting
+    const meetLink = createdEvent.onlineMeeting?.joinUrl;
+
+    return {
+      success: true,
+      eventId: createdEvent.id,
+      meetLink: meetLink
+    };
+  } catch (error) {
+    console.error('Error creating Microsoft Calendar event:', error);
+    return { success: false, error: error.message };
+  }
+}
