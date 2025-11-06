@@ -196,7 +196,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       }
       
       // Kontrollera om inbjudaren har direktåtkomst via Team-kontakter
-      fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
+      fetch(`${API_BASE_URL}/api/group/${groupId}/status`)
         .then(res => res.json())
         .then(groupData => {
           if (groupData && groupData.creatorEmail) {
@@ -208,7 +208,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
               console.log(`Ansluter automatiskt eftersom ${groupData.creatorEmail} har direktåtkomst.`);
               
               // Anslut automatiskt och sätt upp direktåtkomst
-              fetch('https://www.onebookr.se/api/group/join', {
+              fetch(`${API_BASE_URL}/api/group/join`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -266,7 +266,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         console.log('Joining group normally:', { groupId, email, inviteeId });
         
         // Kontrollera om gruppen existerar först
-        fetch(`https://www.onebookr.se/api/group/${groupId}/status`)
+        fetch(`${API_BASE_URL}/api/group/${groupId}/status`)
           .then(res => {
             console.log('Group status response:', res.status);
             if (!res.ok) {
@@ -280,7 +280,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
             console.log('Group exists, joining...');
             
             // Gruppen finns, fortsätt med join
-            return fetch('https://www.onebookr.se/api/group/join', {
+            return fetch(`${API_BASE_URL}/api/group/join`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -294,7 +294,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           .then(joinRes => {
             if (joinRes) {
               console.log('Join response:', joinRes.status);
-              return fetch(`https://www.onebookr.se/api/group/${groupId}/tokens`);
+              return fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
             }
           })
           .then(tokensRes => {
@@ -321,8 +321,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       const pollStatus = async () => {
         try {
           const [statusRes, joinedRes] = await Promise.all([
-            fetch(`https://www.onebookr.se/api/group/${groupId}/status`),
-            fetch(`https://www.onebookr.se/api/group/${groupId}/joined`)
+            fetch(`${API_BASE_URL}/api/group/${groupId}/status`),
+            fetch(`${API_BASE_URL}/api/group/${groupId}/joined`)
           ]);
 
           if (statusRes.ok) {

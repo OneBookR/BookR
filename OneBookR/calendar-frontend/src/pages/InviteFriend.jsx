@@ -3,6 +3,7 @@ import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListI
 import SendIcon from '@mui/icons-material/Send';
 import { useContacts } from '../hooks/useContacts';
 import { useTheme } from '../hooks/useTheme';
+import { API_BASE_URL } from '../config';
 
 const InviteFriend = ({ fromUser, fromToken, theme }) => {
   // Sätt window.user för useContacts
@@ -211,7 +212,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
     }
 
     try {
-      const res = await fetch('https://www.onebookr.se/api/invite', {
+      const res = await fetch(`${API_BASE_URL}/api/invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
