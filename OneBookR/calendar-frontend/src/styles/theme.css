@@ -7,6 +7,11 @@
   --border-color: #e0e3e7;
   --text-color: #000000;
   --text-secondary: #666666;
+  --dash-gap-sm: 16px;
+  --dash-gap-md: 24px;
+  --dash-gap-lg: 32px;
+  --dash-section-spacing: 40px;
+  --dash-tile-min-width: 180px;
 }
 
 [data-theme="dark"] {
@@ -125,4 +130,61 @@ body {
 
 .pulse-glow {
   animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.dashboard-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dash-gap-md);
+  justify-content: center;
+  align-items: stretch;
+  margin: var(--dash-gap-lg) auto var(--dash-section-spacing);
+  max-width: 1080px;
+  padding: 0 var(--dash-gap-sm);
+}
+
+.dashboard-shortcut-tile {
+  flex: 1 1 var(--dash-tile-min-width);
+  max-width: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.dashboard-overview-grid {
+  display: grid;
+  gap: var(--dash-gap-md);
+  grid-template-columns: repeat(auto-fill,minmax(240px,1fr));
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--dash-gap-sm);
+}
+
+.dashboard-section-title {
+  max-width: 1200px;
+  margin: 0 auto 20px;
+  padding: 0 var(--dash-gap-sm);
+}
+
+@media (min-width: 900px) {
+  .dashboard-shortcuts { gap: var(--dash-gap-lg); }
+  .dashboard-overview-grid { gap: var(--dash-gap-lg); }
+}
+
+/* Tighten card internal spacing uniformly */
+.dashboard-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+}
+
+.dashboard-card-header {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+/* Remove stray margins introduced inline */
+.dashboard-card > *:last-child {
+  margin-bottom: 0;
 }
