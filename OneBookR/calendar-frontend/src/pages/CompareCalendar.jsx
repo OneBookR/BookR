@@ -115,6 +115,8 @@ export default function CompareCalendar({
   const [suggestDialog, setSuggestDialog] = useState({ open: false, slot: null });
   const [meetingTitle, setMeetingTitle] = useState('');
   const [withMeet, setWithMeet] = useState(true);
+  // NYTT: val av mötesplattform
+  const [meetingPlatform, setMeetingPlatform] = useState('meet'); // 'meet' | 'teams'
   const [meetingLocation, setMeetingLocation] = useState('');
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
   const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
@@ -131,13 +133,11 @@ export default function CompareCalendar({
   const [successAnimation, setSuccessAnimation] = useState(null);
   const [isCalendarFullscreen, setIsCalendarFullscreen] = useState(false);
   
-  // Ta bort denna rad - groupId kommer från props
-  // const urlParams = new URLSearchParams(window.location.search);
-  // const groupId = urlParams.get('group');
-  
-  // Använd propGroupId istället
-  const groupId = propGroupId;
-  
+  // --- FIX: Fallback till groupId från URL om prop saknas ---
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlGroupId = urlParams.get('group');
+  const groupId = propGroupId || urlGroupId;
+
   // Hämta förslag
   useEffect(() => {
     if (groupId) {
@@ -216,7 +216,7 @@ export default function CompareCalendar({
         // OBS: Ta bort providers-heuristik (den var fel för Microsoft-token)
         // const providers = [userProvider, ...];  // BORTTAGET
 
-        // Hämta grupptokens och slå ihop
+        // Hämta grupptokens och slå ihop (fungerar nu tack vare groupId-fallback + auto-refresh)
         if (groupId) {
           try {
             const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
@@ -324,7 +324,9 @@ export default function CompareCalendar({
       end: suggestDialog.slot.end,
       email: user.email || user.emails?.[0]?.value || user.emails?.[0],
       title: meetingTitle,
-      withMeet,
+      withMeet, // behåll för bakåtkompabilitet
+      // NYTT: skicka vald mötesplattform
+      meetingPlatform, // 'meet' | 'teams'
       location: withMeet ? '' : meetingLocation,
       isMultiDay: suggestDialog.slot.isMultiDay || false,
       multiDayStart: suggestDialog.slot.multiDayStart || null,
@@ -672,8 +674,6 @@ export default function CompareCalendar({
   // Separat fetch-funktion för auto-laddning (utan validering)
   const fetchAvailabilityAuto = async (start, end) => {
     let tokens = [myToken, ...invitedTokens];
-    
-    // För team-möten eller grupper, hämta alla tokens från gruppen
     if (groupId) {
       try {
         const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
@@ -685,7 +685,6 @@ export default function CompareCalendar({
         console.log('Could not fetch group tokens for auto-load:', err);
       }
     }
-    
     tokens = Array.from(new Set(tokens.filter(Boolean)));
     if (tokens.length < 1) return;
     
@@ -1662,9 +1661,8 @@ export default function CompareCalendar({
             );
 
             return (
-              <Fade in={true} timeout={800}>
+              <Fade in={true} timeout={800} key={s.id}>
                 <Card
-                  key={s.id}
                   sx={{
                     mb: 3,
                     borderRadius:  3,
@@ -1766,7 +1764,7 @@ export default function CompareCalendar({
                         }}>🎉</span>
                         Mötet är bokat!
                       </Typography>
-                      <Typography sx={{ color: '#1b5e20', fontWeight: 500, mb: 2, fontSize: 14 }}>
+                      <Typography sx={{ color: '#1b5e20', fontWeight: 500, mb:  2, fontSize: 14 }}>
                         Alla har accepterat tiden. Kalenderinbjudan och möteslänk skickas ut via mejl.
                       </Typography>
                       
@@ -2090,46 +2088,28 @@ export default function CompareCalendar({
                 }}
               />
 
-              {/* Checkbox med förbättrad design */}
-              <Box sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                p: 2.5,
-                background: theme.colors.surface,
-                borderRadius: 2,
-                border: `1px solid ${theme.colors.border}`,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': {
-                  background: theme.isDark ? '#2a2a2a' : '#e9ecef',
-                  borderColor: theme.colors.primary
-                }
-              }}
-              onClick={() => setWithMeet(!withMeet)}>
-                <Box sx={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: 1,
-                  border: withMeet ? `2px solid ${theme.colors.primary}` : `2px solid ${theme.colors.border}`,
-                  background: withMeet ? theme.colors.primary : 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  mr: 2,
-                  transition: 'all 0.2s'
-                }}>
-                  {withMeet && (
-                    <Typography sx={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>✓</Typography>
-                  )}
-                </Box>
-                <Box>
-                  <Typography sx={{ fontWeight: 600, color: theme.colors.text, fontSize: 15 }}>
-                    Skicka ut Google Meet-länk
-                  </Typography>
-                  <Typography sx={{ fontSize: 13, color: theme.colors.textSecondary, mt: 0.5 }}>
-                    Automatiskt videomöte skapas och skickas till alla deltagare
-                  </Typography>
-                </Box>
+              {/* Valt mötesplattform med förbättrad design */}
+              <Box sx={{
+                display: 'flex',
+                gap: 1.5,
+                alignItems: 'stretch',
+                flexWrap: 'wrap'
+              }}>
+                <Button
+                  variant={meetingPlatform === 'meet' ? 'contained' : 'outlined'}
+                  onClick={() => { setMeetingPlatform('meet'); setWithMeet(true); setMeetingLocation(''); }}
+                  sx={{ borderRadius: 2, fontWeight: 700 }}
+                >
+                  Google Meet
+                </Button>
+                <Button
+                  variant={meetingPlatform === 'teams' ? 'contained' : 'outlined'}
+                  onClick={() => { setMeetingPlatform('teams'); setWithMeet(true); setMeetingLocation(''); }}
+                  sx={{ borderRadius: 2, fontWeight: 700 }}
+                  title="Kräver minst en Microsoft/Outlook-deltagare"
+                >
+                  Microsoft Teams
+                </Button>
               </Box>
 
               {/* Plats-fält med förbättrad design */}
@@ -2139,7 +2119,6 @@ export default function CompareCalendar({
                   value={meetingLocation}
                   onChange={e => setMeetingLocation(e.target.value)}
                   fullWidth
-                  placeholder="Ex: Kontoret, Café, Rum 101..."
                   required
                   sx={{
                     '& .MuiOutlinedInput-root': {

@@ -108,13 +108,27 @@ app.use((req, res, next) => {
   next();
 });
 
+// NYTT: Centralt val av callback-URL:er (måste matcha exakt med Azure/Google App)
+const googleCallbackUrl =
+  process.env.GOOGLE_CALLBACK_URL ||
+  (isDevelopment
+    ? 'http://localhost:3000/auth/google/callback'
+    : 'https://www.onebookr.se/auth/google/callback');
+
+const microsoftCallbackUrl =
+  process.env.MICROSOFT_CALLBACK_URL ||
+  (isDevelopment
+    ? 'http://localhost:3000/auth/microsoft/callback'
+    : 'https://www.onebookr.se/auth/microsoft/callback');
+
+console.log('[OAuth] Using Google callback URL:', googleCallbackUrl);
+console.log('[OAuth] Using Microsoft callback URL:', microsoftCallbackUrl);
+
 // Google OAuth-strategi
 passport.use('google', new GoogleStrategy({
   clientID: process.env.CLIENT_ID,
   clientSecret: process.env.CLIENT_SECRET,
-  callbackURL: isDevelopment 
-    ? 'http://localhost:3000/auth/google/callback'
-    : 'https://www.onebookr.se/auth/google/callback',
+  callbackURL: googleCallbackUrl,
   accessType: 'offline',
   prompt: 'consent',
   includeGrantedScopes: true
@@ -139,15 +153,20 @@ passport.use('google', new GoogleStrategy({
 passport.use('microsoft', new MicrosoftStrategy({
   clientID: process.env.MICROSOFT_CLIENT_ID,
   clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
-  callbackURL: isDevelopment 
-    ? 'http://localhost:3000/auth/microsoft/callback'
-    : 'https://www.onebookr.se/auth/microsoft/callback',
-  scope: ['user.read', 'calendars.read', 'calendars.readwrite'],
-  tenant: 'common' // Tillåter både personliga och arbets-/skolkonton
+  callbackURL: microsoftCallbackUrl,
+  // Byt till korrekta Graph v2 scopes (inkl offline_access för stabil token)
+  scope: ['openid', 'email', 'profile', 'offline_access', 'User.Read', 'Calendars.Read', 'Calendars.ReadWrite'],
+  tenant: 'common'
 }, (accessToken, refreshToken, profile, done) => {
   profile.accessToken = accessToken;
   profile.refreshToken = refreshToken;
   profile.provider = 'microsoft';
+  // NYTT: Normalisera e-postfält så frontenden kan använda user.email konsekvent
+  const normalizedEmail = profile.mail || profile.userPrincipalName || (Array.isArray(profile.emails) ? (profile.emails[0]?.value || profile.emails[0]) : undefined);
+  if (normalizedEmail) {
+    profile.email = normalizedEmail;
+    profile.primaryEmail = normalizedEmail;
+  }
   return done(null, profile);
 }));
 
@@ -181,12 +200,11 @@ app.get('/auth/google', (req, res, next) => {
 // Microsoft OAuth routes
 app.get('/auth/microsoft', (req, res, next) => {
   const state = req.query.state;
-  if (state) {
-    req.session.oauthState = state;
-  }
+  if (state) req.session.oauthState = state;
   
   passport.authenticate('microsoft', {
-    scope: ['user.read', 'calendars.read', 'calendars.readwrite'],
+    // Matcha scopes med strategin
+    scope: ['openid', 'email', 'profile', 'offline_access', 'User.Read', 'Calendars.Read', 'Calendars.ReadWrite'],
     state: state
   })(req, res, next);
 });
@@ -345,6 +363,17 @@ app.get('/api/user', (req, res) => {
   const user = req.user || req.session.user;
   
   if (user) {
+    // NYTT: Normalisera email och provider i svaret
+    if (!user.email) {
+      user.email = user.mail || user.userPrincipalName || (Array.isArray(user.emails) ? (user.emails[0]?.value || user.emails[0]) : undefined);
+    }
+    if (!user.provider && user.accessToken) {
+      try {
+        // enkel heuristik
+        const tk = String(user.accessToken || '');
+        user.provider = tk.startsWith('Ew') ? 'microsoft' : 'google';
+      } catch {}
+    }
     res.json({ user: user, token: user.accessToken });
   } else {
     res.status(401).json({ error: 'Not authenticated' });
@@ -896,8 +925,8 @@ app.post('/api/invite', async (req, res) => {
   }
 
   try {
-    // Bestäm provider baserat på användarens inloggningsmetod (kan utvidgas senare)
-    const creatorProvider = 'google'; // Standard, kan uppdateras när vi har mer info
+    // NYTT: Bestäm provider dynamiskt från token
+    const creatorProvider = detectProvider(fromToken) || 'google';
     
     // Skapa grupp i Firebase
     const groupId = await createGroup({
@@ -1555,46 +1584,100 @@ function detectProvider(token) {
 // --- Remote fetchers (minimal, robust error handling) ---
 async function fetchGoogleEvents(accessToken, timeMinISO, timeMaxISO) {
   try {
-    const tzRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+    // Hämta kalenderlista och slå ihop events från relevanta kalendrar (primary + personliga, exkl helgdagar/veckonummer)
+    const calListRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
-    const tzData = tzRes.ok ? await tzRes.json() : null;
-    const tz = tzData?.value || 'UTC';
-
-    // calendarView (Google): get events flattened and expanded instances
-    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, events: [] };
+    if (calListRes.status === 401 || calListRes.status === 403) {
+      return { ok: false, status: calListRes.status, events: [] };
     }
-    if (!res.ok) return { ok: false, status: res.status, events: [] };
-    const data = await res.json();
-    const items = Array.isArray(data.items) ? data.items : [];
+    if (!calListRes.ok) return { ok: false, status: calListRes.status, events: [] };
+    const calList = await calListRes.json();
+    const calendars = (calList.items || []).filter(
+      cal =>
+        cal.primary === true ||
+        (!String(cal.id).includes('holiday@') &&
+         !String(cal.id).toLowerCase().includes('weeknum') &&
+         !String(cal.summary).toLowerCase().includes('helgdag') &&
+         !String(cal.summary).toLowerCase().includes('veckonummer'))
+    );
+
+    const eventsArrays = await Promise.all(
+      calendars.map(async (cal) => {
+        try {
+          const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?singleEvents=true&orderBy=startTime&timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}&maxResults=2500`;
+          const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+          if (!res.ok) return [];
+          const data = await res.json();
+          return Array.isArray(data.items) ? data.items : [];
+        } catch {
+          return [];
+        }
+      })
+    );
+    const items = eventsArrays.flat();
+    // Tidszon (valfri)
+    let tz = 'UTC';
+    try {
+      const tzRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (tzRes.ok) {
+        const tzData = await tzRes.json();
+        tz = tzData?.value || 'UTC';
+      }
+    } catch {}
+
+    // Logg för felsökning
+    console.log(`[Availability][Google] Aggregated events: ${items.length} across ${calendars.length} calendars`);
     return { ok: true, status: 200, tz, events: items };
-  } catch (e) {
+  } catch {
     return { ok: false, status: 0, events: [] };
   }
 }
 
 async function fetchMicrosoftEvents(accessToken, timeMinISO, timeMaxISO) {
   try {
-    const tzPref = 'outlook.timezone="UTC"';
-    // Microsoft Graph calendarView
-    const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(timeMinISO)}&endDateTime=${encodeURIComponent(timeMaxISO)}&$top=1000&$orderby=start/dateTime`;
-    const res = await fetch(url, {
+    // Primär: calendarView
+    const prefTz = 'outlook.timezone="W. Europe Standard Time"'; // Stabil för SE
+    const urlView = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(timeMinISO)}&endDateTime=${encodeURIComponent(timeMaxISO)}&$top=1000&$orderby=start/dateTime`;
+    const resView = await fetch(urlView, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        Prefer: tzPref
+        Prefer: `${prefTz}, outlook.body-content-type="text"`
       }
     });
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, events: [] };
+
+    if (resView.status === 401 || resView.status === 403) {
+      return { ok: false, status: resView.status, events: [] };
     }
-    if (!res.ok) return { ok: false, status: res.status, events: [] };
-    const data = await res.json();
-    const items = Array.isArray(data.value) ? data.value : [];
-    return { ok: true, status: 200, tz: 'UTC', events: items };
-  } catch (e) {
+    let items = [];
+    if (resView.ok) {
+      const data = await resView.json();
+      items = Array.isArray(data.value) ? data.value : [];
+      console.log(`[Availability][MS] calendarView items: ${items.length}`);
+    }
+
+    // Fallback: /me/events med filter ifall calendarView gav 0
+    if (items.length === 0) {
+      const urlEvents = `https://graph.microsoft.com/v1.0/me/events?$filter=start/dateTime ge '${timeMinISO}' and end/dateTime le '${timeMaxISO}'&$orderby=start/dateTime&$top=1000`;
+      const resEvents = await fetch(urlEvents, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Prefer: prefTz
+        }
+      });
+      if (resEvents.status === 401 || resEvents.status === 403) {
+        return { ok: false, status: resEvents.status, events: [] };
+      }
+      if (resEvents.ok) {
+        const data = await resEvents.json();
+        items = Array.isArray(data.value) ? data.value : [];
+        console.log(`[Availability][MS] /me/events items: ${items.length}`);
+      }
+    }
+    return { ok: true, status: 200, tz: 'W. Europe Standard Time', events: items };
+  } catch {
     return { ok: false, status: 0, events: [] };
   }
 }
@@ -1636,31 +1719,32 @@ async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
   console.log('fetchCalendarEvents auto-detect:', detected);
 
   const tryOrder = detected === 'microsoft' ? ['microsoft', 'google'] : ['google', 'microsoft'];
+  let lastOk = null;
 
   for (const prov of tryOrder) {
     const res = prov === 'google'
       ? await fetchGoogleEvents(token, timeMinISO, timeMaxISO)
       : await fetchMicrosoftEvents(token, timeMinISO, timeMaxISO);
 
-    if (res.ok && res.events.length > 0) {
+    if (res.ok) {
+      // Konvertera även om 0 events → korrekt provider + tom busy
       const busy = prov === 'google'
         ? normalizeGoogleEventsToBusy(res.events)
         : normalizeMicrosoftEventsToBusy(res.events);
+      console.log(`[Availability][${prov}] busy blocks: ${busy.length}`);
       return { provider: prov, busy };
     }
 
-    // If unauthorized/forbidden, try the other provider before giving up
     if (res.status === 401 || res.status === 403) {
+      // prova nästa provider
       continue;
     }
+    // spara sista svar för felsökning
+    lastOk = res;
   }
-  // Nothing worked → return empty busy list without breaking the whole flow
+  // Ingenting fungerade → returnera tom busy
   return { provider: detected, busy: [] };
 }
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
-});
 
 // --- Google Calendar Event Creation ---
 async function createGoogleCalendarEvent(token, eventData, existingMeetLink = null) {
@@ -1803,3 +1887,7 @@ async function createMicrosoftCalendarEvent(token, eventData) {
     return { success: false, error: error.message };
   }
 }
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
+});

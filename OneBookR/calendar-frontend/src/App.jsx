@@ -125,33 +125,37 @@ function App() {
     const hasGroupLink = urlParams.get('group');
     
     if (user && user.accessToken && !hasGroupLink) {
-      // Validera token asynkront (endast för icke-grupplänkar)
-      fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
-        headers: {
-          Authorization: `Bearer ${user.accessToken}`,
-        },
+      // NYTT: Validera mot rätt provider (Google/Microsoft)
+      const provider =
+        user.provider ||
+        ((user.mail || user.userPrincipalName) ? 'microsoft' : 'google');
+
+      const testUrl =
+        provider === 'microsoft'
+          ? 'https://graph.microsoft.com/v1.0/me'
+          : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
+
+      fetch(testUrl, {
+        headers: { Authorization: `Bearer ${user.accessToken}` },
       })
-      .then(res => {
-        if (res.status === 401) {
-          console.log('Token expired in App.jsx, clearing user and redirecting...');
-          // Token är utgången - rensa allt
-          setUser(null);
-          localStorage.removeItem('bookr_user');
-          sessionStorage.removeItem('hasTriedSession');
-          localStorage.setItem('bookr_return_url', window.location.href);
-          
-          // Omdirigera efter en kort delay
-          setTimeout(() => {
-            // Ändra till API_BASE_URL
-            window.location.href = `${API_BASE_URL}/auth/logout`;
-          }, 100);
-        } else {
+        .then((res) => {
+          if (res.status === 401) {
+            console.log('Token expired in App.jsx, clearing user and redirecting...');
+            // Token är utgången - rensa allt
+            setUser(null);
+            localStorage.removeItem('bookr_user');
+            sessionStorage.removeItem('hasTriedSession');
+            localStorage.setItem('bookr_return_url', window.location.href);
+            setTimeout(() => {
+              window.location.href = `${API_BASE_URL}/auth/logout`;
+            }, 100);
+          } else {
+            setLoading(false);
+          }
+        })
+        .catch(() => {
           setLoading(false);
-        }
-      })
-      .catch(() => {
-        setLoading(false);
-      });
+        });
       return;
     } else if (user && user.accessToken && hasGroupLink) {
       // För grupplänkar, skippa validering här och låt Dashboard hantera det

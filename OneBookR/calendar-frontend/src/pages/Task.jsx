@@ -28,45 +28,23 @@ const Task = ({ user, onBack }) => {
 
   // Validera token vid start
   useEffect(() => {
-    const validateToken = async () => {
-      if (!user || !user.accessToken) {
-        setIsValidatingToken(false);
-        setTokenValidated(false);
-        return;
-      }
+    // NYTT: Provider-medveten tokenvalidering (Google/Microsoft)
+    setIsValidatingToken(true);
+    const token = user?.accessToken;
+    if (!token) {
+      setTokenValidated(false);
+      setIsValidatingToken(false);
+      return;
+    }
+    const provider = user?.provider || ((user?.mail || user?.userPrincipalName) ? 'microsoft' : 'google');
+    const testUrl = provider === 'microsoft'
+      ? 'https://graph.microsoft.com/v1.0/me'
+      : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
 
-      try {
-        const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
-          headers: {
-            Authorization: `Bearer ${user.accessToken}`,
-          },
-        });
-
-        if (response.status === 401) {
-          console.log('Token has expired in Task, redirecting to login...');
-          localStorage.setItem('bookr_return_url', window.location.href);
-          localStorage.removeItem('bookr_user');
-          sessionStorage.removeItem('hasTriedSession');
-          
-          setTimeout(() => {
-            window.location.href = 'https://www.onebookr.se/auth/logout';
-          }, 1500);
-          
-          setTokenValidated(false);
-          setIsValidatingToken(false);
-        } else {
-          console.log('Token is valid in Task');
-          setTokenValidated(true);
-          setIsValidatingToken(false);
-        }
-      } catch (error) {
-        console.error('Error validating token in Task:', error);
-        setTokenValidated(false);
-        setIsValidatingToken(false);
-      }
-    };
-
-    validateToken();
+    fetch(testUrl, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setTokenValidated(res.ok))
+      .catch(() => setTokenValidated(false))
+      .finally(() => setIsValidatingToken(false));
   }, [user?.accessToken]);
 
   useEffect(() => {
