@@ -10,3 +10,6 @@ export const API_BASE_URL =
   isLocalhost ? 'http://localhost:3000' : 'https://www.onebookr.se';
 
 console.log('[API Config] Final API_BASE_URL:', API_BASE_URL);
+
+// (Valfritt) console.log provider-stöd
+console.log('[Meet Providers] Tillgängliga:', ['meet','teams']);
