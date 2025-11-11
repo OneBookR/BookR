@@ -160,9 +160,7 @@ passport.use('microsoft', new MicrosoftStrategy({
     'profile',
     'email',
     'offline_access',
-    'User.Read',
-    'Calendars.Read',
-    'Calendars.ReadWrite'
+    'Calendars.Read'  // ✅ Bara läsa, och med GetSchedule får vi bara busy/free
   ],
   tenant: 'common'
 }, (accessToken, refreshToken, profile, done) => {
@@ -183,20 +181,16 @@ passport.deserializeUser((obj, done) => done(null, obj));
 
 // Routes
 app.get('/auth/google', (req, res, next) => {
-  // Spara state-parameter om den finns
-  const state = req.query.state;
+  const state = req.query.state;  // 🆕 LÄGG TILL DENNA RAD
   if (state) {
     req.session.oauthState = state;
   }
-  
 
-  
   passport.authenticate('google', {
     scope: [
       'profile',
       'email',
-      'https://www.googleapis.com/auth/calendar.readonly',
-      'https://www.googleapis.com/auth/calendar.events'
+      'https://www.googleapis.com/auth/calendar.freebusy'  // ✅ Bara busy/free, inte event-detaljer
     ],
     state: state,
     prompt: 'consent',  // Force refresh token
@@ -948,7 +942,8 @@ app.post('/api/invite', async (req, res) => {
       joinedEmails: [creatorEmail],
       isTeamMeeting: isTeamMeeting || false,
       teamName: teamName || null,
-      directAccess: directAccess || hasDirectAccessTeam || false
+      directAccess: directAccess || hasDirectAccessTeam || false,
+      createdAt: new Date()  // 🆕 LÄGG TILL DENNA RAD
     });
 
     // Skapa inbjudningar i Firebase
@@ -1592,157 +1587,133 @@ function detectProvider(token) {
 }
 
 // --- Remote fetchers (minimal, robust error handling) ---
-async function fetchGoogleEvents(accessToken, timeMinISO, timeMaxISO) {
+async function fetchGoogleFreeBusy(accessToken, timeMinISO, timeMaxISO) {
   try {
-    const tzRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const tzData = tzRes.ok ? await tzRes.json() : null;
-    const tz = tzData?.value || 'UTC';
-
-    // calendarView (Google): get events flattened and expanded instances
-    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, events: [] };
-    }
-    if (!res.ok) return { ok: false, status: res.status, events: [] };
-    const data = await res.json();
-    const items = Array.isArray(data.items) ? data.items : [];
-    return { ok: true, status: 200, tz, events: items };
-  } catch (e) {
-    return { ok: false, status: 0, events: [] };
-  }
-}
-
-async function fetchMicrosoftEvents(accessToken, timeMinISO, timeMaxISO) {
-  try {
-    const tzPref = 'outlook.timezone="UTC"';
-    // Smalare payload: hämta bara relevanta fält
-    const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(timeMinISO)}&endDateTime=${encodeURIComponent(timeMaxISO)}&$select=subject,start,end,isAllDay&$orderby=start/dateTime&$top=500`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Prefer: tzPref
+    // 🔒 GDPR-SAFE: Hämta bara busy/free status, INGENTING annat
+    const response = await fetch(
+      'https://www.googleapis.com/calendar/v3/freeBusy',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          timeMin: timeMinISO,
+          timeMax: timeMaxISO,
+          items: [{ id: 'primary' }]  // Bara primär kalender
+        })
       }
-    });
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, events: [] };
-    }
-    if (!res.ok) return { ok: false, status: res.status, events: [] };
-    const data = await res.json();
-    const items = Array.isArray(data.value) ? data.value : [];
+    );
 
-    // Normalisering: Lägg till 'Z' om UTC och saknar offset
-    const normalized = items.map(ev => {
-      const s = ev?.start?.dateTime;
-      const e = ev?.end?.dateTime;
-      let startDT = s;
-      let endDT = e;
-      if (s && !/[zZ]|[\+\-]\d{2}:\d{2}$/.test(s)) {
-        startDT = s + 'Z'; // tolka som UTC
-      }
-      if (e && !/[zZ]|[\+\-]\d{2}:\d{2}$/.test(e)) {
-        endDT = e + 'Z';
-      }
-      return {
-        subject: ev.subject,
-        start: { dateTime: startDT, timeZone: ev?.start?.timeZone || 'UTC' },
-        end: { dateTime: endDT, timeZone: ev?.end?.timeZone || 'UTC' },
-        isAllDay: ev.isAllDay
-      };
-    });
+    if (!response.ok) return { ok: false, status: response.status, busy: [] };
+    
+    const data = await response.json();
+    
+    // Omvandla till busy-format (ingen känslig data!)
+    const busyPeriods = (data.calendars?.primary?.busy || []).map(period => ({
+      start: new Date(period.start).getTime(),
+      end: new Date(period.end).getTime(),
+      title: 'Busy'  // ✅ Neutral titel, ingen actual event-info
+    }));
 
-    return { ok: true, status: 200, tz: 'UTC', events: normalized };
-  } catch (e) {
-    return { ok: false, status: 0, events: [] };
-  }
-}
-
-// Fallback om calendarView är tomt
-async function fetchMicrosoftEventsFallback(accessToken, timeMinISO, timeMaxISO) {
-  try {
-    const url = `https://graph.microsoft.com/v1.0/me/events?$filter=start/dateTime ge '${timeMinISO}' and end/dateTime le '${timeMaxISO}'&$select=subject,start,end,isAllDay&$orderby=start/dateTime&$top=200`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (!res.ok) return { ok: false, status: res.status, events: [] };
-    const data = await res.json();
-    const items = Array.isArray(data.value) ? data.value : [];
-    return {
-      ok: true,
-      status: 200,
-      tz: 'UTC',
-      events: items.map(ev => ({
-        subject: ev.subject,
-        start: { dateTime: ev?.start?.dateTime + (ev?.start?.dateTime && !/[zZ]|[\+\-]\d{2}:\d{2}$/.test(ev.start.dateTime) ? 'Z' : ''), timeZone: 'UTC' },
-        end: { dateTime: ev?.end?.dateTime + (ev?.end?.dateTime && !/[zZ]|[\+\-]\d{2}:\d{2}$/.test(ev.end.dateTime) ? 'Z' : ''), timeZone: 'UTC' },
-        isAllDay: ev.isAllDay
-      }))
+    return { 
+      ok: true, 
+      status: 200, 
+      tz: 'Europe/Stockholm',
+      busy: busyPeriods 
     };
-  } catch {
-    return { ok: false, status: 0, events: [] };
+  } catch (e) {
+    console.error('[freeBusy] Error:', e.message);
+    return { ok: false, status: 0, busy: [] };
   }
 }
 
-function normalizeGoogleEventsToBusy(items) {
-  const busy = [];
-  for (const ev of items) {
-    const startISO = ev?.start?.dateTime || ev?.start?.date;
-    const endISO = ev?.end?.dateTime || ev?.end?.date;
-    if (!startISO || !endISO) continue;
-    const start = new Date(startISO).getTime();
-    const end = new Date(endISO).getTime();
-    if (isFinite(start) && isFinite(end) && end > start) {
-      busy.push({ start, end, title: ev.summary || 'busy', isAllDay: !!ev?.start?.date });
+// ERSÄTT fetchMicrosoftEvents() med denna:
+async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
+  try {
+    // 🔒 GDPR-SAFE: Microsoft Graph GetSchedule returnerar BARA busy/free
+    const response = await fetch(
+      'https://graph.microsoft.com/v1.0/me/calendar/getSchedule',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'outlook.timezone="Europe/Stockholm"'
+        },
+        body: JSON.stringify({
+          schedules: ['user@example.com'],  // Skickas in från användarens email
+          startTime: {
+            dateTime: timeMinISO.split('T')[0] + 'T00:00:00',
+            timeZone: 'Europe/Stockholm'
+          },
+          endTime: {
+            dateTime: timeMaxISO.split('T')[0] + 'T23:59:59',
+            timeZone: 'Europe/Stockholm'
+          },
+          availabilityViewInterval: 30  // 30-min slots
+        })
+      }
+    );
+
+    if (!response.ok) return { ok: false, status: response.status, busy: [] };
+    
+    const data = await response.json();
+    
+    // Tolka occupancyView (busy/free representation)
+    const busyPeriods = [];
+    const view = data.availabilityView;  // Ex: "0000222000" där 2=busy
+    
+    if (view) {
+      const startTime = new Date(timeMinISO).getTime();
+      const slotDurationMs = 30 * 60 * 1000;
+      
+      for (let i = 0; i < view.length; i++) {
+        if (view[i] === '2' || view[i] === '3') {  // 2=busy, 3=OOF
+          busyPeriods.push({
+            start: startTime + i * slotDurationMs,
+            end: startTime + (i + 1) * slotDurationMs,
+            title: 'Busy'
+          });
+        }
+      }
     }
+
+    return { 
+      ok: true, 
+      status: 200, 
+      tz: 'Europe/Stockholm',
+      busy: busyPeriods 
+    };
+  } catch (e) {
+    console.error('[MS freeBusy] Error:', e.message);
+    return { ok: false, status: 0, busy: [] };
   }
-  return busy;
 }
 
-function normalizeMicrosoftEventsToBusy(items) {
-  const busy = [];
-  for (const ev of items) {
-    const startISO = ev?.start?.dateTime;
-    const endISO = ev?.end?.dateTime;
-    if (!startISO || !endISO) continue;
-    const start = new Date(startISO).getTime();
-    const end = new Date(endISO).getTime();
-    if (isFinite(start) && isFinite(end) && end > start) {
-      busy.push({ start, end, title: ev.subject || 'busy', isAllDay: !!ev.isAllDay });
-    }
-  }
-  return busy;
-}
-
-// Try primary provider, then fallback to the other if needed
+// Uppdatera fetchCalendarBusyAuto() för att använda dessa istället:
 async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
   const detected = detectProvider(token);
   console.log('[Availability] autodetect provider:', detected);
+  
+  // Försök först med detekterad provider, sedan fallback
   const tryOrder = detected === 'microsoft' ? ['microsoft', 'google'] : ['google', 'microsoft'];
 
   for (const prov of tryOrder) {
     let res;
     if (prov === 'google') {
-      res = await fetchGoogleEvents(token, timeMinISO, timeMaxISO);
+      res = await fetchGoogleFreeBusy(token, timeMinISO, timeMaxISO);  // 🆕 GDPR-safe
     } else {
-      res = await fetchMicrosoftEvents(token, timeMinISO, timeMaxISO);
-      if (res.ok && res.events.length === 0) {
-        // Fallback om calendarView gav 0
-        const fb = await fetchMicrosoftEventsFallback(token, timeMinISO, timeMaxISO);
-        if (fb.ok) res = fb;
-      }
+      res = await fetchMicrosoftFreeBusy(token, timeMinISO, timeMaxISO);  // 🆕 GDPR-safe
     }
 
-    if (res.ok && res.events.length > 0) {
-      const busy = prov === 'google'
-        ? normalizeGoogleEventsToBusy(res.events)
-        : normalizeMicrosoftEventsToBusy(res.events);
-      console.log(`[Availability][${prov}] busy blocks: ${busy.length}`);
-      return { provider: prov, busy };
+    if (res.ok && res.busy.length >= 0) {  // Returnera även om tom (användare är helt ledig)
+      console.log(`[${prov}] busy blocks: ${res.busy.length}`);
+      return { provider: prov, busy: res.busy };
     }
-    if (res.status === 401 || res.status === 403) continue;
   }
+  
   return { provider: detected, busy: [] };
 }
 
@@ -1765,8 +1736,7 @@ async function createGoogleCalendarEvent(token, eventData, existingMeetLink = nu
         timeZone: eventData.end.timeZone || 'Europe/Stockholm'
       },
       location: eventData.location,
-      attendees: eventData.attendees?.map(email => ({ email })),
-      // VIKTIGT: Lägg ALLTID till conferenceData för att skapa Meet-länk
+      attendees: eventData.attendees?.map(email => ({ email }))
     };
 
     if (!existingMeetLink && eventData.conferenceData) {
@@ -1794,11 +1764,10 @@ async function createGoogleCalendarEvent(token, eventData, existingMeetLink = nu
       const errorData = await response.json();
       console.error('Google Calendar API error:', errorData);
       return { success: false, error: errorData };
-    }
+       }
 
     const createdEvent = await response.json();
     console.log('Google Calendar event created:', createdEvent.id);
-    console.log('Full created event:', JSON.stringify(createdEvent, null, 2));
 
     // VIKTIGT: Hämta Meet-länken från conferenceData
     let meetLink = null;
@@ -1890,4 +1859,106 @@ async function createMicrosoftCalendarEvent(token, eventData) {
     console.error('Error creating Microsoft Calendar event:', error);
     return { success: false, error: error.message };
   }
+}
+
+// 🆕 Lägg till denna vid gruppkörning:
+// 1. Kryptera e-postadresser (pseudonymisering)
+// 2. Implementera data-retention policy
+// 3. Lägg till radera-data endpoint
+
+app.post('/api/user/delete-all-data', async (req, res) => {
+  try {
+    const { email, token } = req.body;
+    
+    // Verifiera att det är rätt användare
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!userRes.ok) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const userData = await userRes.json();
+    if (userData.email !== email) return res.status(403).json({ error: 'Email mismatch' });
+
+    // 🔥 TA BORT all data för denna användaren
+    // 1. Alla grupper där användaren är skapare
+    // 2. Alla inbjudningar till denna email
+    // 3. Alla röster/förslag från denna email
+    
+    const groupsAsCreator = await db.collection('groups')
+      .where('creatorEmail', '==', email)
+      .get();
+    
+    for (const doc of groupsAsCreator.docs) {
+      await doc.ref.delete();
+    }
+    
+    const invitations = await db.collection('invitations')
+      .where('email', '==', email)
+      .get();
+    
+    for (const doc of invitations.docs) {
+      await doc.ref.delete();
+    }
+    
+    const suggestions = await db.collectionGroup('suggestions')
+      .where('fromEmail', '==', email)
+      .get();
+    
+    for (const doc of suggestions.docs) {
+      await doc.ref.delete();
+    }
+
+    // 🆕 Lägg till i Firestore Audit Log (för GDPR compliance)
+    await db.collection('audit_logs').add({
+      type: 'USER_DATA_DELETED',
+      email: email,
+      timestamp: new Date(),
+      dataTypes: ['groups', 'invitations', 'suggestions', 'votes']
+    });
+
+    res.json({ success: true, message: 'All data deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Could not delete data' });
+  }
+
+});
+// NYTT: Säkerställ att gamla grupper raderas automatiskt
+const deleteOldGroups = async () => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const oldGroups = await db.collection('groups')
+      .where('createdAt', '<', thirtyDaysAgo)
+      .get();
+    
+    for (const doc of oldGroups.docs) {
+      // Radera alla relaterade data
+      const suggestions = await db.collection('suggestions')
+        .where('groupId', '==', doc.id)
+        .get();
+      
+      for (const suggestionDoc of suggestions.docs) {
+        await suggestionDoc.ref.delete();
+      }
+      
+      const invitations = await db.collection('invitations')
+        .where('groupId', '==', doc.id)
+        .get();
+      
+      for (const invitationDoc of invitations.docs) {
+        await invitationDoc.ref.delete();
+      }
+      
+      await doc.ref.delete();
+    }
+    
+    console.log(`[Data Retention] Raderade ${oldGroups.size} gamla grupper`);
+  } catch (error) {
+    console.error('[Data Retention] Fel vid radering:', error);
+  }
+};
+
+// Kör varje dag klockan 02:00
+if (process.env.NODE_ENV === 'production') {
+  const schedule = require('node-schedule');
+  schedule.scheduleJob('0 2 * * *', deleteOldGroups);
 }
