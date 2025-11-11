@@ -10,10 +10,10 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
 import fetch from 'node-fetch';
 import { Resend } from 'resend';
-const resend = new Resend(process.env.RESEND_API_KEY);
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
+import schedule from 'node-schedule';  // 🆕 LÄGG TILL HÄR
 import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData, createUser, getUser, updateUserLastLogin } from './firestore.js';
 
 const app = express();
@@ -1959,6 +1959,5 @@ const deleteOldGroups = async () => {
 
 // Kör varje dag klockan 02:00
 if (process.env.NODE_ENV === 'production') {
-  const schedule = require('node-schedule');
   schedule.scheduleJob('0 2 * * *', deleteOldGroups);
 }
