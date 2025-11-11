@@ -9,11 +9,12 @@ import bodyParser from 'body-parser';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
 import fetch from 'node-fetch';
-import { Resend } from 'resend';
+import { Resend } from 'resend';  // ✅ WICHTIG: Måste importeras innan användning
+const resend = new Resend(process.env.RESEND_API_KEY);  // ✅ Nu definierad globalt
 import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
-import schedule from 'node-schedule';  // 🆕 LÄGG TILL HÄR
+import schedule from 'node-schedule';
 import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData, createUser, getUser, updateUserLastLogin } from './firestore.js';
 
 const app = express();
@@ -1562,27 +1563,54 @@ function looksLikeGoogleToken(token) {
 
 function looksLikeMicrosoftToken(token) {
   if (!token) return false;
-  // MS tokens can be JWT (eyJ...) or opaque 'Ew...'; treat both as possible MS
-  if (token.startsWith('Ew')) return true;
+  // MS tokens börjar ofta med 'Ew' eller 'M.' för opaque tokens
+  if (token.startsWith('Ew') || token.startsWith('M.')) return true;
+  
   try {
-    if (token && token.split('.').length >= 2 && token.startsWith('eyJ')) {
+    // JWT-parser för MS tokens
+    if (token && token.split('.').length === 3 && token.startsWith('eyJ')) {
       const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
       const iss = String(payload.iss || '').toLowerCase();
       const aud = String(payload.aud || '').toLowerCase();
-      if (iss.includes('login.microsoftonline.com') || aud.includes('graph.microsoft.com')) return 'microsoft';
-      if (iss.includes('accounts.google.com')) return 'google';
+      const appid = String(payload.appid || '').toLowerCase();
+      
+      // MS tokens har vanligtvis login.microsoftonline.com i iss
+      if (iss.includes('login.microsoftonline.com') || 
+          aud.includes('graph.microsoft.com') ||
+          appid.includes('graph')) {
+        return true;
+      }
     }
   } catch (_) {}
   return false;
 }
 
 function detectProvider(token) {
-  if (looksLikeGoogleToken(token) && !looksLikeMicrosoftToken(token)) return 'google';
-  if (looksLikeMicrosoftToken(token) && !looksLikeGoogleToken(token)) return 'microsoft';
-  // Unknown: prefer trying Google first for ya29 or JWT with google iss, else Microsoft
-  if (token && token.startsWith('ya29.')) return 'google';
-  if (token && token.startsWith('Ew')) return 'microsoft';
-  // Default to google (legacy), but we will fallback to ms if google fails
+  if (!token) return 'google';  // Default
+  
+  // Kolla Microsoft först (mer spesifik)
+  if (looksLikeMicrosoftToken(token)) {
+    console.log('[detectProvider] Detected as MICROSOFT');
+    return 'microsoft';
+  }
+  
+  // Sedan Google
+  if (looksLikeGoogleToken(token)) {
+    console.log('[detectProvider] Detected as GOOGLE');
+    return 'google';
+  }
+  
+  // Fallback baserat på token-format
+  if (token.startsWith('Ew') || token.startsWith('M.')) {
+    console.log('[detectProvider] Fallback to MICROSOFT (token starts with Ew/M.)');
+    return 'microsoft';
+  }
+  if (token.startsWith('ya29.')) {
+    console.log('[detectProvider] Fallback to GOOGLE (token starts with ya29.)');
+    return 'google';
+  }
+  
+  console.log('[detectProvider] Unknown token format, defaulting to google');
   return 'google';
 }
 
@@ -1632,7 +1660,28 @@ async function fetchGoogleFreeBusy(accessToken, timeMinISO, timeMaxISO) {
 // ERSÄTT fetchMicrosoftEvents() med denna:
 async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
   try {
-    // 🔒 GDPR-SAFE: Microsoft Graph GetSchedule returnerar BARA busy/free
+    console.log('[MS freeBusy] Fetching with token:', accessToken.substring(0, 30) + '...');
+    
+    // Först: Validera token genom att hämta användarens e-post
+    const meResponse = await fetch(
+      'https://graph.microsoft.com/v1.0/me',
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!meResponse.ok) {
+      console.error('[MS freeBusy] Token validation failed, status:', meResponse.status);
+      return { ok: false, status: meResponse.status, busy: [] };
+    }
+
+    const meData = await meResponse.json();
+    const userEmail = meData.mail || meData.userPrincipalName;
+    console.log('[MS freeBusy] User email:', userEmail);
+
+    // Nu: Använd GetSchedule med korrekt email
     const response = await fetch(
       'https://graph.microsoft.com/v1.0/me/calendar/getSchedule',
       {
@@ -1643,7 +1692,7 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
           'Prefer': 'outlook.timezone="Europe/Stockholm"'
         },
         body: JSON.stringify({
-          schedules: ['user@example.com'],  // Skickas in från användarens email
+          schedules: [userEmail],  // ✅ Använd korrekt email istället för placeholder
           startTime: {
             dateTime: timeMinISO.split('T')[0] + 'T00:00:00',
             timeZone: 'Europe/Stockholm'
@@ -1657,20 +1706,28 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
       }
     );
 
-    if (!response.ok) return { ok: false, status: response.status, busy: [] };
-    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('[MS freeBusy] GetSchedule failed:', errorData);
+      return { ok: false, status: response.status, busy: [] };
+    }
+
     const data = await response.json();
+    console.log('[MS freeBusy] Response data:', JSON.stringify(data, null, 2));
     
-    // Tolka occupancyView (busy/free representation)
+    // Tolka availabilityView
     const busyPeriods = [];
-    const view = data.availabilityView;  // Ex: "0000222000" där 2=busy
+    const view = data.availabilityView?.[0];  // ✅ Först element i arrayen
     
     if (view) {
       const startTime = new Date(timeMinISO).getTime();
-      const slotDurationMs = 30 * 60 * 1000;
+      const slotDurationMs = 30 * 60 * 1000;  // 30 minuter
+      
+      console.log('[MS freeBusy] Parsing availability view:', view);
       
       for (let i = 0; i < view.length; i++) {
-        if (view[i] === '2' || view[i] === '3') {  // 2=busy, 3=OOF
+        const status = view[i];
+        if (status === '2' || status === '3' || status === '4') {  // 2=busy, 3=OOF, 4=tentative
           busyPeriods.push({
             start: startTime + i * slotDurationMs,
             end: startTime + (i + 1) * slotDurationMs,
@@ -1679,6 +1736,8 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
         }
       }
     }
+
+    console.log('[MS freeBusy] Parsed busy periods:', busyPeriods.length);
 
     return { 
       ok: true, 
