@@ -1657,7 +1657,7 @@ async function fetchGoogleFreeBusy(accessToken, timeMinISO, timeMaxISO) {
   }
 }
 
-// ERSÄTT fetchMicrosoftEvents() med denna:
+// ERSÄTT fetchMicrosoftFreeBusy() helt:
 async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
   try {
     console.log('[MS freeBusy] Fetching with token:', accessToken.substring(0, 30) + '...');
@@ -1689,10 +1689,10 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
-          'Prefer': 'outlook.timezone="Europe/Stockholm"'
+          'Accept': 'application/json'  // 🆕 EXPLICIT accept-header
         },
         body: JSON.stringify({
-          schedules: [userEmail],  // ✅ Använd korrekt email istället för placeholder
+          schedules: [userEmail],
           startTime: {
             dateTime: timeMinISO.split('T')[0] + 'T00:00:00',
             timeZone: 'Europe/Stockholm'
@@ -1712,32 +1712,58 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
       return { ok: false, status: response.status, busy: [] };
     }
 
-    const data = await response.json();
-    console.log('[MS freeBusy] Response data:', JSON.stringify(data, null, 2));
+    // 🆕 ROBUST: Läs som text först och validera
+    const rawText = await response.text();
+    console.log('[MS freeBusy] Raw response length:', rawText.length);
     
-    // Tolka availabilityView
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      console.error('[MS freeBusy] JSON parse error:', parseErr.message);
+      console.error('[MS freeBusy] First 500 chars:', rawText.substring(0, 500));
+      return { ok: false, status: 500, busy: [] };
+    }
+
     const busyPeriods = [];
-    const view = data.availabilityView?.[0];  // ✅ Först element i arrayen
     
-    if (view) {
-      const startTime = new Date(timeMinISO).getTime();
-      const slotDurationMs = 30 * 60 * 1000;  // 30 minuter
+    // ✅ GDPR-SAFE + ROBUST: Extrahera ENDAST tidsintervallen från scheduleItems
+    if (data.value && Array.isArray(data.value) && data.value.length > 0) {
+      const scheduleInfo = data.value[0];
       
-      console.log('[MS freeBusy] Parsing availability view:', view);
-      
-      for (let i = 0; i < view.length; i++) {
-        const status = view[i];
-        if (status === '2' || status === '3' || status === '4') {  // 2=busy, 3=OOF, 4=tentative
-          busyPeriods.push({
-            start: startTime + i * slotDurationMs,
-            end: startTime + (i + 1) * slotDurationMs,
-            title: 'Busy'
-          });
+      if (scheduleInfo.scheduleItems && Array.isArray(scheduleInfo.scheduleItems)) {
+        for (const item of scheduleInfo.scheduleItems) {
+          // ENDAST använd start/end tider och status, INTE subject/location/etc
+          if (!item || !item.status || !item.start || !item.end) {
+            console.warn('[MS freeBusy] Skipping malformed item:', item);
+            continue;
+          }
+          
+          const status = String(item.status).toLowerCase();
+          if (status === 'busy' || status === 'oof' || status === 'tentative') {
+            try {
+              const startTime = new Date(item.start.dateTime).getTime();
+              const endTime = new Date(item.end.dateTime).getTime();
+              
+              if (!isNaN(startTime) && !isNaN(endTime) && endTime > startTime) {
+                busyPeriods.push({
+                  start: startTime,
+                  end: endTime,
+                  title: 'Busy'  // ✅ Neutral titel, ingen event-info
+                });
+              } else {
+                console.warn('[MS freeBusy] Invalid time range:', { startTime, endTime });
+              }
+            } catch (dateErr) {
+              console.warn('[MS freeBusy] Date parse error:', dateErr.message);
+              continue;
+            }
+          }
         }
       }
     }
 
-    console.log('[MS freeBusy] Parsed busy periods:', busyPeriods.length);
+    console.log('[MS freeBusy] Extracted', busyPeriods.length, 'busy periods from scheduleItems');
 
     return { 
       ok: true, 
@@ -1746,7 +1772,8 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
       busy: busyPeriods 
     };
   } catch (e) {
-    console.error('[MS freeBusy] Error:', e.message);
+    console.error('[MS freeBusy] Catch block error:', e.message);
+    console.error('[MS freeBusy] Stack:', e.stack);
     return { ok: false, status: 0, busy: [] };
   }
 }
