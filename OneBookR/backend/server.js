@@ -1023,15 +1023,12 @@ app.post('/api/invite', async (req, res) => {
     // Skicka mejl asynkront med Gmail
     setImmediate(async () => {
       try {
-        // Extra loggning för felsökning
-        console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
-        console.log('Resend API Key exists:', !!process.env.RESEND_API_KEY); // ✅ LÄGG TILL
+        console.log('Försöker skicka mejl från:', process.env.RESEND_FROM);
+        console.log('Resend API Key exists:', !!process.env.RESEND_API_KEY);
 
-        // Skicka mejl till alla inbjudna med retry-logik
         const emailResults = [];
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
-          // Skicka inte till samma adress som avsändaren
           if (inv.email && inv.email !== creatorEmail) {
             let emailSent = false;
             let attempts = 0;
@@ -1045,8 +1042,10 @@ app.post('/api/invite', async (req, res) => {
                   ? `Hej!\n\n${creatorEmail} har bjudit in dig till ett teammöte för "${teamName}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
                   : `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`;
                 
-                const fromAddress = process.env.RESEND_FROM || 'BookR <info@onebookr.se>';
+                // ✅ VIKTIGT: Använd alltid info@onebookr.se (eller din verifierade domain)
+                const fromAddress = 'BookR <info@onebookr.se>';
                 console.log(`📧 Sending email to ${inv.email} from ${fromAddress} (attempt ${attempts})`);
+                
                 const sendResult = await resend.emails.send({
                   from: fromAddress,
                   to: inv.email,
@@ -1097,7 +1096,7 @@ app.post('/api/invite', async (req, res) => {
             : `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\n📊 Resultat: ${successfulEmails.length} mejl skickade, ${failedEmails.length} misslyckades\n\nHälsningar,\nBookR-teamet`;
           
           await resend.emails.send({
-            from: 'BookR <info@onebookr.se>',
+            from: 'BookR <info@onebookr.se>',  // ✅ Samma här
             to: creatorEmail,
             subject: creatorSubject,
             text: creatorText
@@ -1109,10 +1108,10 @@ app.post('/api/invite', async (req, res) => {
 
         console.log('Mejl skickade till:', invitees.map(inv => inv.email));
       } catch (emailError) {
-        console.error('❌❌❌ KRITISKT FEL vid mejlutskick:', emailError); // ✅ ÄNDRA
-        console.error('Error stack:', emailError.stack); // ✅ LÄGG TILL
-        console.error('Error name:', emailError.name); // ✅ LÄGG TILL
-        console.error('Error message:', emailError.message); // ✅ LÄGG TILL
+        console.error('❌❌❌ KRITISKT FEL vid mejlutskick:', emailError);
+        console.error('Error stack:', emailError.stack);
+        console.error('Error name:', emailError.name);
+        console.error('Error message:', emailError.message);
       }
     });
 
