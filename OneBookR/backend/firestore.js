@@ -304,3 +304,22 @@ export async function deleteUserData(email) {
 
   await Promise.all(batch);
 }
+
+// -----------------------------
+// Audit Logs
+// -----------------------------
+
+export async function logDataAccess(action, userEmail, targetEmail, dataType) {
+  try {
+    await addDoc(collection(db, 'audit_logs'), {
+      action,  // 'calendar_shared', 'group_created', etc.
+      userEmail,
+      targetEmail,
+      dataType,  // 'busy/free', 'full_calendar', etc.
+      timestamp: serverTimestamp(),
+      ip: null  // Lägg till från Express req.ip om möjligt
+    });
+  } catch (err) {
+    console.error('Audit log error:', err);
+  }
+}

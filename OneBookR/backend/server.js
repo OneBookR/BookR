@@ -15,7 +15,10 @@ import { randomUUID } from 'crypto';
 import { google } from 'googleapis';
 import path from 'path';
 import schedule from 'node-schedule';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { createGroup, getGroup, updateGroup, createInvitation, getInvitationsByEmail, getInvitationsByGroup, updateInvitation, createSuggestion, getSuggestionsByGroup, updateSuggestion, getSuggestion, deleteUserData, createUser, getUser, updateUserLastLogin } from './firestore.js';
+import CryptoJS from 'crypto-js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -53,10 +56,21 @@ app.get('/terms-of-service', (req, res) => {
 // Middleware
 const corsOrigins = isDevelopment 
   ? ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000']
-  : ['https://www.onebookr.se'];
+  : ['https://www.onebookr.se'];  // ✅ Endast EXAKT denna domän
 
 app.use(cors({
-  origin: corsOrigins,
+  origin: (origin, callback) => {
+    // Tillåt requests utan origin (t.ex. mobile apps, Postman)
+    if (!origin) return callback(null, true);
+    
+    // STRIKT kontroll: måste vara EXAKT i listan
+    if (corsOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS] Blocked request from: ${origin}`);
+      callback(new Error(`CORS policy violation: ${origin} not allowed`));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -78,6 +92,22 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Säkra HTTP-headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      scriptSrc: ["'self'", "https://www.googletagmanager.com", "https://cdn.iubenda.com"],
+      connectSrc: ["'self'", "https://www.googleapis.com", "https://graph.microsoft.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      frameSrc: ["'self'", "https://accounts.google.com", "https://login.microsoftonline.com"]
+    }
+  },
+  crossOriginEmbedderPolicy: false  // Tillåt embedding av bilder/fonter
+}));
 
 // Maintenance mode middleware
 app.use((req, res, next) => {
@@ -145,8 +175,14 @@ passport.use('google', new GoogleStrategy({
   profile.accessToken = accessToken;
   profile.refreshToken = refreshToken;  // Store refresh token for incremental auth
   profile.provider = 'google'; // NYTT: säkerställ provider sätts korrekt
-  console.log('Google OAuth - Access token:', accessToken ? 'Present' : 'Missing');
-  console.log('Google OAuth - Refresh token:', refreshToken ? 'Present' : 'Missing');
+  
+  // ❌ TA BORT:
+  // console.log('Google OAuth - Access token:', accessToken ? 'Present' : 'Missing');
+  // console.log('Google OAuth - Refresh token:', refreshToken ? 'Present' : 'Missing');
+  
+  // ✅ ERSÄTT MED (minimalt):
+  if (!accessToken) console.error('[OAuth] Missing access token');
+  
   return done(null, profile);
 }));
 
@@ -355,13 +391,19 @@ app.get('/auth/google/callback',
 );
 
 app.get('/api/user', (req, res) => {
-  console.log('API /user called:', {
-    isAuthenticated: req.isAuthenticated(),
-    sessionID: req.sessionID,
-    user: req.user ? 'User exists' : 'No user',
-    sessionUser: req.session.user ? 'Session user exists' : 'No session user',
-    cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
-  });
+  // ❌ TA BORT detaljerad loggning:
+  // console.log('API /user called:', {
+  //   isAuthenticated: req.isAuthenticated(),
+  //   sessionID: req.sessionID,
+  //   user: req.user ? 'User exists' : 'No user',
+  //   sessionUser: req.session.user ? 'Session user exists' : 'No session user',
+  //   cookies: req.headers.cookie ? 'Cookies present' : 'No cookies'
+  // });
+  
+  // ✅ ERSÄTT MED (GDPR-safe):
+  if (!req.isAuthenticated()) {
+    console.log('[API /user] Unauthorized access attempt');
+  }
   
   // Kolla både passport auth och session
   const user = req.user || req.session.user;
@@ -983,6 +1025,7 @@ app.post('/api/invite', async (req, res) => {
       try {
         // Extra loggning för felsökning
         console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
+        console.log('Resend API Key exists:', !!process.env.RESEND_API_KEY); // ✅ LÄGG TILL
 
         // Skicka mejl till alla inbjudna med retry-logik
         const emailResults = [];
@@ -1002,20 +1045,22 @@ app.post('/api/invite', async (req, res) => {
                   ? `Hej!\n\n${creatorEmail} har bjudit in dig till ett teammöte för "${teamName}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
                   : `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`;
                 
-                const result = await resend.emails.send({
-                  from: 'BookR <info@onebookr.se>',
+                const fromAddress = process.env.RESEND_FROM || 'BookR <info@onebookr.se>';
+                console.log(`📧 Sending email to ${inv.email} from ${fromAddress} (attempt ${attempts})`);
+                const sendResult = await resend.emails.send({
+                  from: fromAddress,
                   to: inv.email,
                   subject: emailSubject,
                   text: emailText
                 });
-                
-                console.log(`Inbjudningsmejl skickat till ${inv.email} (försök ${attempts}/${maxAttempts}), ID: ${result.id}`);
-                emailResults.push({ email: inv.email, success: true, attempts, id: result.id });
+                console.log('Resend send result:', JSON.stringify(sendResult, null, 2));
+                emailResults.push({ email: inv.email, success: true, attempts, id: sendResult?.id || null, raw: sendResult });
                 emailSent = true;
               } catch (sendErr) {
-                console.error(`Fel vid utskick till ${inv.email} (försök ${attempts}/${maxAttempts}):`, sendErr.message);
+                console.error(`❌ Error sending to ${inv.email} (attempt ${attempts}):`, sendErr);
+                console.error('Full sendErr object:', JSON.stringify(sendErr, Object.getOwnPropertyNames(sendErr), 2));
                 if (attempts === maxAttempts) {
-                  emailResults.push({ email: inv.email, success: false, attempts, error: sendErr.message });
+                  emailResults.push({ email: inv.email, success: false, attempts, error: sendErr?.message || String(sendErr) });
                 } else {
                   // Vänta 1 sekund innan nästa försök
                   await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1064,10 +1109,10 @@ app.post('/api/invite', async (req, res) => {
 
         console.log('Mejl skickade till:', invitees.map(inv => inv.email));
       } catch (emailError) {
-        console.error('Fel vid mejlutskick:', emailError);
-        if (emailError && emailError.stack) {
-          console.error('Stacktrace:', emailError.stack);
-        }
+        console.error('❌❌❌ KRITISKT FEL vid mejlutskick:', emailError); // ✅ ÄNDRA
+        console.error('Error stack:', emailError.stack); // ✅ LÄGG TILL
+        console.error('Error name:', emailError.name); // ✅ LÄGG TILL
+        console.error('Error message:', emailError.message); // ✅ LÄGG TILL
       }
     });
 
@@ -1545,6 +1590,36 @@ app.get('/api/version', (req, res) => {
   });
 });
 
+// ✅ Rate limiting för API-endpoints
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minuter
+  max: 100, // Max 100 requests per IP
+  message: 'För många förfrågningar från denna IP, försök igen senare.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5, // Max 5 inloggningsförsök per 15 min
+  message: 'För många inloggningsförsök, försök igen om 15 minuter.',
+});
+
+// Applicera rate limiting
+app.use('/api/', apiLimiter);
+app.use('/auth/', authLimiter);
+
+// ✅ Force HTTPS i produktion
+if (!isDevelopment) {
+  app.use((req, res, next) => {
+    if (req.header('x-forwarded-proto') !== 'https') {
+      res.redirect(`https://${req.header('host')}${req.url}`);
+    } else {
+      next();
+    }
+  });
+}
+
 // --- Provider autodetection helpers ---
 function looksLikeGoogleToken(token) {
   if (!token) return false;
@@ -1683,6 +1758,7 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
 
     // Nu: Använd GetSchedule med korrekt email
     const response = await fetch(
+     
       'https://graph.microsoft.com/v1.0/me/calendar/getSchedule',
       {
         method: 'POST',
@@ -1694,12 +1770,12 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
         body: JSON.stringify({
           schedules: [userEmail],
           startTime: {
-            dateTime: timeMinISO.split('T')[0] + 'T00:00:00',
-            timeZone: 'Europe/Stockholm'
+            dateTime: timeMinISO,
+            timeZone: 'UTC'
           },
           endTime: {
-            dateTime: timeMaxISO.split('T')[0] + 'T23:59:59',
-            timeZone: 'Europe/Stockholm'
+            dateTime: timeMaxISO,
+            timeZone: 'UTC'
           },
           availabilityViewInterval: 30  // 30-min slots
         })
@@ -1728,6 +1804,8 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
     const busyPeriods = [];
     
     // ✅ GDPR-SAFE + ROBUST: Extrahera ENDAST tidsintervallen från scheduleItems
+   
+   
     if (data.value && Array.isArray(data.value) && data.value.length > 0) {
       const scheduleInfo = data.value[0];
       
@@ -1738,12 +1816,12 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
             console.warn('[MS freeBusy] Skipping malformed item:', item);
             continue;
           }
-          
           const status = String(item.status).toLowerCase();
           if (status === 'busy' || status === 'oof' || status === 'tentative') {
             try {
-              const startTime = new Date(item.start.dateTime).getTime();
-              const endTime = new Date(item.end.dateTime).getTime();
+              // Microsoft returnerar tider i UTC, konvertera korrekt
+              const startTime = new Date(item.start.dateTime + 'Z').getTime();
+              const endTime = new Date(item.end.dateTime + 'Z').getTime();
               
               if (!isNaN(startTime) && !isNaN(endTime) && endTime > startTime) {
                 busyPeriods.push({
@@ -1778,23 +1856,21 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
   }
 }
 
-// Uppdatera fetchCalendarBusyAuto() för att använda dessa istället:
 async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
   const detected = detectProvider(token);
   console.log('[Availability] autodetect provider:', detected);
   
-  // Försök först med detekterad provider, sedan fallback
   const tryOrder = detected === 'microsoft' ? ['microsoft', 'google'] : ['google', 'microsoft'];
 
   for (const prov of tryOrder) {
     let res;
     if (prov === 'google') {
-      res = await fetchGoogleFreeBusy(token, timeMinISO, timeMaxISO);  // 🆕 GDPR-safe
+      res = await fetchGoogleFreeBusy(token, timeMinISO, timeMaxISO);
     } else {
-      res = await fetchMicrosoftFreeBusy(token, timeMinISO, timeMaxISO);  // 🆕 GDPR-safe
+      res = await fetchMicrosoftFreeBusy(token, timeMinISO, timeMaxISO);
     }
 
-    if (res.ok && res.busy.length >= 0) {  // Returnera även om tom (användare är helt ledig)
+    if (res.ok && res.busy.length >= 0) {
       console.log(`[${prov}] busy blocks: ${res.busy.length}`);
       return { provider: prov, busy: res.busy };
     }
@@ -1803,14 +1879,10 @@ async function fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO) {
   return { provider: detected, busy: [] };
 }
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
-});
-
 // --- Google Calendar Event Creation ---
 async function createGoogleCalendarEvent(token, eventData, existingMeetLink = null) {
   try {
-    const event = {
+    let event = {
       summary: eventData.summary,
       description: eventData.description,
       start: {
@@ -1825,10 +1897,9 @@ async function createGoogleCalendarEvent(token, eventData, existingMeetLink = nu
       attendees: eventData.attendees?.map(email => ({ email }))
     };
 
-    if (!existingMeetLink && eventData.conferenceData) {
+    if (eventData.conferenceData) {
       event.conferenceData = eventData.conferenceData;
     } else if (existingMeetLink) {
-      // Om vi redan har en Meet-länk, lägg till den direkt i description
       event.description = (event.description || '') + `\n\n🎥 Google Meet: ${existingMeetLink}`;
     }
 
@@ -1850,29 +1921,22 @@ async function createGoogleCalendarEvent(token, eventData, existingMeetLink = nu
       const errorData = await response.json();
       console.error('Google Calendar API error:', errorData);
       return { success: false, error: errorData };
-       }
-
+    }
     const createdEvent = await response.json();
     console.log('Google Calendar event created:', createdEvent.id);
 
-    // VIKTIGT: Hämta Meet-länken från conferenceData
     let meetLink = null;
     
     if (createdEvent.conferenceData?.entryPoints) {
-      // Hitta Google Meet-länken från entryPoints
       const meetEntryPoint = createdEvent.conferenceData.entryPoints.find(ep => ep.entryPointType === 'video');
       meetLink = meetEntryPoint?.uri || null;
       console.log('Meet link from entryPoints:', meetLink);
     }
     
-    // Om ingen Meet-länk från conferenceData, kolla om den finns i description
     if (!meetLink && existingMeetLink) {
       meetLink = existingMeetLink;
-      console.log('Using existing meet link:', meetLink);
     }
-
-    console.log('Final meet link:', meetLink);
-
+    
     return {
       success: true,
       eventId: createdEvent.id,
@@ -1887,31 +1951,30 @@ async function createGoogleCalendarEvent(token, eventData, existingMeetLink = nu
 
 // --- Microsoft Calendar Event Creation ---
 async function createMicrosoftCalendarEvent(token, eventData) {
-  try {
-    const event = {
-      subject: eventData.summary,
-      bodyPreview: eventData.description,
-      body: {
-        contentType: 'text',
-        content: eventData.description
-      },
-      start: {
-        dateTime: eventData.start.dateTime,
-        timeZone: eventData.start.timeZone || 'Europe/Stockholm'
-      },
-      end: {
-        dateTime: eventData.end.dateTime,
-        timeZone: eventData.end.timeZone || 'Europe/Stockholm'
-      },
-      location: eventData.location ? { displayName: eventData.location } : undefined,
-      attendees: eventData.attendees?.map(email => ({
-        emailAddress: { address: email },
-        type: 'required'
-      })),
-      isOnlineMeeting: eventData.conferenceData ? true : false,
-      onlineMeetingProvider: eventData.conferenceData ? 'teamsForBusiness' : undefined
-    };
+  const event = {
+    subject: eventData.summary,
+    body: {
+      contentType: 'text',
+      content: eventData.description
+    },
+    start: {
+      dateTime: eventData.start.dateTime,
+      timeZone: eventData.start.timeZone || 'Europe/Stockholm'
+    },
+    end: {
+      dateTime: eventData.end.dateTime,
+      timeZone: eventData.end.timeZone || 'Europe/Stockholm'
+    },
+    location: eventData.location ? { displayName: eventData.location } : undefined,
+    attendees: eventData.attendees?.map(email => ({
+      emailAddress: { address: email },
+      type: 'required'
+    })),
+    isOnlineMeeting: eventData.conferenceData ? true : false,
+    onlineMeetingProvider: eventData.conferenceData ? 'teamsForBusiness' : undefined
+  };
 
+  try {
     const response = await fetch(
       'https://graph.microsoft.com/v1.0/me/events',
       {
@@ -1929,17 +1992,15 @@ async function createMicrosoftCalendarEvent(token, eventData) {
       console.error('Microsoft Graph API error:', errorData);
       return { success: false, error: errorData };
     }
-
     const createdEvent = await response.json();
     console.log('Microsoft Calendar event created:', createdEvent.id);
 
-    // Microsoft Teams-länken finns i onlineMeeting
     const meetLink = createdEvent.onlineMeeting?.joinUrl;
-
     return {
       success: true,
       eventId: createdEvent.id,
-      meetLink: meetLink
+      meetLink: meetLink || null,
+      event: createdEvent
     };
   } catch (error) {
     console.error('Error creating Microsoft Calendar event:', error);
@@ -1947,68 +2008,95 @@ async function createMicrosoftCalendarEvent(token, eventData) {
   }
 }
 
-// 🆕 Lägg till denna vid gruppkörning:
-// 1. Kryptera e-postadresser (pseudonymisering)
-// 2. Implementera data-retention policy
-// 3. Lägg till radera-data endpoint
 
-app.post('/api/user/delete-all-data', async (req, res) => {
+// --- Användartoken-kryptering ---
+const ENCRYPTION_KEY = process.env.TOKEN_ENCRYPTION_KEY;  // Lägg till i .env
+
+function encryptToken(token) {
+  return CryptoJS.AES.encrypt(token, ENCRYPTION_KEY).toString();
+}
+
+function decryptToken(encrypted) {
+  const bytes = CryptoJS.AES.decrypt(encrypted, ENCRYPTION_KEY);
+  return bytes.toString(CryptoJS.enc.Utf8);
+}
+
+// 🆕 GDPR: Exportera användarens data
+app.get('/api/user/export-data', async (req, res) => {
   try {
-    const { email, token } = req.body;
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Inte inloggad' });
+    }
     
-    // Verifiera att det är rätt användare
-    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${token}` }
+    const userEmail = req.user.email || req.user.emails?.[0]?.value || req.user.emails?.[0];
+    if (!userEmail) {
+      return res.status(400).json({ error: 'Ingen e-postadress hittades' });
+    }
+    
+    const userData = {
+      email: userEmail,
+      exportDate: new Date().toISOString(),
+      groups: [],
+      invitations: [],
+      suggestions: []
+    };
+    
+    // Hämta grupper
+    const groupsSnapshot = await db.collection('groups')
+      .where('creatorEmail', '==', userEmail)
+      .get();
+    
+    groupsSnapshot.forEach(doc => {
+      const data = doc.data();
+      userData.groups.push({
+        id: doc.id,
+        groupName: data.groupName,
+        createdAt: data.createdAt,
+        joinedEmails: data.joinedEmails || []
+      });
     });
-    if (!userRes.ok) return res.status(401).json({ error: 'Unauthorized' });
     
-    const userData = await userRes.json();
-    if (userData.email !== email) return res.status(403).json({ error: 'Email mismatch' });
-
-    // 🔥 TA BORT all data för denna användaren
-    // 1. Alla grupper där användaren är skapare
-    // 2. Alla inbjudningar till denna email
-    // 3. Alla röster/förslag från denna email
-    
-    const groupsAsCreator = await db.collection('groups')
-      .where('creatorEmail', '==', email)
+    // Hämta inbjudningar
+    const invitationsSnapshot = await db.collection('invitations')
+      .where('email', '==', userEmail)
       .get();
     
-    for (const doc of groupsAsCreator.docs) {
-      await doc.ref.delete();
-    }
-    
-    const invitations = await db.collection('invitations')
-      .where('email', '==', email)
-      .get();
-    
-    for (const doc of invitations.docs) {
-      await doc.ref.delete();
-    }
-    
-    const suggestions = await db.collectionGroup('suggestions')
-      .where('fromEmail', '==', email)
-      .get();
-    
-    for (const doc of suggestions.docs) {
-      await doc.ref.delete();
-    }
-
-    // 🆕 Lägg till i Firestore Audit Log (för GDPR compliance)
-    await db.collection('audit_logs').add({
-      type: 'USER_DATA_DELETED',
-      email: email,
-      timestamp: new Date(),
-      dataTypes: ['groups', 'invitations', 'suggestions', 'votes']
+    invitationsSnapshot.forEach(doc => {
+      const data = doc.data();
+      userData.invitations.push({
+        id: doc.id,
+        fromEmail: data.fromEmail,
+        groupName: data.groupName,
+        createdAt: data.createdAt
+      });
     });
-
-    res.json({ success: true, message: 'All data deleted' });
+    
+    // Hämta förslag
+    const suggestionsSnapshot = await db.collection('suggestions')
+      .where('fromEmail', '==', userEmail)
+      .get();
+    
+    suggestionsSnapshot.forEach(doc => {
+      const data = doc.data();
+      userData.suggestions.push({
+        id: doc.id,
+        title: data.title,
+        start: data.start,
+        end: data.end
+      });
+    });
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="bookr-data-${userEmail}-${Date.now()}.json"`);
+    res.json(userData);
+    
   } catch (error) {
-    res.status(500).json({ error: 'Could not delete data' });
+    console.error('[GDPR Export] Error:', error);
+    res.status(500).json({ error: 'Kunde inte exportera data' });
   }
-
 });
-// NYTT: Säkerställ att gamla grupper raderas automatiskt
+
+// 🆕 GDPR: Auto-radering av gamla grupper
 const deleteOldGroups = async () => {
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -2017,7 +2105,6 @@ const deleteOldGroups = async () => {
       .get();
     
     for (const doc of oldGroups.docs) {
-      // Radera alla relaterade data
       const suggestions = await db.collection('suggestions')
         .where('groupId', '==', doc.id)
         .get();
@@ -2043,7 +2130,10 @@ const deleteOldGroups = async () => {
   }
 };
 
-// Kör varje dag klockan 02:00
 if (process.env.NODE_ENV === 'production') {
   schedule.scheduleJob('0 2 * * *', deleteOldGroups);
 }
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
+});

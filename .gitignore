@@ -44,13 +44,12 @@ Thumbs.db
 # Firebase credentials (ALDRIG commita dessa)
 OneBookR/backend/firebase-key.json
 **/firebase-key.json
-**/*firebase-adminsdk*.json
+**/bookr-*-firebase-adminsdk-*.json
 **/*serviceaccount*.json
-**/*service-account*.json
-
-# Env-filer
-**/.env
 OneBookR/backend/.env
+.env
+.env.local
+.env.production
 
 # Övriga känsliga filer
 twilio_2FA_recovery_code.txt
