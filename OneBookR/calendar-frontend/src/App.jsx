@@ -25,7 +25,37 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SecurityIcon from '@mui/icons-material/Security';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
-import { API_BASE_URL } from './config';
+import { API_BASE_URL, CURRENT_HOST } from './config';
+
+// NYTT: central fetch wrapper (credentials alltid med i dev/prod samma origin)
+const apiFetch = (url, options = {}) => {
+  return fetch(`${API_BASE_URL}${url}`, {
+    credentials: 'include',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+};
+
+// NYTT: säkerställ att backend-session existerar (req.user)
+async function ensureSession(setGlobalError, setUser, currentUser) {
+  try {
+    const res = await apiFetch('/api/user');
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.user && !currentUser?.accessToken) {
+        setUser(data.user);
+      }
+      return true;
+    } else {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+}
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -68,13 +98,10 @@ function App() {
   // Logout-funktion
   const handleLogout = () => {
     setUser(null);
-    // Rensa alla relevanta localStorage och sessionStorage-nycklar
     localStorage.removeItem('bookr_user');
-    localStorage.removeItem('pendingGroupJoin');
-    sessionStorage.removeItem('hasTriedSession');
-    sessionStorage.removeItem('currentGroupName');
-    sessionStorage.removeItem('currentGroupMembers');
-    window.location.href = `${API_BASE_URL}/auth/logout`;
+    apiFetch('/auth/logout').finally(() => {
+      window.location.href = '/';
+    });
   };
 
   // Visa mobilsida om användaren är inloggad på mobil
@@ -168,6 +195,8 @@ function App() {
         // Dekoda och sätt user direkt
         const decoded = JSON.parse(atob(authToken));
         setUser(decoded.user);
+        // NYTT: direkt försök att synka session
+        ensureSession(setGlobalError, setUser, decoded.user);
         setLoading(false);
 
         // Rensa auth-parametern från URL för att undvika loop

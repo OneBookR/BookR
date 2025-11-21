@@ -142,7 +142,7 @@ export default function CompareCalendar({
   useEffect(() => {
     if (groupId) {
       const fetchSuggestions = () => {
-        fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`)
+        fetch(`${API_BASE_URL}/api/group/${groupId}/suggestions`, { credentials: 'include' })
           .then(res => res.json())
           .then((data) => {
             setSuggestions(data.suggestions || []);
@@ -172,10 +172,81 @@ export default function CompareCalendar({
   // Hämta lediga tider från backend
   const fetchAvailability = async () => {
     try {
-      // FIX: använd let (vi utökar listan nedan)
-      let tokens = [myToken, ...(Array.isArray(invitedTokens) ? invitedTokens : [])].filter(Boolean);
-      if (!Array.isArray(tokens) || tokens.length === 0) {
-        console.warn('[CompareCalendar] Hoppar över fetchAvailability: tom token-lista');
+      // Nytt: Om groupId -> använd grupp-endpoint (får gemensam intersection direkt)
+      if (groupId) {
+        if (!isOnline) {
+          setError('Ingen internetanslutning. Kontrollera din anslutning och försök igen.');
+          return;
+        }
+        setIsLoadingAvailability(true);
+        setHasSearched(true);
+        setError(null);
+
+        const timeMinISO = (isMultiDay
+          ? (multiDayStart ? new Date(multiDayStart + 'T00:00:00') : new Date())
+          : (timeMin ? new Date(timeMin) : new Date())
+        ).toISOString();
+
+        const timeMaxISO = (isMultiDay
+          ? (multiDayEnd ? new Date(multiDayEnd + 'T23:59:59') : new Date(Date.now() + 30 * 864e5))
+          : (timeMax ? new Date(timeMax) : new Date(Date.now() + 30 * 864e5))
+        ).toISOString();
+
+        const params = new URLSearchParams({
+          timeMin: timeMinISO,
+          timeMax: timeMaxISO,
+          duration: String(meetingDuration),
+          dayStart,
+          dayEnd
+        });
+
+        const res = await fetch(`${API_BASE_URL}/api/group/${groupId}/availability?` + params.toString(), {
+          credentials: 'include'
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setAvailability(Array.isArray(data) ? data : []);
+          setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} gemensamma lediga tider`, severity: 'success' });
+        } else {
+          setAvailability([]);
+          setError(data.error || 'Kunde inte hämta gruppens tillgänglighet.');
+        }
+        setIsLoadingAvailability(false);
+        return;
+      }
+
+      // ✅ FIX: Samla ALLA tokens från gruppen, inte bara myToken
+      let tokens = [myToken].filter(Boolean);
+      
+      // ✅ Lägg till alla inbjudna tokens
+      if (Array.isArray(invitedTokens)) {
+        tokens = tokens.concat(invitedTokens.filter(Boolean));
+      }
+      
+      // ✅ Hämta även alla tokens som redan är i gruppen från Firebase
+      if (groupId) {
+        try {
+          const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`, {
+            credentials: 'include' // <-- skickar cookies för sessionen
+          });
+          if (groupTokensRes.ok) {
+            const groupTokensData = await groupTokensRes.json();
+            const groupTokens = (groupTokensData.tokens || []).filter(Boolean);
+            // Lägg till groupTokens som vi inte redan har
+            tokens = Array.from(new Set([...tokens, ...groupTokens]));
+          }
+        } catch (err) {
+          console.log('[fetchAvailability] Could not fetch additional group tokens:', err);
+        }
+      }
+      
+      // Deduplisera tokens
+      tokens = Array.from(new Set(tokens.filter(t => t && typeof t === 'string' && t.trim() !== '')));
+      
+      if (tokens.length === 0) {
+        setError('Inga tokens tillgängliga. Kontrollera att alla deltagare har loggat in.');
+        setAvailability([]);
+        setIsLoadingAvailability(false);
         return;
       }
 
@@ -213,27 +284,8 @@ export default function CompareCalendar({
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        // OBS: Ta bort providers-heuristik (den var fel för Microsoft-token)
-        // const providers = [userProvider, ...];  // BORTTAGET
-
-        // Hämta grupptokens och slå ihop
-        if (groupId) {
-          try {
-            const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
-            if (groupTokensRes.ok) {
-              const groupTokensData = await groupTokensRes.json();
-              tokens = Array.from(new Set([...tokens, ...(groupTokensData.tokens || [])]));
-            }
-          } catch (err) {
-            console.log('Could not fetch group tokens, using provided tokens:', err);
-          }
-        }
-
-        tokens = Array.from(new Set(tokens.filter(Boolean)));
-
         const requestBody = {
-          tokens,
-          // Viktigt: låt backend auto-detektera provider per token → skicka inte providers
+          tokens,  // ✅ VIKTIGT: Skicka ALLA tokens
           duration: meetingDuration,
           dayStart,
           dayEnd,
@@ -251,6 +303,8 @@ export default function CompareCalendar({
               })
         };
 
+        console.log('[fetchAvailability] Sending request with', tokens.length, 'tokens');
+
         const res = await fetch(`${API_BASE_URL}/api/availability`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -264,7 +318,7 @@ export default function CompareCalendar({
         if (res.ok) {
           setAvailability(Array.isArray(data) ? data : []);
           setError(null);
-          setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} lediga tider`, severity: 'success' });
+          setToast({ open: true, message: `Hittade ${Array.isArray(data) ? data.length : 0} gemensamma lediga tider`, severity: 'success' });
         } else {
           setAvailability([]);
           setError(data.error || 'Något gick fel vid hämtning av tillgänglighet.');
@@ -671,15 +725,53 @@ export default function CompareCalendar({
 
   // Separat fetch-funktion för auto-laddning (utan validering)
   const fetchAvailabilityAuto = async (start, end) => {
-    let tokens = [myToken, ...invitedTokens];
+    // Om groupId finns – använd grupp-endpoint
+    if (groupId) {
+      try {
+        const params = new URLSearchParams({
+          timeMin: start.toISOString(),
+          timeMax: end.toISOString(),
+          duration: String(meetingDuration),
+          dayStart,
+          dayEnd
+        });
+        const res = await fetch(`${API_BASE_URL}/api/group/${groupId}/availability?` + params.toString(), {
+          credentials: 'include'
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setAvailability(Array.isArray(data) ? data : []);
+          setError(null);
+          setHasSearched(true);
+        } else {
+          setAvailability([]);
+          setError(data.error || 'Kunde inte hämta gruppens tillgänglighet.');
+          setHasSearched(true);
+        }
+      } catch (e) {
+        setAvailability([]);
+        setError('Tekniskt fel vid hämtning av gruppens tillgänglighet.');
+        setHasSearched(true);
+      }
+      return;
+    }
+
+    let tokens = [myToken].filter(Boolean);
+    
+    // ✅ Lägg till invitedTokens
+    if (Array.isArray(invitedTokens)) {
+      tokens = tokens.concat(invitedTokens.filter(Boolean));
+    }
     
     // För team-möten eller grupper, hämta alla tokens från gruppen
     if (groupId) {
       try {
-        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
+        const groupTokensRes = await fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`, {
+          credentials: 'include' // <-- skickar cookies för sessionen
+        });
         if (groupTokensRes.ok) {
           const groupTokensData = await groupTokensRes.json();
-          tokens = Array.from(new Set([...tokens, ...groupTokensData.tokens]));
+          tokens = Array.from(new Set([...tokens, ...(groupTokensData.tokens || [])]));
         }
       } catch (err) {
         console.log('Could not fetch group tokens for auto-load:', err);
@@ -687,7 +779,10 @@ export default function CompareCalendar({
     }
     
     tokens = Array.from(new Set(tokens.filter(Boolean)));
-    if (tokens.length < 1) return;
+    if (tokens.length < 1) {
+      console.warn('[fetchAvailabilityAuto] No tokens available');
+      return;
+    }
     
     try {
       const res = await fetch(`${API_BASE_URL}/api/availability`, {
@@ -696,7 +791,7 @@ export default function CompareCalendar({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          tokens,
+          tokens,  // ✅ VIKTIGT: Skicka ALLA tokens
           timeMin: start.toISOString(),
           timeMax: end.toISOString(),
           duration: meetingDuration,
@@ -1290,65 +1385,38 @@ export default function CompareCalendar({
             }}
             variant="outlined"
           />
-          <Button
-            variant="contained"
-            color="primary"
+        </Box>
+          <Button 
             onClick={fetchAvailability}
+            variant="contained"
             disabled={isLoadingAvailability}
             data-tutorial="compare-button"
             sx={{
+              // ÅTERSTÄLL ENKLARE STIL
+              borderRadius: 2,
+              px: 3,
+              py: 1.1,
               fontWeight: 600,
-              fontSize: '1.08rem',
-              letterSpacing: 0.5,
-              borderRadius: 999,
-              minWidth: 0,
-              minHeight: 0,
-              height: 48,
-              width: '100%',
-              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-              color: '#fff',
-              boxShadow: '0 2px 8px 0 rgba(99,91,255,0.13)',
-              transition: 'background 0.2s, box-shadow 0.2s, transform 0.1s',
+              fontSize: 14,
+              background: '#1976d2',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+              mt: 2,
               '&:hover': {
-                background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
-                boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18)',
-                transform: 'scale(1.03)',
-              },
-              '&:active': {
-                background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-                boxShadow: '0 0 0 2px #bcb8ff, 0 2px 8px 0 rgba(99,91,255,0.13)',
-                transform: 'scale(0.98)',
+                background: '#1565c0',
+                boxShadow: '0 3px 10px rgba(0,0,0,0.2)'
               },
               '&:disabled': {
-                background: '#ccc',
-                transform: 'none',
+                background: '#9e9e9e',
                 boxShadow: 'none'
               },
-              py: 1.2,
-              mt: 1,
-              mb: 3,
-              textTransform: 'none',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: 1
+              minWidth: 180
             }}
           >
-            {isLoadingAvailability && <CircularProgress size={20} sx={{ color: 'white' }} />}
-            {isLoadingAvailability ? 'Jämför kalendrar...' : 'Jämför kalendrar'}
-            {!isOnline && ' (Offline)'}
+            {isLoadingAvailability ? 'Söker...' : 'Jämför kalendrar'}
           </Button>
-        </Box>
-        </Box>
+      </Box>
       </Slide>
 
-      {/* Offline indikator */}
-      {!isOnline && (
-        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-          🚫 Ingen internetanslutning - vissa funktioner kan vara begränsade
-        </Alert>
-      )}
-      
       {/* Undo-knapp */}
       {undoAction && (
         <Alert 
@@ -1753,7 +1821,7 @@ export default function CompareCalendar({
                     }}>
                       <Typography sx={{
                         color: '#2e7d32',
-                        fontWeight: 700,
+                        fontWeight:  700,
                         mb: 2,
                         display: 'flex',
                         alignItems: 'center',
@@ -1946,285 +2014,110 @@ export default function CompareCalendar({
         </Box>
       )}
 
-      <Dialog 
-        open={suggestDialog.open} 
+
+
+      {/* Dialog för att föreslå tid */}
+      <Dialog
+        open={suggestDialog.open}
         onClose={() => setSuggestDialog({ open: false, slot: null })}
         maxWidth="sm"
         fullWidth
-        fullScreen={window.innerWidth < 600}
         PaperProps={{
           sx: {
-            borderRadius: { xs: 0, sm: 3 },
-            boxShadow: theme.isDark ? '0 8px 32px rgba(0,0,0,0.4)' : '0 8px 32px rgba(0,0,0,0.12)',
-            background: theme.isDark ? 'linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%)' : 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-            m: { xs: 0, sm: 2 }
+            // MER STANDARD DIALOG-STYLING
+            borderRadius: 2,
+            boxShadow: '0 6px 24px rgba(0,0,0,0.18)',
+            border: '1px solid #e0e3e7'
           }
         }}
       >
-        <DialogTitle sx={{
-          background: 'linear-gradient(135deg, #1976d2 0%, #635bff 100%)',
-          color: 'white',
-          fontWeight: 700,
-          fontSize: 20,
-          textAlign: 'center',
-          py: 3
-        }}>
+        <DialogTitle
+          sx={{
+            pb: 0.5,
+            fontSize: 18,
+            fontWeight: 600,
+            color: '#1976d2',
+            borderBottom: '1px solid #e0e3e7'
+          }}
+        >
           Föreslå mötestid
         </DialogTitle>
-        <Box sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 3, mt: 1 }}>
+        <Box sx={{ p: 3, pt: 2 }}>
           {suggestDialog.slot && (
-            <>
-              {/* Tidsvisning med modern design */}
-              <Box sx={{
-                background: theme.isDark ? 'linear-gradient(135deg, #1a237e 0%, #4a148c 100%)' : 'linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%)',
-                borderRadius: 3,
-                p: 3,
-                border: `2px solid ${theme.colors.primary}`,
-                textAlign: 'center'
-              }}>
-                <Typography sx={{ 
-                  fontSize: 14, 
-                  color: theme.colors.textSecondary, 
-                  fontWeight: 600, 
-                  mb: 1,
-                  textTransform: 'uppercase',
-                  letterSpacing: 1
-                }}>
-                  Vald tid
-                </Typography>
-                {suggestDialog.slot.isMultiDay ? (
-                  <>
-                    <Typography sx={{
-                      fontWeight: 600,
-                      fontSize: 18,
-                      color: theme.colors.text,
-                      mb: 0.5
-                    }}>
-                      Flerdagars möte
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center', justifyContent: 'center' }}>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography sx={{ fontSize: 12, color: theme.colors.textSecondary, fontWeight: 600, mb: 0.5 }}>DATUM</Typography>
-                        <Typography sx={{ fontSize: 16, color: theme.colors.text, fontWeight: 700 }}>
-                          {suggestDialog.slot.multiDayStart && suggestDialog.slot.multiDayEnd ? 
-                            `${new Date(suggestDialog.slot.multiDayStart).toLocaleDateString('sv-SE')} - ${new Date(suggestDialog.slot.multiDayEnd).toLocaleDateString('sv-SE')}` :
-                            'Ej angivet'
-                          }
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography sx={{ fontSize: 12, color: theme.colors.textSecondary, fontWeight: 600, mb: 0.5 }}>ARBETSTID</Typography>
-                        <Typography sx={{ fontSize: 16, color: theme.colors.text, fontWeight: 700 }}>
-                          {suggestDialog.slot.dayStart && suggestDialog.slot.dayEnd ? 
-                            `${suggestDialog.slot.dayStart} - ${suggestDialog.slot.dayEnd}` :
-                            'Ej angivet'
-                          }
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography sx={{ fontSize: 12, color: theme.colors.textSecondary, fontWeight: 600, mb: 0.5 }}>TOTAL TID</Typography>
-                        <Typography sx={{ fontSize: 16, color: theme.colors.text, fontWeight: 700 }}>
-                          {suggestDialog.slot.dayStart && suggestDialog.slot.dayEnd && suggestDialog.slot.multiDayStart && suggestDialog.slot.multiDayEnd ? (() => {
-                            const [startHour, startMin] = suggestDialog.slot.dayStart.split(':').map(Number);
-                            const [endHour, endMin] = suggestDialog.slot.dayEnd.split(':').map(Number);
-                            const hoursPerDay = (endHour * 60 + endMin - startHour * 60 - startMin) / 60;
-                            const days = Math.ceil((new Date(suggestDialog.slot.multiDayEnd) - new Date(suggestDialog.slot.multiDayStart)) / (1000 * 60 * 60 * 24));
-                            return `${days * hoursPerDay} h totalt`;
-                          })() : 'Ej angivet'}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </>
-                ) : (
-                  <>
-                    <Typography sx={{
-                      fontWeight: 600,
-                      fontSize: 18,
-                      color: theme.colors.text,
-                      mb: 0.5
-                    }}>
-                      {new Date(suggestDialog.slot.start).toLocaleDateString('sv-SE', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}
-                    </Typography>
-                    <Typography sx={{
-                      fontSize: 16,
-                      color: theme.colors.text,
-                      fontWeight: 700
-                    }}>
-                      {new Date(suggestDialog.slot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(suggestDialog.slot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Typography>
-                  </>
-                )}
-              </Box>
-
-              {/* Mötesnamn med förbättrad design */}
-              <TextField
-                label="Mötesnamn"
-                value={meetingTitle}
-                onChange={e => setMeetingTitle(e.target.value)}
-                fullWidth
-                placeholder="Ex: Projektmöte, Lunch, Planering..."
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 2,
-                    background: theme.colors.surface,
-                    border: `1px solid ${theme.colors.border}`,
-                    color: theme.colors.text,
-                    '&:hover': {
-                      background: theme.isDark ? '#2a2a2a' : '#f1f3f4',
-                      borderColor: theme.colors.primary
-                    },
-                    '&.Mui-focused': {
-                      background: theme.colors.bg,
-                      boxShadow: `0 0 0 3px ${theme.colors.primary}20`
-                    }
-                  },
-                  '& .MuiInputLabel-root': {
-                    fontWeight: 600,
-                    color: theme.colors.textSecondary
-                  }
-                }}
-              />
-
-              {/* Checkbox med förbättrad design */}
-              <Box sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                p: 2.5,
-                background: theme.colors.surface,
-                borderRadius: 2,
-                border: `1px solid ${theme.colors.border}`,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': {
-                  background: theme.isDark ? '#2a2a2a' : '#e9ecef',
-                  borderColor: theme.colors.primary
-                }
-              }}
-              onClick={() => setWithMeet(!withMeet)}>
-                <Box sx={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: 1,
-                  border: withMeet ? `2px solid ${theme.colors.primary}` : `2px solid ${theme.colors.border}`,
-                  background: withMeet ? theme.colors.primary : 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  mr: 2,
-                  transition: 'all 0.2s'
-                }}>
-                  {withMeet && (
-                    <Typography sx={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>✓</Typography>
-                  )}
-                </Box>
-                <Box>
-                  <Typography sx={{ fontWeight: 600, color: theme.colors.text, fontSize: 15 }}>
-                    Skicka ut Google Meet-länk
-                  </Typography>
-                  <Typography sx={{ fontSize: 13, color: theme.colors.textSecondary, mt: 0.5 }}>
-                    Automatiskt videomöte skapas och skickas till alla deltagare
-                  </Typography>
-                </Box>
-              </Box>
-
-              {/* Plats-fält med förbättrad design */}
-              {!withMeet && (
-                <TextField
-                  label="Plats för mötet"
-                  value={meetingLocation}
-                  onChange={e => setMeetingLocation(e.target.value)}
-                  fullWidth
-                  placeholder="Ex: Kontoret, Café, Rum 101..."
-                  required
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                      background: '#fff3e0',
-                      border: '2px solid #ffcc02',
-                      '&:hover': {
-                        background: '#fff8e1',
-                        borderColor: '#ffa000'
-                      },
-                      '&.Mui-focused': {
-                        background: '#fff',
-                        borderColor: '#ff9800',
-                        boxShadow: '0 0 0 3px rgba(255, 152, 0, 0.1)'
-                      }
-                    },
-                    '& .MuiInputLabel-root': {
-                      fontWeight: 600,
-                      color: '#e65100'
-                    }
-                  }}
-
-                />
-              )}
-            </>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: '#444' }}>
+                Vald tid
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#1976d2', fontWeight: 500 }}>
+                {new Date(suggestDialog.slot.start).toLocaleDateString('sv-SE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#1976d2', fontWeight: 500 }}>
+                {new Date(suggestDialog.slot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – {new Date(suggestDialog.slot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Typography>
+            </Box>
           )}
+          <TextField
+            label="Mötestitel (valfritt)"
+            value={meetingTitle}
+            onChange={(e) => setMeetingTitle(e.target.value)}
+            fullWidth
+            size="small"
+            sx={{ mb: 2 }}
+          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: !withMeet ? 2 : 0 }}>
+            <Button
+              variant={withMeet ? 'contained' : 'outlined'}
+              onClick={() => setWithMeet(!withMeet)}
+              size="small"
+              sx={{
+                fontWeight: 600,
+                px: 2,
+                textTransform: 'none'
+              }}
+            >
+              {withMeet ? 'Google Meet aktiverad' : 'Lägg till Meet'}
+            </Button>
+            {!withMeet && (
+              <TextField
+                label="Plats"
+                value={meetingLocation}
+                onChange={(e) => setMeetingLocation(e.target.value)}
+                fullWidth
+                size="small"
+              />
+            )}
+          </Box>
         </Box>
-        <DialogActions sx={{ 
-          p: 3, 
-          pt: 0, 
-          gap: 2,
-          justifyContent: 'center'
-        }}>
-          <Button 
+        <DialogActions sx={{ p: 2, pt: 0 }}>
+          <Button
             onClick={() => setSuggestDialog({ open: false, slot: null })}
+            variant="text"
             sx={{
-              borderRadius: 2,
-              px: 4,
-              py: 1.5,
-              fontWeight: 600,
-              color: '#666',
-              border: '2px solid #e0e0e0',
-              '&:hover': {
-                background: '#f5f5f5',
-                borderColor: '#bdbdbd'
-              }
+              fontSize: 13,
+              fontWeight: 500
             }}
-            variant="outlined"
           >
             Avbryt
           </Button>
-          <Button 
-            onClick={confirmSuggest} 
+          <Button
+            onClick={confirmSuggest}
             variant="contained"
             disabled={isSubmittingSuggestion}
             sx={{
-              borderRadius: 2,
-              px: 4,
-              py: 1.5,
-              fontWeight: 700,
-              fontSize: 15,
-              background: 'linear-gradient(135deg, #1976d2 0%, #635bff 100%)',
-              boxShadow: '0 4px 16px rgba(25, 118, 210, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #1565c0 0%, #5e35b1 100%)',
-                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
-                transform: 'translateY(-1px)'
-              },
-              '&:disabled': {
-                background: '#ccc',
-                transform: 'none',
-                boxShadow: 'none'
-              },
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1
+              fontSize: 14,
+              fontWeight: 600,
+              px: 3,
+              py: 1.1,
+              background: '#1976d2',
+              '&:hover': { background: '#1565c0' }
             }}
           >
-            {isSubmittingSuggestion && <CircularProgress size={16} sx={{ color: 'white' }} />}
-            {isSubmittingSuggestion ? 'Skickar...' : 'Föreslå denna tiden'}
+            {isSubmittingSuggestion ? 'Skickar...' : 'Föreslå'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Kalender */}
+
       {/* Visa information om direktbokning eller team-möte */}
       {directAccess && contactEmail && (
         <Box sx={{

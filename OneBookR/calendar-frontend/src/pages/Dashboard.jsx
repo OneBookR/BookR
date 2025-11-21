@@ -196,7 +196,9 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       }
       
       // Kontrollera om inbjudaren har direktåtkomst via Team-kontakter
-      fetch(`${API_BASE_URL}/api/group/${groupId}/status`)
+      fetch(`${API_BASE_URL}/api/group/${groupId}/status`, {
+        credentials: 'include'
+      })
         .then(res => res.json())
         .then(groupData => {
           if (groupData && groupData.creatorEmail) {
@@ -211,6 +213,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
               fetch(`${API_BASE_URL}/api/group/join`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({
                   groupId,
                   token: user.accessToken,
@@ -266,7 +269,9 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
         console.log('Joining group normally:', { groupId, email, inviteeId });
         
         // Kontrollera om gruppen existerar först
-        fetch(`${API_BASE_URL}/api/group/${groupId}/status`)
+        fetch(`${API_BASE_URL}/api/group/${groupId}/status`, {
+          credentials: 'include'
+        })
           .then(res => {
             console.log('Group status response:', res.status);
             if (!res.ok) {
@@ -283,6 +288,7 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
             return fetch(`${API_BASE_URL}/api/group/join`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
               body: JSON.stringify({
                 groupId,
                 token: user.accessToken,
@@ -294,7 +300,9 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
           .then(joinRes => {
             if (joinRes) {
               console.log('Join response:', joinRes.status);
-              return fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`);
+              return fetch(`${API_BASE_URL}/api/group/${groupId}/tokens`, {
+                credentials: 'include'
+              });
             }
           })
           .then(tokensRes => {
@@ -321,8 +329,8 @@ export default function Dashboard({ user, onNavigateToMeeting }) {
       const pollStatus = async () => {
         try {
           const [statusRes, joinedRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/api/group/${groupId}/status`),
-            fetch(`${API_BASE_URL}/api/group/${groupId}/joined`)
+            fetch(`${API_BASE_URL}/api/group/${groupId}/status`, { credentials: 'include' }),
+            fetch(`${API_BASE_URL}/api/group/${groupId}/joined`, { credentials: 'include' })
           ]);
 
           if (statusRes.ok) {

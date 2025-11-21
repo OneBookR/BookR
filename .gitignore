@@ -1,55 +1,34 @@
 # Dependencies
 node_modules/
-*/node_modules/
-**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Build outputs
-build/
-dist/
-*/build/
-*/dist/
-
-# Environment variables
+# Environment variables - KRITISKT SÄKERHET!
 .env
 .env.local
 .env.production
+.env.production.local
+
+# Firebase
+firebase-debug.log
+.firebase/
+
+# Build outputs
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
 *.log
-npm-debug.log*
 
-# Runtime data
-pids
-*.pid
-*.seed
-
-# Coverage directory
-coverage/
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Firebase credentials (ALDRIG commita dessa)
-OneBookR/backend/firebase-key.json
-**/firebase-key.json
-**/bookr-*-firebase-adminsdk-*.json
-**/*serviceaccount*.json
-OneBookR/backend/.env
-.env
-.env.local
-.env.production
-
-# Övriga känsliga filer
-twilio_2FA_recovery_code.txt
+# Runtime
+.cache/
+.tmp/

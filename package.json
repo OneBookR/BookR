@@ -6,7 +6,9 @@
   "scripts": {
     "start": "cd OneBookR/backend && node server.js",
     "build": "cd OneBookR/calendar-frontend && npm install && npm run build",
-    "postinstall": "cd OneBookR/backend && npm install"
+    "postinstall": "cd OneBookR/backend && npm install",
+    "scan-secrets": "bash scripts/scan_secrets.sh",
+    "scan-secrets:history": "docker run --rm -v \"$(pwd)\":/repo zricethezav/gitleaks:latest detect --source /repo --report-path /repo/gitleaks-report.json || true"
   },
   "engines": {
     "node": ">=18.0.0"

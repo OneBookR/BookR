@@ -36,6 +36,17 @@ console.log('Maintenance mode:', MAINTENANCE_MODE ? 'ON (redirecting to waitlist
 // Servera frontend static files
 app.use(express.static('OneBookR/calendar-frontend/dist'));
 
+// NYTT: root-route – dev visar enkel text, prod serverar index.html
+app.get('/', (req, res) => {
+  if (isDevelopment) {
+    res
+      .type('text/plain')
+      .send('BookR backend running. Frontend dev via http://localhost:5173 (eller http://<LAN-IP>:5173). API: /api/version');
+  } else {
+    res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
+  }
+});
+
 // Dashboard route
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'OneBookR/calendar-frontend/dist/index.html'));
@@ -58,12 +69,34 @@ const corsOrigins = isDevelopment
   ? ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000']
   : ['https://www.onebookr.se'];  // ✅ Endast EXAKT denna domän
 
+// NYTT: tillåt privata LAN-IP i dev
+function isAllowedDevOrigin(origin) {
+  try {
+    const u = new URL(origin);
+    const h = u.hostname;
+    return (
+      h === 'localhost' ||
+      h === '127.0.0.1' ||
+      /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h) ||
+      /^192\.168\.\d{1,3}\.\d{1,3}$/.test(h) ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}$/.test(h)
+    );
+  } catch {
+    return false;
+  }
+}
+
 app.use(cors({
   origin: (origin, callback) => {
     // Tillåt requests utan origin (t.ex. mobile apps, Postman)
     if (!origin) return callback(null, true);
-    
-    // STRIKT kontroll: måste vara EXAKT i listan
+
+    // NYTT: Släpp igenom LAN-origins i dev
+    if (isDevelopment && isAllowedDevOrigin(origin)) {
+      return callback(null, true);
+    }
+
+    // STRIKT lista annars
     if (corsOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -85,9 +118,8 @@ app.use(session({
   cookie: {
     sameSite: isDevelopment ? 'lax' : 'none',
     secure: !isDevelopment,
-    httpOnly: true,
-    // domain bara i prod
-    ...(isDevelopment ? {} : { domain: '.onebookr.se' })
+    httpOnly: true
+    // Ingen domain i dev => fungerar för både localhost och IP
   }
 }));
 app.use(passport.initialize());
@@ -139,17 +171,18 @@ app.use((req, res, next) => {
   next();
 });
 
-// NYTT: Centralt val av callback-URL:er (måste matcha exakt med Azure/Google App)
+const devHost = process.env.DEV_HOST || 'localhost'; // NYTT: tillåt IP i dev
+// NYTT: justera callback baserat på devHost (om satta)
 const googleCallbackUrl =
   process.env.GOOGLE_CALLBACK_URL ||
   (isDevelopment
-    ? 'http://localhost:3000/auth/google/callback'
+    ? `http://${devHost}:3000/auth/google/callback`
     : 'https://www.onebookr.se/auth/google/callback');
 
 const microsoftCallbackUrl =
   process.env.MICROSOFT_CALLBACK_URL ||
   (isDevelopment
-    ? 'http://localhost:3000/auth/microsoft/callback'
+    ? `http://${devHost}:3000/auth/microsoft/callback`
     : 'https://www.onebookr.se/auth/microsoft/callback');
 
 console.log('[OAuth] Using Google callback URL:', googleCallbackUrl);
@@ -883,7 +916,17 @@ app.post('/api/availability', async (req, res) => {
   // Per-token busy extraction with autodetect and fallback
   const allCalendarsBusy = [];
   for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
+    let token = tokens[i];
+    
+    // ✅ FIX: Försök INTE dekryptera tokens från frontend - de är redan raw tokens
+    // Tokens från frontend är redan dekrypterade, vi behöver inte dekryptera igen
+    // Kryptering är bara för lagring i Firestore, inte för transport
+    
+    if (!token || typeof token !== 'string' || token.trim() === '') {
+      console.warn(`[Availability] Skipping empty token at index ${i}`);
+      continue;
+    }
+    
     const detected = detectProvider(token);
     console.log(`Fetching calendar events for token ${i + 1}/${tokens.length}, detected provider: ${detected}`);
     const { provider, busy } = await fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO);
@@ -949,7 +992,7 @@ app.post('/api/availability', async (req, res) => {
 
 // Firebase Firestore används för datalagring
 
-// Skapa grupp och skicka inbjudan
+// Skapa grupp och skicka inbjudan - ENDAST till faktiska inbjudna, inte skaparen!
 app.post('/api/invite', async (req, res) => {
   const { emails, fromUser, fromToken, groupName, isTeamMeeting, teamName, directAccess, hasDirectAccessTeam } = req.body;
   // SÄKER: Hämta alltid e-post från fromUser-objekt om det är ett objekt
@@ -986,12 +1029,18 @@ app.post('/api/invite', async (req, res) => {
       isTeamMeeting: isTeamMeeting || false,
       teamName: teamName || null,
       directAccess: directAccess || hasDirectAccessTeam || false,
-      createdAt: new Date()  // 🆕 LÄGG TILL DENNA RAD
+      createdAt: new Date()
     });
 
-    // Skapa inbjudningar i Firebase
+    // Skapa inbjudningar i Firebase - ENDAST för faktiska inbjudna, inte skaparen
     const invitees = [];
     for (const email of emails) {
+      // ✅ SÄKERHETSKONTROLL: Skicka inte inbjudan till skaparen själv
+      if (email.toLowerCase() === creatorEmail.toLowerCase()) {
+        console.log('Hoppar över att bjuda in skaparen själv:', email);
+        continue;
+      }
+      
       const inviteeId = randomUUID();
       await createInvitation({
         groupId,
@@ -1020,16 +1069,19 @@ app.post('/api/invite', async (req, res) => {
       directAccess: directAccess || hasDirectAccessTeam || false
     });
     
-    // Skicka mejl asynkront med Gmail
+    // Skicka mejl asynkront med Resend
     setImmediate(async () => {
       try {
-        console.log('Försöker skicka mejl från:', process.env.RESEND_FROM);
+        // Extra loggning för felsökning
+        console.log('Försöker skicka mejl från:', process.env.EMAIL_USER);
         console.log('Resend API Key exists:', !!process.env.RESEND_API_KEY);
 
+        // Skicka mejl till alla inbjudna med retry-logik
         const emailResults = [];
         for (let i = 0; i < invitees.length; i++) {
           const inv = invitees[i];
-          if (inv.email && inv.email !== creatorEmail) {
+          // Skicka inte till samma adress som avsändaren
+          if (inv.email && inv.email.toLowerCase() !== creatorEmail.toLowerCase()) {
             let emailSent = false;
             let attempts = 0;
             const maxAttempts = 3;
@@ -1042,10 +1094,8 @@ app.post('/api/invite', async (req, res) => {
                   ? `Hej!\n\n${creatorEmail} har bjudit in dig till ett teammöte för "${teamName}".\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`
                   : `Hej!\n\n${creatorEmail} har bjudit in dig till gruppen "${groupName || 'Namnlös grupp'}" för att jämföra kalendrar och hitta en gemensam tid.\n\nKlicka på din unika länk nedan för att acceptera inbjudan:\n${inviteLinks[i]}\n\nHälsningar,\nBookR-teamet`;
                 
-                // ✅ VIKTIGT: Använd alltid info@onebookr.se (eller din verifierade domain)
                 const fromAddress = 'BookR <info@onebookr.se>';
                 console.log(`📧 Sending email to ${inv.email} from ${fromAddress} (attempt ${attempts})`);
-                
                 const sendResult = await resend.emails.send({
                   from: fromAddress,
                   to: inv.email,
@@ -1053,11 +1103,10 @@ app.post('/api/invite', async (req, res) => {
                   text: emailText
                 });
                 console.log('Resend send result:', JSON.stringify(sendResult, null, 2));
-                emailResults.push({ email: inv.email, success: true, attempts, id: sendResult?.id || null, raw: sendResult });
+                emailResults.push({ email: inv.email, success: true, attempts, id: sendResult?.data?.id || null });
                 emailSent = true;
               } catch (sendErr) {
                 console.error(`❌ Error sending to ${inv.email} (attempt ${attempts}):`, sendErr);
-                console.error('Full sendErr object:', JSON.stringify(sendErr, Object.getOwnPropertyNames(sendErr), 2));
                 if (attempts === maxAttempts) {
                   emailResults.push({ email: inv.email, success: false, attempts, error: sendErr?.message || String(sendErr) });
                 } else {
@@ -1081,9 +1130,6 @@ app.post('/api/invite', async (req, res) => {
 
         // Skicka bekräftelsemejl till skaparen
         try {
-          const successfulEmails = emailResults.filter(r => r.success);
-          const failedEmails = emailResults.filter(r => !r.success);
-          
           const invitedList = invitees.map((inv, i) => {
             const result = emailResults.find(r => r.email === inv.email);
             const status = result ? (result.success ? '✅ Skickat' : '❌ Misslyckades') : '⏭️ Hoppades över';
@@ -1096,7 +1142,7 @@ app.post('/api/invite', async (req, res) => {
             : `Hej ${creatorEmail},\n\nDu har bjudit in följande personer till gruppen "${groupName || 'Namnlös grupp'}":\n\n${invitedList}\n\n📊 Resultat: ${successfulEmails.length} mejl skickade, ${failedEmails.length} misslyckades\n\nHälsningar,\nBookR-teamet`;
           
           await resend.emails.send({
-            from: 'BookR <info@onebookr.se>',  // ✅ Samma här
+            from: 'BookR <info@onebookr.se>',
             to: creatorEmail,
             subject: creatorSubject,
             text: creatorText
@@ -1110,8 +1156,6 @@ app.post('/api/invite', async (req, res) => {
       } catch (emailError) {
         console.error('❌❌❌ KRITISKT FEL vid mejlutskick:', emailError);
         console.error('Error stack:', emailError.stack);
-        console.error('Error name:', emailError.name);
-        console.error('Error message:', emailError.message);
       }
     });
 
@@ -1138,8 +1182,9 @@ app.post('/api/group/join', async (req, res) => {
 
     // Kontrollera om detta är direkttillgång
     if (group.directAccess) {
-      // För direkttillgång, lägg till alla tokens korrekt
-      const allTokens = Array.from(new Set([group.creatorToken, token].filter(Boolean)));
+      // För direkttillgång, lägg till alla tokens korrekt - DEDUPLISERA!
+      const existingTokens = (group.creatorToken ? [group.creatorToken] : []).concat(group.tokens || []);
+      const allTokens = Array.from(new Set(existingTokens.concat([token]).filter(Boolean)));
       const allEmails = Array.from(new Set([group.creatorEmail, email].filter(Boolean)));
       
       await updateGroup(groupId, {
@@ -1151,12 +1196,13 @@ app.post('/api/group/join', async (req, res) => {
       return res.json({ success: true, directAccess: true });
     }
 
-    // Uppdatera gruppen med ny medlem - se till att inga dubbletter finns
-    const existingTokens = group.tokens || [];
-    const existingEmails = group.joinedEmails || [];
+    // Uppdatera gruppen med ny medlem - DEDUPLISERA KORREKT
+    const existingTokens = (group.creatorToken ? [group.creatorToken] : []).concat(group.tokens || []);
+    const existingEmails = (group.creatorEmail ? [group.creatorEmail] : []).concat(group.joinedEmails || []);
     
-    const updatedTokens = Array.from(new Set([...existingTokens, token].filter(Boolean)));
-    const updatedEmails = Array.from(new Set([...existingEmails, email].filter(Boolean)));
+    // ✅ FIX: Använd Set för att deduplisera strings (inte objekt)
+    const updatedTokens = Array.from(new Set(existingTokens.concat([token]).filter(t => t && typeof t === 'string')));
+    const updatedEmails = Array.from(new Set(existingEmails.concat([email]).filter(e => e && typeof e === 'string')));
 
     // Kontrollera om alla har gått med genom att jämföra med inbjudningar
     const invitations = await getInvitationsByGroup(groupId);
@@ -1171,7 +1217,14 @@ app.post('/api/group/join', async (req, res) => {
       allJoined
     });
 
-    console.log('User joined group:', { groupId, email, totalTokens: updatedTokens.length, totalEmails: updatedEmails.length, allJoined });
+    console.log('User joined group:', { 
+      groupId, 
+      email, 
+      totalTokens: updatedTokens.length, 
+      totalEmails: updatedEmails.length, 
+      allJoined,
+      expectedMembers: expected 
+    });
     res.json({ success: true });
   } catch (error) {
     console.error('Error joining group:', error);
@@ -1183,12 +1236,123 @@ app.post('/api/group/join', async (req, res) => {
 app.get('/api/group/:groupId/tokens', async (req, res) => {
   try {
     const { groupId } = req.params;
+    const userEmail = req.user?.email || req.user?.emails?.[0]?.value;
+
+    if (!userEmail) {
+      return res.status(401).json({ error: 'Inte inloggad' });
+    }
+
     const group = await getGroup(groupId);
     if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
-    res.json({ tokens: group.tokens || [] });
+    
+    // Validera åtkomst (case-insensitiv)
+    const hasAccess = await validateGroupAccess(group, userEmail, groupId);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Ingen behörighet' });
+    }
+
+    // Skicka tokens som finns sparade
+    const tokens = (group.tokens || []).filter(t => t && typeof t === 'string' && t.trim() !== '');
+    res.json({ tokens });
   } catch (error) {
-    console.error('Error fetching group tokens:', error);
+    console.error('Error fetching group tokens:', error.message);
     res.status(500).json({ error: 'Kunde inte hämta tokens' });
+  }
+});
+
+// Hämta tillgänglighet för en grupp
+app.get('/api/group/:groupId/availability', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { timeMin, timeMax, duration, dayStart, dayEnd } = req.query;
+    const userEmail = req.user?.email || req.user?.emails?.[0]?.value;
+
+    if (!userEmail) {
+      return res.status(401).json({ error: 'Inte inloggad' });
+    }
+
+    const group = await getGroup(groupId);
+    if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
+    
+    // Validera åtkomst
+    const hasAccess = await validateGroupAccess(group, userEmail, groupId);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Ingen behörighet' });
+    }
+
+    // Hämta tokens från gruppen
+    const tokens = (group.tokens || []).filter(t => t && typeof t === 'string' && t.trim() !== '');
+    
+    if (tokens.length === 0) {
+      return res.json([]);
+    }
+
+    // Använd samma logik som /api/availability
+    const timeMinISO = timeMin || new Date().toISOString();
+    const timeMaxISO = timeMax || new Date(Date.now() + 30 * 864e5).toISOString();
+    const durationMinutes = parseInt(duration) || 60;
+
+    console.log('=== GROUP AVAILABILITY API DEBUG ===');
+    console.log('Group tokens:', tokens.length, 'tokens');
+    console.log('[Group Availability] providers:', tokens.map(t => detectProvider(t)));
+
+    // Per-token busy extraction
+    const allCalendarsBusy = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      const detected = detectProvider(token);
+      console.log(`Fetching calendar events for token ${i + 1}/${tokens.length}, detected provider: ${detected}`);
+      const { provider, busy } = await fetchCalendarBusyAuto(token, timeMinISO, timeMaxISO);
+      console.log(`Token ${i + 1} processed ${busy.length} events (provider used: ${provider})`);
+      allCalendarsBusy.push(busy);
+    }
+
+    // Slå ihop alla upptagna tider för varje användare
+    const mergedBusyTimes = allCalendarsBusy.map(events => mergeBusyTimes(events));
+
+    // Beräkna lediga tider för varje användare
+    const rangeStart = new Date(timeMin).getTime();
+    const rangeEnd = new Date(timeMax).getTime();
+
+    const allFreeTimes = mergedBusyTimes.map(busyTimes => calculateFreeTimes(busyTimes, rangeStart, rangeEnd));
+
+    // Gemensamma lediga tider mellan ALLA användare
+    let commonFreeTimes = allFreeTimes[0] || [];
+    
+    if (allFreeTimes.length === 1) {
+      console.log('Single user mode - using only their free times');
+    } else {
+      console.log(`Finding common free times across ${allFreeTimes.length} calendars`);
+      for (let i = 1; i < allFreeTimes.length; i++) {
+        commonFreeTimes = findCommonFreeTimes(commonFreeTimes, allFreeTimes[i]);
+        console.log(`After comparing with calendar ${i + 1}: ${commonFreeTimes.length} common slots remaining`);
+      }
+    }
+
+    // Dela upp långa luckor i mindre block
+    let splitBlocks = splitFreeSlots(commonFreeTimes, durationMinutes);
+
+    // Filtrera blocken på daglig tidsram om det är angivet
+    if (dayStart && dayEnd) {
+      splitBlocks = filterSlotsByDayTime(splitBlocks, dayStart, dayEnd);
+    }
+
+    // Kontroll: Ta bara med block som är i framtiden
+    const now = Date.now();
+    splitBlocks = splitBlocks.filter(slot => new Date(slot.end).getTime() > now);
+
+    // Formatera blocken
+    const formattedBlocks = splitBlocks.map(slot => ({
+      ...slot,
+      start: slot.start instanceof Date ? slot.start.toISOString() : slot.start,
+      end: slot.end instanceof Date ? slot.end.toISOString() : slot.end
+    }));
+
+    console.log(`Sending ${formattedBlocks.length} formatted blocks to frontend`);
+    res.json(formattedBlocks);
+  } catch (error) {
+    console.error('Error fetching group availability:', error);
+    res.status(500).json({ error: 'Kunde inte hämta tillgänglighet' });
   }
 });
 
@@ -1265,6 +1429,8 @@ app.post('/api/group/:groupId/suggest', async (req, res) => {
     const { start, end, email, title, withMeet, location, isMultiDay, multiDayStart, multiDayEnd, durationPerDay, dayStart, dayEnd } = req.body;
     if (!groupId || !start || !end || !email) return res.status(400).json({ error: 'groupId, start, end, email krävs' });
 
+    const normalize = (e) => (e || '').toLowerCase().trim();
+
     const group = await getGroup(groupId);
     if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
 
@@ -1275,8 +1441,9 @@ app.post('/api/group/:groupId/suggest', async (req, res) => {
       title: title || '',
       withMeet: typeof withMeet === 'boolean' ? withMeet : true,
       location: location || '',
-      votes: { [email]: 'accepted' },
-      fromEmail: email,
+      // --- FIX: spara rösten med lowercase-nyckel ---
+      votes: { [normalize(email)]: 'accepted' },
+      fromEmail: normalize(email),
       groupName: group.groupName || 'Namnlös grupp',
       isMultiDay: isMultiDay || false,
       multiDayStart,
@@ -1335,43 +1502,57 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
     const { email, vote } = req.body;
     if (!groupId || !suggestionId || !email || !vote) return res.status(400).json({ error: 'groupId, suggestionId, email, vote krävs' });
 
+    const normalize = (e) => (e || '').toLowerCase().trim();
+
     const suggestion = await getSuggestion(suggestionId);
     if (!suggestion) return res.status(404).json({ error: 'Förslag finns inte' });
     
     const group = await getGroup(groupId);
     if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
 
-    // Uppdatera röster
-    const updatedVotes = { ...suggestion.votes, [email]: vote };
+    // --- FIX: migrera existerande röster till lowercase-nycklar ---
+    const normalizedExistingVotes = {};
+    Object.entries(suggestion.votes || {}).forEach(([k, v]) => {
+      normalizedExistingVotes[normalize(k)] = v;
+    });
+
+    // --- FIX: uppdatera rösten med lowercase email ---
+    const userEmailLc = normalize(email);
+    const updatedVotes = { ...normalizedExistingVotes, [userEmailLc]: vote };
     await updateSuggestion(suggestionId, { votes: updatedVotes });
 
-    // Hämta alla e-postadresser i gruppen
+    // Hämta alla e-postadresser i gruppen (lowercase)
     const invitations = await getInvitationsByGroup(groupId);
-    const allEmails = [group.creatorEmail, ...invitations.map(inv => inv.email)].filter(Boolean);
+    const allEmails = [group.creatorEmail, ...invitations.map(inv => inv.email)]
+      .filter(Boolean)
+      .map(normalize);
 
+    // --- FIX: allAccepted ska vara case-insensitivt ---
     const allAccepted = allEmails.every(e => updatedVotes[e] === 'accepted');
     console.log('Vote check:', { allEmails, updatedVotes, allAccepted, finalized: suggestion.finalized });
-    
+
     // Returnera omedelbart med uppdaterat förslag
     const updatedSuggestion = await getSuggestion(suggestionId);
     res.json({ success: true, suggestion: updatedSuggestion });
     
     if (allAccepted && !suggestion.finalized) {
       console.log('All accepted! Creating unified meeting for all participants...');
-      
-      // Markera som finalized först
-      await updateSuggestion(suggestionId, {
-        finalized: true,
-        status: 'processing'
-      });
+      await updateSuggestion(suggestionId, { finalized: true, status: 'processing' });
       console.log('Marked as finalized, now creating calendar events...');
-      
+
       try {
         const meetEventId = suggestionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
-        
-        const tokens = (group.tokens || []).filter(Boolean);
+
+        let tokens = (group.tokens || []).filter(Boolean);
+        tokens = tokens.map(token => {
+          if (token && !token.startsWith('ya29.') && !token.startsWith('Ew') && !token.startsWith('M.')) {
+            const decrypted = decryptToken(token);
+            return decrypted || token;
+          }
+          return token;
+        }).filter(Boolean);
+
         console.log('Available tokens:', tokens.length);
-        
         if (!tokens.length) {
           console.error('No tokens available for group');
           throw new Error('Inga tokens för gruppen');
@@ -1387,7 +1568,7 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
             hasMicrosoftUser = true;
           }
         }
-        
+
         // Välj videomötestyp baserat på deltagare
         const meetingType = hasMicrosoftUser ? 'teams' : 'meet';
         console.log(`🎥 Meeting type: ${meetingType} (hasMicrosoftUser: ${hasMicrosoftUser})`);
@@ -1432,24 +1613,17 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           let result = null;
           
           if (provider === 'microsoft') {
-            // Microsoft Calendar med Teams (alltid om det finns MS-användare)
             const msEventData = {
               ...baseEventData,
               conferenceData: suggestion.withMeet ? { createRequest: { requestId: meetEventId } } : undefined
             };
             result = await createMicrosoftCalendarEvent(token, msEventData);
           } else {
-            // Google Calendar
             if (meetingType === 'teams') {
-              // Om vi ska ha Teams men användaren är Google → skapa utan videomöte, länken kommer från MS-användaren
               console.log('Creating Google event WITHOUT Meet (Teams will be used from MS user)');
-              const googleEventData = {
-                ...baseEventData,
-                // Ingen conferenceData = inget Meet
-              };
+              const googleEventData = { ...baseEventData };
               result = await createGoogleCalendarEvent(token, googleEventData, null);
             } else {
-              // ENDAST Google-användare → skapa Meet ENDAST för första användaren
               if (i === firstGoogleTokenIndex && !unifiedMeetLink) {
                 console.log('Creating FIRST Google event WITH NEW Meet link');
                 const googleEventData = {
@@ -1463,7 +1637,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
                 };
                 result = await createGoogleCalendarEvent(token, googleEventData, null);
                 
-                // VIKTIGT: Spara Meet-länken från första eventet
                 if (result?.success && result?.meetLink) {
                   unifiedMeetLink = result.meetLink;
                   console.log(`📹 Master Meet link created: ${unifiedMeetLink}`);
@@ -1471,12 +1644,8 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
                   console.warn('No meet link returned from first Google event');
                 }
               } else if (i > firstGoogleTokenIndex || firstGoogleTokenIndex === -1) {
-                // Alla andra Google-användare får SAMMA Meet-länk
                 console.log('Creating Google event WITH EXISTING Meet link:', unifiedMeetLink);
-                const googleEventData = {
-                  ...baseEventData,
-                  conferenceData: undefined // Ingen conferenceData för efterföljande events
-                };
+                const googleEventData = { ...baseEventData };
                 result = await createGoogleCalendarEvent(token, googleEventData, unifiedMeetLink);
               }
             }
@@ -1484,7 +1653,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
           
           if (result?.success) {
             console.log(`✅ Event created for participant ${i + 1} (${provider})`);
-            // Spara första möteslänken vi får (Teams eller Meet)
             if (!unifiedMeetLink && result.meetLink) {
               unifiedMeetLink = result.meetLink;
               console.log(`📹 Unified meeting link set: ${unifiedMeetLink}`);
@@ -1497,7 +1665,6 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
         console.log('✅ All calendar events created!');
         console.log(`🎥 Final meeting type: ${meetingType}, link: ${unifiedMeetLink || 'N/A'}`);
         
-        // Uppdatera suggestion med meet-länk
         await updateSuggestion(suggestionId, {
           meetLink: unifiedMeetLink,
           meetingType,
@@ -1556,6 +1723,8 @@ app.post('/api/group/:groupId/suggestion/:suggestionId/vote', async (req, res) =
       }
     }
   } catch (error) {
+   
+   
     console.error('Error voting on suggestion:', error);
     res.status(500).json({ error: 'Kunde inte rösta på förslag' });
   }
@@ -1712,7 +1881,7 @@ async function fetchGoogleFreeBusy(accessToken, timeMinISO, timeMaxISO) {
     
     const data = await response.json();
     
-    // Omvandla till busy-format (ingen känslig data!)
+    // Omvandla till busy-format (ingen känslig data (ingen känslig data!)
     const busyPeriods = (data.calendars?.primary?.busy || []).map(period => ({
       start: new Date(period.start).getTime(),
       end: new Date(period.end).getTime(),
@@ -1731,7 +1900,6 @@ async function fetchGoogleFreeBusy(accessToken, timeMinISO, timeMaxISO) {
   }
 }
 
-// ERSÄTT fetchMicrosoftFreeBusy() helt:
 async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
   try {
     console.log('[MS freeBusy] Fetching with token:', accessToken.substring(0, 30) + '...');
@@ -1757,7 +1925,6 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
 
     // Nu: Använd GetSchedule med korrekt email
     const response = await fetch(
-     
       'https://graph.microsoft.com/v1.0/me/calendar/getSchedule',
       {
         method: 'POST',
@@ -1803,8 +1970,6 @@ async function fetchMicrosoftFreeBusy(accessToken, timeMinISO, timeMaxISO) {
     const busyPeriods = [];
     
     // ✅ GDPR-SAFE + ROBUST: Extrahera ENDAST tidsintervallen från scheduleItems
-   
-   
     if (data.value && Array.isArray(data.value) && data.value.length > 0) {
       const scheduleInfo = data.value[0];
       
@@ -1917,9 +2082,9 @@ async function createGoogleCalendarEvent(token, eventData, existingMeetLink = nu
     );
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Google Calendar API error:', errorData);
-      return { success: false, error: errorData };
+      const errorText = await response.text();
+      console.error('Google Calendar API error:', response.status);
+      return { success: false, error: 'Calendar API error' };
     }
     const createdEvent = await response.json();
     console.log('Google Calendar event created:', createdEvent.id);
@@ -1987,9 +2152,9 @@ async function createMicrosoftCalendarEvent(token, eventData) {
     );
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Microsoft Graph API error:', errorData);
-      return { success: false, error: errorData };
+      const errorText = await response.text();
+      console.error('Microsoft Graph API error:', response.status);
+      return { success: false, error: 'Graph API error' };
     }
     const createdEvent = await response.json();
     console.log('Microsoft Calendar event created:', createdEvent.id);
@@ -2009,130 +2174,53 @@ async function createMicrosoftCalendarEvent(token, eventData) {
 
 
 // --- Användartoken-kryptering ---
-const ENCRYPTION_KEY = process.env.TOKEN_ENCRYPTION_KEY;  // Lägg till i .env
+let ENCRYPTION_KEY = process.env.TOKEN_ENCRYPTION_KEY;
+
+// ÄNDRING: tolerera saknad nyckel i development (logga varning) istället för att process.exit
+if (!ENCRYPTION_KEY) {
+  if (isDevelopment) {
+    console.warn('VARNING: TOKEN_ENCRYPTION_KEY saknas i miljövariabler. Använder fallback-nyckel i development (INGET FÖR PROD).');
+    ENCRYPTION_KEY = 'bookr-dev-fallback-key-change-me';
+    process.env.TOKEN_ENCRYPTION_KEY = ENCRYPTION_KEY;
+  } else {
+    console.error('KRITISKT: TOKEN_ENCRYPTION_KEY saknas i miljövariabler! Avbryter start i produktion.');
+    process.exit(1);
+  }
+}
+
+// Uppdatera lokalt värde efter eventuell fallback
+const FINAL_ENCRYPTION_KEY = process.env.TOKEN_ENCRYPTION_KEY;
 
 function encryptToken(token) {
-  return CryptoJS.AES.encrypt(token, ENCRYPTION_KEY).toString();
+  if (!token) return null;
+  try {
+    return CryptoJS.AES.encrypt(token, ENCRYPTION_KEY).toString();
+  } catch (error) {
+    console.error('Token encryption failed');
+    return null;
+  }
 }
 
 function decryptToken(encrypted) {
-  const bytes = CryptoJS.AES.decrypt(encrypted, ENCRYPTION_KEY);
-  return bytes.toString(CryptoJS.enc.Utf8);
+  if (!encrypted) return null;
+  try {
+    const bytes = CryptoJS.AES.decrypt(encrypted, ENCRYPTION_KEY);
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch (error) {
+    console.error('Token decryption failed');
+    return null;
+  }
 }
 
-// 🆕 GDPR: Exportera användarens data
-app.get('/api/user/export-data', async (req, res) => {
-  try {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: 'Inte inloggad' });
-    }
-    
-    const userEmail = req.user.email || req.user.emails?.[0]?.value || req.user.emails?.[0];
-    if (!userEmail) {
-      return res.status(400).json({ error: 'Ingen e-postadress hittades' });
-    }
-    
-    const userData = {
-      email: userEmail,
-      exportDate: new Date().toISOString(),
-      groups: [],
-      invitations: [],
-      suggestions: []
-    };
-    
-    // Hämta grupper
-    const groupsSnapshot = await db.collection('groups')
-      .where('creatorEmail', '==', userEmail)
-      .get();
-    
-    groupsSnapshot.forEach(doc => {
-      const data = doc.data();
-      userData.groups.push({
-        id: doc.id,
-        groupName: data.groupName,
-        createdAt: data.createdAt,
-        joinedEmails: data.joinedEmails || []
-      });
-    });
-    
-    // Hämta inbjudningar
-    const invitationsSnapshot = await db.collection('invitations')
-      .where('email', '==', userEmail)
-      .get();
-    
-    invitationsSnapshot.forEach(doc => {
-      const data = doc.data();
-      userData.invitations.push({
-        id: doc.id,
-        fromEmail: data.fromEmail,
-        groupName: data.groupName,
-        createdAt: data.createdAt
-      });
-    });
-    
-    // Hämta förslag
-    const suggestionsSnapshot = await db.collection('suggestions')
-      .where('fromEmail', '==', userEmail)
-      .get();
-    
-    suggestionsSnapshot.forEach(doc => {
-      const data = doc.data();
-      userData.suggestions.push({
-        id: doc.id,
-        title: data.title,
-        start: data.start,
-        end: data.end
-      });
-    });
-    
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="bookr-data-${userEmail}-${Date.now()}.json"`);
-    res.json(userData);
-    
-  } catch (error) {
-    console.error('[GDPR Export] Error:', error);
-    res.status(500).json({ error: 'Kunde inte exportera data' });
-  }
-});
+// ÄNDRING: Bind explicit host i dev så att 127.0.0.1/lan-ip kan nå servern
+const hostToListen = process.env.HOST || (isDevelopment ? '0.0.0.0' : undefined);
 
-// 🆕 GDPR: Auto-radering av gamla grupper
-const deleteOldGroups = async () => {
-  try {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const oldGroups = await db.collection('groups')
-      .where('createdAt', '<', thirtyDaysAgo)
-      .get();
-    
-    for (const doc of oldGroups.docs) {
-      const suggestions = await db.collection('suggestions')
-        .where('groupId', '==', doc.id)
-        .get();
-      
-      for (const suggestionDoc of suggestions.docs) {
-        await suggestionDoc.ref.delete();
-      }
-      
-      const invitations = await db.collection('invitations')
-        .where('groupId', '==', doc.id)
-        .get();
-      
-      for (const invitationDoc of invitations.docs) {
-        await invitationDoc.ref.delete();
-      }
-      
-      await doc.ref.delete();
-    }
-    
-    console.log(`[Data Retention] Raderade ${oldGroups.size} gamla grupper`);
-  } catch (error) {
-    console.error('[Data Retention] Fel vid radering:', error);
-  }
-};
-
-if (process.env.NODE_ENV === 'production') {
-  schedule.scheduleJob('0 2 * * *', deleteOldGroups);
+if (hostToListen) {
+  app.listen(PORT, hostToListen, () => {
+    console.log(`Server running on ${hostToListen}:${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
+  });
+} else {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
+  });
 }
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
-});
