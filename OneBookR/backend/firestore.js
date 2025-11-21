@@ -109,12 +109,33 @@ export async function updateGroup(groupId, updateData) {
 // -----------------------------
 
 export async function createInvitation(invitationData) {
-  const docRef = await addDoc(collection(db, 'invitations'), {
-    ...invitationData,
-    createdAt: serverTimestamp(),
-    responded: false
-  });
-  return docRef.id;
+  try {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 14); // 14 dagars giltighet
+    
+    const crypto = require('crypto');
+    const secureToken = crypto.randomBytes(32).toString('hex'); // 64-tecken hex-token
+    
+    const docRef = await addDoc(collection(db, 'invitations'), {
+      ...invitationData,
+      createdAt: serverTimestamp(),
+      expiresAt: expiresAt,
+      token: secureToken, // ✅ NYTT: Spara token för validering
+      responded: false,
+      accepted: false
+    });
+    
+    console.log('[Invitations] Created with 14-day expiry:', {
+      invitationId: docRef.id,
+      expiresAt: expiresAt.toISOString(),
+      email: invitationData.email
+    });
+    
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating invitation:', error);
+    throw error;
+  }
 }
 
 export async function getInvitationsByEmail(email) {
@@ -138,6 +159,58 @@ export async function getInvitationsByGroup(groupId) {
 export async function updateInvitation(invitationId, updateData) {
   const docRef = doc(db, 'invitations', invitationId);
   await updateDoc(docRef, updateData);
+}
+
+// ÄNDRING: Lägg till validering när inbjudan accepteras
+export async function validateAndAcceptInvitation(invitationId) {
+  try {
+    const docRef = doc(db, 'invitations', invitationId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      return { valid: false, error: 'Invitation not found' };
+    }
+    
+    const invitationData = docSnap.data();
+    
+    // Kontrollera expiry
+    if (invitationData.expiresAt) {
+      const expiryTime = invitationData.expiresAt.toDate?.() || new Date(invitationData.expiresAt);
+      if (new Date() > expiryTime) {
+        console.warn('[Invitations] Expired invitation attempt:', invitationId);
+        return { valid: false, error: 'Invitation has expired. Ask for a new invite.' };
+      }
+    }
+    
+    // Markera som accepterad
+    await updateDoc(docRef, {
+      responded: true,
+      accepted: true,
+      respondedAt: serverTimestamp()
+    });
+    
+    return { valid: true, invitation: invitationData };
+  } catch (error) {
+    console.error('Error validating invitation:', error);
+    return { valid: false, error: 'Validation failed' };
+  }
+}
+
+// ÄNDRING: Lägg till getInvitation-funktion för individuell hämtning
+export async function getInvitation(invitationId) {
+  try {
+    const docRef = doc(db, 'invitations', invitationId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      return null;
+    }
+    
+    return { id: docSnap.id, ...docSnap.data() };
+  } catch (error) {
+    console.error('Error getting invitation:', error);
+    return null;
+  }
 }
 
 // -----------------------------

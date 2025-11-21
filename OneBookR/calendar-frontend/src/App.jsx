@@ -192,20 +192,50 @@ function App() {
 
     if (authToken) {
       try {
-        // Dekoda och sätt user direkt
-        const decoded = JSON.parse(atob(authToken));
-        setUser(decoded.user);
-        // NYTT: direkt försök att synka session
-        ensureSession(setGlobalError, setUser, decoded.user);
-        setLoading(false);
-
-        // Rensa auth-parametern från URL för att undvika loop
-        urlParams.delete('auth');
-        const newUrl =
-          window.location.pathname +
-          (urlParams.toString() ? '?' + urlParams.toString() : '') +
-          window.location.hash;
-        window.history.replaceState({}, '', newUrl);
+        // ✅ NYTT: Skicka auth-token via POST istället för att dekodera lokalt
+        const sendAuthToSession = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/session`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ authToken })
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              setUser(data.user);
+              setLoading(false);
+              
+              // Rensa auth-parametern från URL
+              urlParams.delete('auth');
+              const newUrl =
+                window.location.pathname +
+                (urlParams.toString() ? '?' + urlParams.toString() : '') +
+                window.location.hash;
+              window.history.replaceState({}, '', newUrl);
+            } else {
+              // Om session-skapet misslyckades, fallback till lokal dekodning
+              const decoded = JSON.parse(atob(authToken));
+              setUser(decoded.user);
+              setLoading(false);
+              urlParams.delete('auth');
+              const newUrl =
+                window.location.pathname +
+                (urlParams.toString() ? '?' + urlParams.toString() : '') +
+                window.location.hash;
+              window.history.replaceState({}, '', newUrl);
+            }
+          } catch (err) {
+            console.error('Session creation error:', err);
+            // Fallback: dekoda lokalt
+            const decoded = JSON.parse(atob(authToken));
+            setUser(decoded.user);
+            setLoading(false);
+          }
+        };
+        
+        sendAuthToSession();
       } catch (e) {
         console.error('Error decoding auth token:', e);
         setUser(null);
@@ -675,7 +705,7 @@ function App() {
                 1. Logga in med Google <br />
                 2. Bjud in vänner eller kollegor <br />
                 3. Jämför era kalendrar och hitta gemensamma lediga tider <br />
-                4. Föreslå och boka möten direkt – med Google Meet-länk!
+                4. Föreslå och boka möten direkt – with Google Meet-länk!
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary', mt: 2 }}>
                 <b>Tips:</b> Du kan använda BookR för både jobb och fritid. Allt sker säkert och privat.

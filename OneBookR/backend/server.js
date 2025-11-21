@@ -1166,7 +1166,7 @@ app.post('/api/invite', async (req, res) => {
 });
 
 // När någon öppnar länken och loggar in
-app.post('/api/group/join', async (req, res) => {
+app.post('/api/group/join', groupJoinLimiter, async (req, res) => {
   try {
     const { groupId, token, invitee, email: frontendEmail } = req.body;
     if (!groupId || !token) return res.status(400).json({ error: 'groupId och token krävs' });
@@ -1214,7 +1214,8 @@ app.post('/api/group/join', async (req, res) => {
     await updateGroup(groupId, {
       tokens: updatedTokens,
       joinedEmails: updatedEmails,
-      allJoined
+      allJoined,
+      lastUpdated: new Date() // ✅ NYTT: Spåra senaste uppdatering
     });
 
     console.log('User joined group:', { 
@@ -1236,7 +1237,7 @@ app.post('/api/group/join', async (req, res) => {
 app.get('/api/group/:groupId/tokens', async (req, res) => {
   try {
     const { groupId } = req.params;
-    const userEmail = req.user?.email || req.user?.emails?.[0]?.value;
+    const userEmail = req.user?.email || req.user?.emails?.[0]?.value || req.user?.emails?.[0];
 
     if (!userEmail) {
       return res.status(401).json({ error: 'Inte inloggad' });
@@ -1245,7 +1246,7 @@ app.get('/api/group/:groupId/tokens', async (req, res) => {
     const group = await getGroup(groupId);
     if (!group) return res.status(404).json({ error: 'Grupp finns inte' });
     
-    // Validera åtkomst (case-insensitiv)
+    // Validera åtkomst
     const hasAccess = await validateGroupAccess(group, userEmail, groupId);
     if (!hasAccess) {
       return res.status(403).json({ error: 'Ingen behörighet' });
@@ -1265,7 +1266,7 @@ app.get('/api/group/:groupId/availability', async (req, res) => {
   try {
     const { groupId } = req.params;
     const { timeMin, timeMax, duration, dayStart, dayEnd } = req.query;
-    const userEmail = req.user?.email || req.user?.emails?.[0]?.value;
+    const userEmail = req.user?.email || req.user?.emails?.[0]?.value || req.user?.emails?.[0];
 
     if (!userEmail) {
       return res.status(401).json({ error: 'Inte inloggad' });
@@ -1777,6 +1778,16 @@ const authLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 app.use('/auth/', authLimiter);
 
+// ✅ NYTT: Rate limiting speciellt för group/join (brute force-skydd)
+const groupJoinLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minuter
+  max: 5,                     // Max 5 försök per IP
+  keyGenerator: (req) => req.ip || req.connection.remoteAddress,
+  message: 'För många försök att gå med i grupp. Försök igen om 15 minuter.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ✅ Force HTTPS i produktion
 if (!isDevelopment) {
   app.use((req, res, next) => {
@@ -2223,4 +2234,88 @@ if (hostToListen) {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT} (${isDevelopment ? 'dev' : 'prod'})`);
   });
+}
+
+// ✅ NYTT: Sessionhantering för auth-tokens (ersätt query params)
+app.post('/api/auth/session', (req, res) => {
+  try {
+    const { authToken } = req.body;
+    if (!authToken) {
+      return res.status(400).json({ error: 'Auth token krävs' });
+    }
+
+    try {
+      const decoded = JSON.parse(Buffer.from(authToken, 'base64').toString('utf8'));
+      if (!decoded.user) {
+        return res.status(400).json({ error: 'Invalid token format' });
+      }
+
+      // Sätt användardata i sessionen (passport-session hanterar detta)
+      req.login(decoded.user, (err) => {
+        if (err) {
+          return res.status(500).json({ error: 'Session setup failed' });
+        }
+        
+        // Spara i sessionen för extra säkerhet
+        req.session.user = decoded.user;
+        req.session.save((err) => {
+          if (err) {
+            console.error('Session save error:', err);
+            return res.status(500).json({ error: 'Could not save session' });
+          }
+          
+          res.json({
+            success: true,
+            user: decoded.user,
+            sessionId: req.sessionID
+          });
+        });
+      });
+    } catch (parseErr) {
+      console.error('Auth token parse error:', parseErr);
+      return res.status(400).json({ error: 'Invalid auth token' });
+    }
+  } catch (error) {
+    console.error('Session creation error:', error);
+    res.status(500).json({ error: 'Could not create session' });
+  }
+});
+
+// ✅ NYTT: Lägg till denna funktion före den används (omkring rad 1200)
+async function validateGroupAccess(group, userEmail, groupId) {
+  try {
+    if (!group || !userEmail) return false;
+    
+    // Normalisera e-postadresser för jämförelse
+    const normalize = (e) => (e || '').toLowerCase().trim();
+    const userEmailNorm = normalize(userEmail);
+    
+    // Kontrollera om användaren är skaparen
+    if (normalize(group.creatorEmail) === userEmailNorm) {
+      return true;
+    }
+    
+    // Kontrollera om användaren är med i gruppen
+    if (group.joinedEmails) {
+      const joinedNorm = group.joinedEmails.map(normalize);
+      if (joinedNorm.includes(userEmailNorm)) {
+        return true;
+      }
+    }
+    
+    // Kontrollera om användaren är inbjuden
+    try {
+      const invitations = await getInvitationsByGroup(groupId);
+      const isInvited = invitations.some(inv => 
+        normalize(inv.email) === userEmailNorm && (inv.accepted || !inv.responded)
+      );
+      return isInvited;
+    } catch (err) {
+      console.error('Error checking invitations:', err);
+      return false;
+    }
+  } catch (err) {
+    console.error('Error in validateGroupAccess:', err);
+    return false;
+  }
 }
