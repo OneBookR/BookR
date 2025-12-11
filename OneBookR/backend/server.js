@@ -68,7 +68,7 @@ const CONFIG = {
     maxDaysRange: 30
   },
   email: {
-    from: process.env.RESEND_FROM || 'BookR <noreply@onebookr.se>',
+    from: process.env.RESEND_FROM || 'BookR <info@onebookr.se>',
     maxRecipients: 50
   }
 };
@@ -238,8 +238,9 @@ async function sendInviteEmail(toEmail, fromName, fromEmail, groupName, inviteLi
     console.log(`📧 Sending invite email to: ${toEmail}`);
     console.log(`🔧 Using Resend API Key: ${process.env.RESEND_API_KEY.substring(0, 8)}...`);
 
+    // ✅ ANVÄND DIN FÖRETAGSADRESS FRÅN .env
     const emailData = {
-      from: CONFIG.email.from,
+      from: process.env.RESEND_FROM || 'BookR <info@onebookr.se>',
       to: [toEmail],
       subject: `📅 ${fromName} vill jämföra kalendrar med dig - BookR`,
       html: createInviteEmailHtml(fromName, fromEmail, groupName, inviteLink),
