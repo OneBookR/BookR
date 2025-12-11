@@ -19,7 +19,7 @@ import GoogleLogo from './assets/GoogleLogo.jsx';
 import MicrosoftLogo from './assets/MicrosoftLogo.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, CircularProgress } from '@mui/material';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
-import { API_BASE_URL } from './config';
+import { apiRequest, createApiUrl } from './utils/apiConfig.js';
 
 function App() {
   // ✅ ALLA HOOKS ÖVERST - INGEN KONDITIONELL LOGIK
@@ -97,13 +97,27 @@ function App() {
     }
   }, [params.error]);
 
+  // ✅ LOGOUT SUCCESS HANDLING
+  useEffect(() => {
+    const logout = urlParams.get('logout');
+    if (logout === 'success') {
+      console.log('✅ Logout successful, clearing user data');
+      setUser(null);
+      localStorage.removeItem('bookr_user');
+      
+      // Clear logout parameter from URL
+      const url = new URL(window.location);
+      url.searchParams.delete('logout');
+      url.searchParams.delete('t');
+      window.history.replaceState({}, '', url);
+    }
+  }, [urlParams]);
+
   // ✅ USER CHECK WITH TOKEN VALIDATION
   useEffect(() => {
     const checkUser = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/user`, {
-          credentials: 'include'
-        });
+        const res = await apiRequest('/api/user');
         
         if (res.ok) {
           const data = await res.json();
@@ -220,6 +234,7 @@ function App() {
                 {params.error === 'callback_failed' && 'Inloggning misslyckades. Försök igen.'}
                 {params.error === 'token_expired' && 'Din session har gått ut. Logga in igen för att fortsätta.'}
                 {!['google_auth_failed', 'microsoft_auth_failed', 'callback_failed', 'token_expired'].includes(params.error) && 'Ett fel uppstod vid inloggning.'}
+                {urlParams.get('logout') === 'success' && 'Du har loggats ut. Logga in igen för att fortsätta.'}
               </Alert>
             )}
             
@@ -230,7 +245,7 @@ function App() {
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Button
                 variant="contained"
-                href={`${API_BASE_URL}/auth/google`}
+                href={createApiUrl('/auth/google')}
                 size="large"
                 startIcon={<GoogleLogo size={20} />}
                 fullWidth
@@ -241,7 +256,7 @@ function App() {
               
               <Button
                 variant="contained"
-                href={`${API_BASE_URL}/auth/microsoft`}
+                href={createApiUrl('/auth/microsoft')}
                 size="large" 
                 startIcon={<MicrosoftLogo size={20} />}
                 fullWidth
@@ -257,9 +272,7 @@ function App() {
               </Typography>
             )}
             
-            <Typography variant="caption" sx={{ mt: 2, display: 'block', color: '#666' }}>
-              Debug: API_BASE_URL = {API_BASE_URL || 'vite proxy'}
-            </Typography>
+
           </Paper>
         </Container>
       </Box>

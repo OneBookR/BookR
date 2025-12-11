@@ -88,12 +88,21 @@ export async function calculateAvailabilitySlots({
       if (result.status === 'fulfilled' && result.value.success) {
         successfulTokens++;
         const calendars = result.value.data.calendars || {};
+        const provider = result.value.provider;
         
         Object.values(calendars).forEach(calendar => {
           if (calendar.busy && Array.isArray(calendar.busy)) {
+            // ✅ DEBUG: Log busy times per provider
+            if (calendar.busy.length > 0) {
+              console.log(`[Availability] ${provider.toUpperCase()} busy times (token ${index}):`, 
+                calendar.busy.slice(0, 2).map(b => `${b.start} - ${b.end}`)
+              );
+            }
+            
             allBusyTimes.push(...calendar.busy.map(busy => ({
               ...busy,
-              tokenIndex: index
+              tokenIndex: index,
+              provider
             })));
           }
         });
@@ -150,7 +159,8 @@ function generateSingleDaySlots({ timeMin, timeMax, duration, dayStart, dayEnd, 
   // ✅ PRE-PROCESS BUSY TIMES för snabbare lookup
   const busyIntervals = allBusyTimes.map(busy => ({
     start: new Date(busy.start).getTime(),
-    end: new Date(busy.end).getTime()
+    end: new Date(busy.end).getTime(),
+    provider: busy.provider
   })).sort((a, b) => a.start - b.start);
 
   // ✅ GENERATE SLOTS med 15-minuters intervaller
@@ -178,7 +188,8 @@ function generateSingleDaySlots({ timeMin, timeMax, duration, dayStart, dayEnd, 
       const slotEnd = new Date(slotStart.getTime() + durationMs);
       
       // ✅ FAST CONFLICT CHECK
-      if (!hasConflict(slotStart.getTime(), slotEnd.getTime(), busyIntervals)) {
+      const conflicts = getConflicts(slotStart.getTime(), slotEnd.getTime(), busyIntervals);
+      if (conflicts.length === 0) {
         slots.push({
           start: slotStart.toISOString(),
           end: slotEnd.toISOString(),
@@ -236,9 +247,8 @@ function setTimeOnDate(date, timeStr) {
   return newDate;
 }
 
-function hasConflict(slotStart, slotEnd, busyIntervals) {
-  // Binary search för snabb conflict detection
-  return busyIntervals.some(busy => 
+function getConflicts(slotStart, slotEnd, busyIntervals) {
+  return busyIntervals.filter(busy => 
     slotStart < busy.end && slotEnd > busy.start
   );
 }

@@ -12,31 +12,8 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useTheme } from '../hooks/useTheme';
-import { API_BASE_URL } from '../config';
-
-// ✅ FÖRBÄTTRAD API BASE URL HANTERING FÖR PRODUCTION
-const getApiBaseUrl = () => {
-  // Om API_BASE_URL är "vite proxy" eller undefined, använd backend port direkt
-  if (!API_BASE_URL || API_BASE_URL === 'vite proxy' || API_BASE_URL.includes('vite')) {
-    // I development, använd direkt backend URL
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'http://localhost:3000';
-    }
-    // I production, använd production API med www
-    return 'https://www.onebookr.se';
-  }
-  return API_BASE_URL;
-};
-
-const API_URL = getApiBaseUrl();
-
-// ✅ LÄGG TILL LOGGING FÖR DEBUG
-console.log('🔧 CompareCalendar API Configuration:', {
-  originalAPIBaseURL: API_BASE_URL,
-  resolvedAPIURL: API_URL,
-  hostname: window.location.hostname,
-  isProduction: process.env.NODE_ENV === 'production'
-});
+import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
+import { TokenValidator } from '../utils/tokenValidator.js';
 
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
@@ -188,12 +165,7 @@ export default function CompareCalendar({
       });
   }, [filteredAvailability]);
 
-  // ✅ TOKEN VALIDATION STATE
-  const [tokenValidation, setTokenValidation] = useState({
-    isValidating: false,
-    lastValidation: 0,
-    isValid: true
-  });
+
 
   // ✅ FETCH GROUP AVAILABILITY (ERSÄTT GAMLA FUNKTIONER)
   // ✅ FÖRHINDRA INFINITE LOOP MED DEBOUNCED FETCHING
@@ -202,6 +174,71 @@ export default function CompareCalendar({
     isInProgress: false,
     results: null
   });
+
+  // ✅ ROBUST TOKEN VALIDATION USING EXISTING VALIDATOR (FLYTTA FÖRE ANVÄNDNING)
+  const validateToken = useCallback(async () => {
+    if (!myToken) return false;
+    
+    try {
+      const isValid = await TokenValidator.validateToken(myToken);
+      
+      if (!isValid) {
+        setError('Din session har gått ut. Loggar ut...');
+        TokenValidator.handleTokenExpiration();
+      }
+      
+      return isValid;
+    } catch (error) {
+      console.error('❌ Token validation error:', error);
+      return false;
+    }
+  }, [myToken]);
+
+  // ✅ JOIN GROUP AUTOMATICALLY - FIXA API URL (FLYTTA FÖRE fetchGroupAvailability)
+  const joinGroup = useCallback(async () => {
+    if (!propGroupId || !user || !myToken) return;
+    
+    // ✅ VALIDERA TOKEN FÖRST
+    const isTokenValid = await validateToken();
+    if (!isTokenValid) {
+      console.log('❌ Cannot join group - invalid token');
+      return false;
+    }
+    
+    try {
+      const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+      
+      console.log(`👥 Joining group ${propGroupId} as ${userEmail}`);
+      
+      const response = await apiRequest(`/api/group/${propGroupId}/join`, {
+        method: 'POST',
+        body: JSON.stringify({
+          email: userEmail,
+          token: myToken
+        })
+      });
+      
+      if (response.status === 401) {
+        console.log('❌ 401 Unauthorized when joining group');
+        setError('Din session har gått ut. Omdirigerar till inloggning...');
+        TokenValidator.handleTokenExpiration();
+        return false;
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Joined group successfully:', data);
+        setHasJoinedGroup(true);
+        return true;
+      } else {
+        console.error('❌ Failed to join group:', response.status);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Join group error:', error);
+      return false;
+    }
+  }, [propGroupId, user, myToken, validateToken]);
 
   // ✅ DEBOUNCED GROUP AVAILABILITY FETCH
   const fetchGroupAvailability = useCallback(async () => {
@@ -241,7 +278,7 @@ export default function CompareCalendar({
         dayEnd
       });
       
-      const response = await fetch(`${API_URL}/api/group/${propGroupId}/availability?${params}`, {
+      const response = await fetch(createApiUrl(`/api/group/${propGroupId}/availability?${params}`), {
         credentials: 'include'
       });
       
@@ -288,64 +325,12 @@ export default function CompareCalendar({
     }
   }, [propGroupId, hasJoinedGroup, groupInfo, fetchState.lastFetch, fetchState.isInProgress, timeMin, timeMax, meetingDuration, dayStart, dayEnd]);
 
-  // ✅ JOIN GROUP AUTOMATICALLY - FIXA API URL
-  const joinGroup = useCallback(async () => {
-    if (!propGroupId || !user || !myToken) return;
-    
-    // ✅ VALIDERA TOKEN FÖRST
-    const isTokenValid = await validateToken();
-    if (!isTokenValid) {
-      console.log('❌ Cannot join group - invalid token');
-      return false;
-    }
-    
-    try {
-      const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
-      
-      console.log(`👥 Joining group ${propGroupId} as ${userEmail}`);
-      
-      const response = await fetch(`${API_URL}/api/group/${propGroupId}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: userEmail,
-          token: myToken
-        })
-      });
-      
-      if (response.status === 401) {
-        console.log('❌ 401 Unauthorized when joining group');
-        setError('Din session har gått ut. Omdirigerar till inloggning...');
-        setTimeout(() => {
-          window.location.href = '/auth/logout';
-        }, 2000);
-        return false;
-      }
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Joined group successfully:', data);
-        setHasJoinedGroup(true);
-        return true;
-      } else {
-        console.error('❌ Failed to join group:', response.status);
-        return false;
-      }
-    } catch (error) {
-      console.error('❌ Join group error:', error);
-      return false;
-    }
-  }, [propGroupId, user, myToken, validateToken]);
-
   // ✅ FETCH GROUP STATUS - FIXA API URL
   const fetchGroupStatus = useCallback(async () => {
     if (!propGroupId) return;
     
     try {
-      const response = await fetch(`${API_URL}/api/group/${propGroupId}/status`, {
-        credentials: 'include'
-      });
+      const response = await apiRequest(`/api/group/${propGroupId}/status`);
       
       if (response.ok) {
         const data = await response.json();
@@ -370,58 +355,7 @@ export default function CompareCalendar({
     }
   }, [propGroupId, hasJoinedGroup, joinGroup, fetchGroupStatus]);
 
-  // ✅ VALIDATE TOKEN BEFORE API CALLS
-  const validateToken = useCallback(async () => {
-    if (!myToken || tokenValidation.isValidating) return true;
-    
-    const now = Date.now();
-    if (now - tokenValidation.lastValidation < 30000) {
-      return tokenValidation.isValid;
-    }
-    
-    setTokenValidation(prev => ({ ...prev, isValidating: true, lastValidation: now }));
-    
-    try {
-      // ✅ TESTA TOKEN MOT GOOGLE ELLER MICROSOFT
-      let isValid = false;
-      
-      // Försök Google först
-      try {
-        const googleResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-          headers: { 'Authorization': `Bearer ${myToken}` }
-        });
-        isValid = googleResponse.ok;
-      } catch {}
-      
-      // Om Google misslyckas, försök Microsoft
-      if (!isValid) {
-        try {
-          const msResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
-            headers: { 'Authorization': `Bearer ${myToken}` }
-          });
-          isValid = msResponse.ok;
-        } catch {}
-      }
-      
-      setTokenValidation(prev => ({ ...prev, isValid, isValidating: false }));
-      
-      if (!isValid) {
-        console.log('❌ Token validation failed - redirecting to login');
-        setError('Din session har gått ut. Loggar ut...');
-        
-        // ✅ REDIRECT TILL LOGOUT FÖR ATT RENSA SESSION
-        setTimeout(() => {
-          window.location.href = '/auth/logout';
-        }, 2000);
-      }
-      
-      return isValid;
-    } catch (error) {
-      console.error('❌ Token validation error:', error);
-      setTokenValidation(prev => ({ ...prev, isValid: false, isValidating: false }));
-      return false;
-    }
-  }, [myToken, tokenValidation.isValidating, tokenValidation.lastValidation, tokenValidation.isValid]);
+
 
   // ✅ UPPDATERA AVAILABILITY FETCH FUNCTION - VISA LEDIGA TIDER FRÅN IDAG
   const fetchAvailability = useCallback(async () => {
@@ -483,7 +417,7 @@ export default function CompareCalendar({
           includeAll: String(includeAllEvents)
         });
         
-        endpoint = `${API_URL}/api/group/${propGroupId}/availability?${params}`;
+        endpoint = createApiUrl(`/api/group/${propGroupId}/availability?${params}`);
         requestOptions = {
           method: 'GET',
           credentials: 'include'
@@ -499,7 +433,7 @@ export default function CompareCalendar({
           return;
         }
         
-        endpoint = `${API_URL}/api/availability`;
+        endpoint = createApiUrl('/api/availability');
         requestOptions = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -524,9 +458,7 @@ export default function CompareCalendar({
       if (response.status === 401) {
         console.log('❌ 401 Unauthorized - token expired');
         setError('Din session har gått ut. Omdirigerar till inloggning...');
-        setTimeout(() => {
-          window.location.href = '/auth/logout';
-        }, 2000);
+        TokenValidator.handleTokenExpiration();
         return;
       }
       
@@ -539,9 +471,7 @@ export default function CompareCalendar({
         const errorData = await response.json().catch(() => ({}));
         if (errorData.requiresReauth || errorData.code === 'TOKEN_EXPIRED') {
           setError('Din session har gått ut. Omdirigerar till inloggning...');
-          setTimeout(() => {
-            window.location.href = '/auth/logout';
-          }, 2000);
+          TokenValidator.handleTokenExpiration();
           return;
         }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -604,7 +534,7 @@ export default function CompareCalendar({
 
   // ✅ AUTO-FETCH NÄR GRUPP ÄR REDO (EN GÅNG)
   useEffect(() => {
-    if (propGroupId && hasJoinedGroup && groupInfo?.memberCount >= 2 && !hasSearched && tokenValidation.isValid) {
+    if (propGroupId && hasJoinedGroup && groupInfo?.memberCount >= 2 && !hasSearched) {
       console.log('✅ Group ready - auto-fetching availability');
       
       // Vänta lite för att säkerställa att backend är uppdaterat
@@ -614,7 +544,7 @@ export default function CompareCalendar({
       
       return () => clearTimeout(timer);
     }
-  }, [propGroupId, hasJoinedGroup, groupInfo?.memberCount, hasSearched, fetchAvailability, tokenValidation.isValid]);
+  }, [propGroupId, hasJoinedGroup, groupInfo?.memberCount, hasSearched, fetchAvailability]);
 
   // ✅ FÖRBÄTTRAD KALENDER RENDERING - VISA ENDAST LEDIGA TIDER
   const calendarEvents = useMemo(() => {
@@ -660,9 +590,7 @@ export default function CompareCalendar({
     if (!propGroupId) return;
     
     try {
-      const response = await fetch(`${API_URL}/api/group/${propGroupId}/suggestions`, {
-        credentials: 'include'
-      });
+      const response = await apiRequest(`/api/group/${propGroupId}/suggestions`);
       
       if (response.ok) {
         const data = await response.json();
@@ -695,10 +623,8 @@ export default function CompareCalendar({
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/group/${propGroupId}/suggest`, {
+      const response = await apiRequest(`/api/group/${propGroupId}/suggest`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
           start: suggestDialog.slot.start,
           end: suggestDialog.slot.end,
@@ -746,10 +672,8 @@ export default function CompareCalendar({
     try {
       const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
       
-      const response = await fetch(`${API_URL}/api/group/${propGroupId}/suggestion/${suggestionId}/vote`, {
+      const response = await apiRequest(`/api/group/${propGroupId}/suggestion/${suggestionId}/vote`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
           email: userEmail,
           vote
@@ -818,9 +742,7 @@ export default function CompareCalendar({
         timeMax: endTime
       });
       
-      const response = await fetch(`${API_URL}/api/group/${propGroupId}/debug-events?${params}`, {
-        credentials: 'include'
-      });
+      const response = await apiRequest(`/api/group/${propGroupId}/debug-events?${params}`);
       
       if (response.ok) {
         const data = await response.json();
@@ -1065,8 +987,6 @@ export default function CompareCalendar({
         variant="contained"
         disabled={
           isLoading || 
-          !tokenValidation.isValid ||
-          tokenValidation.isValidating ||
           (propGroupId ? (!groupInfo || groupInfo.memberCount < 2) : [myToken, ...invitedTokens].filter(Boolean).length < 2)
         }
         sx={{ px: 4, py: 1.2, fontWeight: 600 }}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear BookR Cache</title>
+</head>
+<body>
+    <h1>Clearing BookR Cache...</h1>
+    <div id="status">Working...</div>
+    
+    <script>
+        async function clearAllCache() {
+            const status = document.getElementById('status');
+            
+            try {
+                // 1. Clear Service Worker
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (let registration of registrations) {
+                        await registration.unregister();
+                        console.log('Service Worker unregistered');
+                    }
+                }
+                
+                // 2. Clear all caches
+                if ('caches' in window) {
+                    const cacheNames = await caches.keys();
+                    await Promise.all(
+                        cacheNames.map(cacheName => caches.delete(cacheName))
+                    );
+                    console.log('All caches cleared');
+                }
+                
+                // 3. Clear localStorage
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                status.innerHTML = `
+                    <h2 style="color: green;">✅ Cache cleared successfully!</h2>
+                    <p>Now close this tab and restart the dev server:</p>
+                    <pre>npm run dev:clean</pre>
+                    <p>Then open http://localhost:5173 in a NEW incognito window</p>
+                `;
+                
+            } catch (error) {
+                status.innerHTML = `<h2 style="color: red;">❌ Error: ${error.message}</h2>`;
+            }
+        }
+        
+        clearAllCache();
+    </script>
+</body>
+</html>

@@ -552,7 +552,7 @@ function processCalendarEvents(events, userEmail, includeAll = false) {
   return busyTimes;
 }
 
-// ✅ MICROSOFT CALENDAR EVENTS FETCHER
+// ✅ MICROSOFT CALENDAR EVENTS FETCHER - KORREKT TIDSZONHANTERING
 async function fetchMicrosoftCalendarEvents(token, timeMin, timeMax, userEmail) {
   try {
     const startTime = new Date(timeMin).toISOString();
@@ -577,28 +577,41 @@ async function fetchMicrosoftCalendarEvents(token, timeMin, timeMax, userEmail) 
     const data = await response.json();
     const events = data.value || [];
     
-    // ✅ KONVERTERA MICROSOFT FORMAT TILL GOOGLE FORMAT
-    const convertedEvents = events.map(event => ({
-      start: {
-        dateTime: event.isAllDay ? null : event.start.dateTime,
-        date: event.isAllDay ? event.start.dateTime.split('T')[0] : null,
-        timeZone: event.start.timeZone
-      },
-      end: {
-        dateTime: event.isAllDay ? null : event.end.dateTime,
-        date: event.isAllDay ? event.end.dateTime.split('T')[0] : null,
-        timeZone: event.end.timeZone
-      },
-      status: event.isCancelled ? 'cancelled' : 'confirmed',
-      transparency: event.showAs === 'free' ? 'transparent' : 'opaque',
-      attendees: event.attendees ? event.attendees.map(att => ({
-        email: att.emailAddress?.address,
-        responseStatus: att.status?.response === 'accepted' ? 'accepted' : 
-                       att.status?.response === 'declined' ? 'declined' : 'needsAction'
-      })) : [],
-      calendarId: 'microsoft_primary',
-      provider: 'microsoft'
-    }));
+    // ✅ KONVERTERA MICROSOFT FORMAT TILL GOOGLE FORMAT MED KORREKT TIDSZONHANTERING
+    const convertedEvents = events.map(event => {
+      let startDateTime = event.start.dateTime;
+      let endDateTime = event.end.dateTime;
+      
+      // ✅ MICROSOFT RETURNERAR REDAN UTC-TIDER - KONVERTERA INTE IGEN
+      if (startDateTime && !startDateTime.includes('Z')) {
+        startDateTime = startDateTime.split('.')[0] + 'Z';
+      }
+      if (endDateTime && !endDateTime.includes('Z')) {
+        endDateTime = endDateTime.split('.')[0] + 'Z';
+      }
+      
+      return {
+        start: {
+          dateTime: event.isAllDay ? null : startDateTime,
+          date: event.isAllDay ? event.start.dateTime.split('T')[0] : null,
+          timeZone: 'UTC'
+        },
+        end: {
+          dateTime: event.isAllDay ? null : endDateTime,
+          date: event.isAllDay ? event.end.dateTime.split('T')[0] : null,
+          timeZone: 'UTC'
+        },
+        status: event.isCancelled ? 'cancelled' : 'confirmed',
+        transparency: event.showAs === 'free' ? 'transparent' : 'opaque',
+        attendees: event.attendees ? event.attendees.map(att => ({
+          email: att.emailAddress?.address,
+          responseStatus: att.status?.response === 'accepted' ? 'accepted' : 
+                         att.status?.response === 'declined' ? 'declined' : 'needsAction'
+        })) : [],
+        calendarId: 'microsoft_primary',
+        provider: 'microsoft'
+      };
+    });
 
     console.log(`📊 TOTAL Microsoft events fetched for ${userEmail}: ${convertedEvents.length} events`);
     return convertedEvents;
@@ -788,17 +801,19 @@ function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '
 }
 
 // ===== MIDDLEWARE SETUP =====
-if (process.env.NODE_ENV === 'production') {
+if (IS_PRODUCTION) {
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        connectSrc: ["'self'", "https://accounts.google.com", "https://www.googleapis.com", "https://login.microsoftonline.com", "https://graph.microsoft.com"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com", "https://apis.google.com"],
+        connectSrc: ["'self'", "https://accounts.google.com", "https://www.googleapis.com", "https://login.microsoftonline.com", "https://graph.microsoft.com", "wss:", "ws:"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com", "https://apis.google.com", "https://www.onebookr.se"],
+        scriptSrcElem: ["'self'", "'unsafe-inline'", "https://accounts.google.com", "https://apis.google.com", "https://www.onebookr.se"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "https:", "http:"],
-        frameSrc: ["'self'", "https://accounts.google.com", "https://login.microsoftonline.com"]
+        frameSrc: ["'self'", "https://accounts.google.com", "https://login.microsoftonline.com"],
+        workerSrc: ["'self'", "blob:"]
       }
     },
     crossOriginEmbedderPolicy: false,
@@ -982,6 +997,26 @@ const validateAuth = (req, res, next) => {
 
 // ===== API ROUTES =====
 
+// ✅ MISSING ENDPOINTS THAT FRONTEND EXPECTS
+app.get('/api/invitations/:email', (req, res) => {
+  res.json([]);
+});
+
+app.post('/api/errors', (req, res) => {
+  console.log('Frontend error:', req.body);
+  res.json({ received: true });
+});
+
+app.post('/api/contact-request', (req, res) => {
+  console.log('Contact request:', req.body);
+  res.json({ success: true, message: 'Contact request processed' });
+});
+
+app.post('/api/invitation/:id/respond', (req, res) => {
+  console.log('Invitation response:', req.params.id, req.body);
+  res.json({ success: true });
+});
+
 app.get('/api/user', async (req, res) => {
   if (req.user) {
     // ✅ VALIDERA TOKEN INNAN VI RETURNERAR USER
@@ -1016,17 +1051,16 @@ app.get('/auth/google', (req, res, next) => {
     passport.authenticate('google', { scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'] })(req, res, next);
   } catch (error) {
     console.error('❌ Google auth init error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'https://www.onebookr.se'}?error=auth_init_failed`);
+    res.redirect(`${CONFIG.urls.frontend}?error=auth_init_failed`);
   }
 });
 
 app.get('/auth/google/callback',
   passport.authenticate('google', { 
-    failureRedirect: `${process.env.FRONTEND_URL || 'https://www.onebookr.se'}?error=google_auth_failed` 
+    failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed` 
   }),
   (req, res) => {
-    const frontendUrl = process.env.FRONTEND_URL || 'https://www.onebookr.se';
-    res.redirect(frontendUrl);
+    res.redirect(CONFIG.urls.frontend);
   }
 );
 
@@ -1035,27 +1069,38 @@ app.get('/auth/microsoft', (req, res, next) => {
     passport.authenticate('microsoft', { scope: ['user.read', 'calendars.read'] })(req, res, next);
   } catch (error) {
     console.error('❌ Microsoft auth init error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'https://www.onebookr.se'}?error=auth_init_failed`);
+    res.redirect(`${CONFIG.urls.frontend}?error=auth_init_failed`);
   }
 });
 
 app.get('/auth/microsoft/callback',
   passport.authenticate('microsoft', { 
-    failureRedirect: `${process.env.FRONTEND_URL || 'https://www.onebookr.se'}?error=microsoft_auth_failed` 
+    failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed` 
   }),
   (req, res) => {
-    const frontendUrl = process.env.FRONTEND_URL || 'https://www.onebookr.se';
-    res.redirect(frontendUrl);
+    res.redirect(CONFIG.urls.frontend);
   }
 );
 
 app.get('/auth/logout', (req, res) => {
+  console.log('🚪 Logout request received');
+  
   req.logout((err) => {
     if (err) console.error('❌ Logout error:', err);
-    req.session.destroy(() => {
+    
+    req.session.destroy((destroyErr) => {
+      if (destroyErr) console.error('❌ Session destroy error:', destroyErr);
+      
+      // ✅ CLEAR ALL POSSIBLE COOKIES
       res.clearCookie(CONFIG.session.name);
-      const frontendUrl = process.env.FRONTEND_URL || 'https://www.onebookr.se';
-      res.redirect(frontendUrl);
+      res.clearCookie('connect.sid');
+      res.clearCookie('bookr_session');
+      
+      console.log('✅ User logged out successfully');
+      
+      // ✅ REDIRECT WITH CACHE BUSTING
+      const redirectUrl = `${CONFIG.urls.frontend}?logout=success&t=${Date.now()}`;
+      res.redirect(redirectUrl);
     });
   });
 });

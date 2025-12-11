@@ -18,6 +18,7 @@ import InvitationSidebar from './InvitationSidebar.jsx';
 import ContactSettings from '../components/ContactSettings.jsx';
 import ContactManager from './ContactManager.jsx';
 import Team from './Team.jsx';
+import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 
 // Exportera kontakter så att andra komponenter kan använda dem
 export const getStoredContacts = () => {
@@ -46,7 +47,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     if (!userEmail) return;
     
     // Hämta invites från samma endpoint som InvitationSidebar
-    fetch(`https://www.onebookr.se/api/invitations/${encodeURIComponent(userEmail)}`)
+    apiRequest(`/api/invitations/${encodeURIComponent(userEmail)}`)
     .then(res => res.json())
     .then(data => setInvites((data.invitations || []).filter(inv => !inv.responded)))
     .catch(err => console.log('Failed to fetch invites:', err));
@@ -196,9 +197,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     if (response === 'accept') {
       // Markera som svarad innan redirect
       try {
-        await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+        await apiRequest(`/api/invitation/${invitation.id}/respond`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ response: 'accept' })
         });
       } catch (err) {
@@ -260,9 +260,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         }
         
         // Sedan, gå med i gruppen
-        const joinRes = await fetch(`https://www.onebookr.se/api/group/join`, {
+        const joinRes = await apiRequest(`/api/group/join`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             groupId,
             token: user.accessToken,
@@ -273,9 +272,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         
         if (joinRes.ok) {
           // Markera inbjudan som svarad
-          await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+          await apiRequest(`/api/invitation/${invitation.id}/respond`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ response: 'accept' })
           });
           
@@ -304,9 +302,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     } else {
       // Neka inbjudan
       try {
-        await fetch(`https://www.onebookr.se/api/invitation/${invitation.id}/respond`, {
+        await apiRequest(`/api/invitation/${invitation.id}/respond`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ response: 'decline' })
         });
         setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
@@ -325,13 +322,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
       if (!userEmail) return;
       
-      const invitationsResponse = await fetch(`https://www.onebookr.se/api/invitations/${encodeURIComponent(userEmail)}`);
+      const invitationsResponse = await apiRequest(`/api/invitations/${encodeURIComponent(userEmail)}`);
       if (invitationsResponse.ok) {
         const invitationsData = await invitationsResponse.json();
         const allProposals = [];
         
         for (const invitation of invitationsData.invitations) {
-          const suggestionsResponse = await fetch(`https://www.onebookr.se/api/group/${invitation.groupId}/suggestions`);
+          const suggestionsResponse = await apiRequest(`/api/group/${invitation.groupId}/suggestions`);
           if (suggestionsResponse.ok) {
             const suggestionsData = await suggestionsResponse.json();
             const userSuggestions = suggestionsData.suggestions.filter(s => 
@@ -355,9 +352,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         throw new Error('Användarens e-post saknas');
       }
       
-      const response = await fetch(`https://www.onebookr.se/api/group/${targetGroupId}/suggestion/${suggestionId}/vote`, {
+      const response = await apiRequest(`/api/group/${targetGroupId}/suggestion/${suggestionId}/vote`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: userEmail,
           vote,
@@ -418,9 +414,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       const userEmail = user.email || user.emails?.[0]?.value || user.emails?.[0];
       const userName = user.displayName || userEmail;
       
-      await fetch('https://www.onebookr.se/api/contact-request', {
+      await apiRequest(`/api/contact-request`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fromEmail: userEmail,
           fromName: userName,

@@ -67,9 +67,9 @@ export class TokenValidator {
 
   static async validateUserSession() {
     try {
-      const response = await fetch('/api/user', {
-        credentials: 'include'
-      });
+      // Använd apiRequest för konsistens
+      const { apiRequest } = await import('./apiConfig.js');
+      const response = await apiRequest('/api/user');
 
       if (response.status === 401) {
         const errorData = await response.json().catch(() => ({}));
@@ -77,6 +77,7 @@ export class TokenValidator {
         if (errorData.requiresReauth || errorData.code === 'TOKEN_EXPIRED') {
           console.log('🔄 Session expired, redirecting to login');
           this.clearCache();
+          localStorage.removeItem('bookr_user');
           window.location.href = '/auth/logout';
           return false;
         }
@@ -87,6 +88,18 @@ export class TokenValidator {
       console.error('Session validation error:', error);
       return false;
     }
+  }
+
+  // ✅ NY METOD FÖR ATT HANTERA TOKEN EXPIRATION
+  static handleTokenExpiration() {
+    console.log('🔄 Token expired - cleaning up and redirecting');
+    this.clearCache();
+    localStorage.removeItem('bookr_user');
+    sessionStorage.clear();
+    
+    setTimeout(() => {
+      window.location.href = '/auth/logout';
+    }, 1000);
   }
 }
 
