@@ -68,7 +68,7 @@ const CONFIG = {
     maxDaysRange: 30
   },
   email: {
-    from: process.env.RESEND_FROM || 'BookR <info@onebookr.se>',
+    from: process.env.RESEND_FROM || 'noreply@onebookr.se',
     maxRecipients: 50
   }
 };
@@ -240,7 +240,7 @@ async function sendInviteEmail(toEmail, fromName, fromEmail, groupName, inviteLi
 
     // ✅ ANVÄND DIN FÖRETAGSADRESS FRÅN .env
     const emailData = {
-      from: process.env.RESEND_FROM || 'BookR <info@onebookr.se>',
+      from: process.env.RESEND_FROM || 'noreply@onebookr.se',
       to: [toEmail],
       subject: `📅 ${fromName} vill jämföra kalendrar med dig - BookR`,
       html: createInviteEmailHtml(fromName, fromEmail, groupName, inviteLink),
