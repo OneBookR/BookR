@@ -188,6 +188,13 @@ export default function CompareCalendar({
       });
   }, [filteredAvailability]);
 
+  // ✅ TOKEN VALIDATION STATE
+  const [tokenValidation, setTokenValidation] = useState({
+    isValidating: false,
+    lastValidation: 0,
+    isValid: true
+  });
+
   // ✅ FETCH GROUP AVAILABILITY (ERSÄTT GAMLA FUNKTIONER)
   // ✅ FÖRHINDRA INFINITE LOOP MED DEBOUNCED FETCHING
   const [fetchState, setFetchState] = useState({
@@ -285,6 +292,13 @@ export default function CompareCalendar({
   const joinGroup = useCallback(async () => {
     if (!propGroupId || !user || !myToken) return;
     
+    // ✅ VALIDERA TOKEN FÖRST
+    const isTokenValid = await validateToken();
+    if (!isTokenValid) {
+      console.log('❌ Cannot join group - invalid token');
+      return false;
+    }
+    
     try {
       const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
       
@@ -300,6 +314,15 @@ export default function CompareCalendar({
         })
       });
       
+      if (response.status === 401) {
+        console.log('❌ 401 Unauthorized when joining group');
+        setError('Din session har gått ut. Omdirigerar till inloggning...');
+        setTimeout(() => {
+          window.location.href = '/auth/logout';
+        }, 2000);
+        return false;
+      }
+      
       if (response.ok) {
         const data = await response.json();
         console.log('✅ Joined group successfully:', data);
@@ -313,7 +336,7 @@ export default function CompareCalendar({
       console.error('❌ Join group error:', error);
       return false;
     }
-  }, [propGroupId, user, myToken]);
+  }, [propGroupId, user, myToken, validateToken]);
 
   // ✅ FETCH GROUP STATUS - FIXA API URL
   const fetchGroupStatus = useCallback(async () => {
@@ -347,11 +370,71 @@ export default function CompareCalendar({
     }
   }, [propGroupId, hasJoinedGroup, joinGroup, fetchGroupStatus]);
 
+  // ✅ VALIDATE TOKEN BEFORE API CALLS
+  const validateToken = useCallback(async () => {
+    if (!myToken || tokenValidation.isValidating) return true;
+    
+    const now = Date.now();
+    if (now - tokenValidation.lastValidation < 30000) {
+      return tokenValidation.isValid;
+    }
+    
+    setTokenValidation(prev => ({ ...prev, isValidating: true, lastValidation: now }));
+    
+    try {
+      // ✅ TESTA TOKEN MOT GOOGLE ELLER MICROSOFT
+      let isValid = false;
+      
+      // Försök Google först
+      try {
+        const googleResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { 'Authorization': `Bearer ${myToken}` }
+        });
+        isValid = googleResponse.ok;
+      } catch {}
+      
+      // Om Google misslyckas, försök Microsoft
+      if (!isValid) {
+        try {
+          const msResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+            headers: { 'Authorization': `Bearer ${myToken}` }
+          });
+          isValid = msResponse.ok;
+        } catch {}
+      }
+      
+      setTokenValidation(prev => ({ ...prev, isValid, isValidating: false }));
+      
+      if (!isValid) {
+        console.log('❌ Token validation failed - redirecting to login');
+        setError('Din session har gått ut. Loggar ut...');
+        
+        // ✅ REDIRECT TILL LOGOUT FÖR ATT RENSA SESSION
+        setTimeout(() => {
+          window.location.href = '/auth/logout';
+        }, 2000);
+      }
+      
+      return isValid;
+    } catch (error) {
+      console.error('❌ Token validation error:', error);
+      setTokenValidation(prev => ({ ...prev, isValid: false, isValidating: false }));
+      return false;
+    }
+  }, [myToken, tokenValidation.isValidating, tokenValidation.lastValidation, tokenValidation.isValid]);
+
   // ✅ UPPDATERA AVAILABILITY FETCH FUNCTION - VISA LEDIGA TIDER FRÅN IDAG
   const fetchAvailability = useCallback(async () => {
     // Förhindra samtidiga anrop
     if (isLoading) {
       console.log('⏳ Already fetching, skipping...');
+      return;
+    }
+    
+    // ✅ VALIDERA TOKEN FÖRST
+    const isTokenValid = await validateToken();
+    if (!isTokenValid) {
+      setError('Token ogiltig - omdirigerar till inloggning...');
       return;
     }
     
@@ -438,12 +521,29 @@ export default function CompareCalendar({
       
       const response = await fetch(endpoint, requestOptions);
       
+      if (response.status === 401) {
+        console.log('❌ 401 Unauthorized - token expired');
+        setError('Din session har gått ut. Omdirigerar till inloggning...');
+        setTimeout(() => {
+          window.location.href = '/auth/logout';
+        }, 2000);
+        return;
+      }
+      
       if (response.status === 429) {
         setError('För många förfrågningar. Vänta en minut och försök igen.');
         return;
       }
       
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (errorData.requiresReauth || errorData.code === 'TOKEN_EXPIRED') {
+          setError('Din session har gått ut. Omdirigerar till inloggning...');
+          setTimeout(() => {
+            window.location.href = '/auth/logout';
+          }, 2000);
+          return;
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
@@ -498,12 +598,13 @@ export default function CompareCalendar({
     dayStart,
     dayEnd,
     groupInfo?.memberCount,
-    includeAllEvents
+    includeAllEvents,
+    validateToken
   ]);
 
   // ✅ AUTO-FETCH NÄR GRUPP ÄR REDO (EN GÅNG)
   useEffect(() => {
-    if (propGroupId && hasJoinedGroup && groupInfo?.memberCount >= 2 && !hasSearched) {
+    if (propGroupId && hasJoinedGroup && groupInfo?.memberCount >= 2 && !hasSearched && tokenValidation.isValid) {
       console.log('✅ Group ready - auto-fetching availability');
       
       // Vänta lite för att säkerställa att backend är uppdaterat
@@ -513,7 +614,7 @@ export default function CompareCalendar({
       
       return () => clearTimeout(timer);
     }
-  }, [propGroupId, hasJoinedGroup, groupInfo?.memberCount, hasSearched, fetchAvailability]);
+  }, [propGroupId, hasJoinedGroup, groupInfo?.memberCount, hasSearched, fetchAvailability, tokenValidation.isValid]);
 
   // ✅ FÖRBÄTTRAD KALENDER RENDERING - VISA ENDAST LEDIGA TIDER
   const calendarEvents = useMemo(() => {
@@ -964,6 +1065,8 @@ export default function CompareCalendar({
         variant="contained"
         disabled={
           isLoading || 
+          !tokenValidation.isValid ||
+          tokenValidation.isValidating ||
           (propGroupId ? (!groupInfo || groupInfo.memberCount < 2) : [myToken, ...invitedTokens].filter(Boolean).length < 2)
         }
         sx={{ px: 4, py: 1.2, fontWeight: 600 }}

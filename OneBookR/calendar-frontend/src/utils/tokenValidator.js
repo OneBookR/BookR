@@ -1,84 +1,94 @@
-// filepath: /Users/valdemargoransson/Desktop/kalenderprojekt 22.11.24/OneBookR/calendar-frontend/src/utils/tokenValidator.js
+// ✅ TOKEN VALIDATION UTILITY
+export class TokenValidator {
+  static cache = new Map();
+  static CACHE_DURATION = 30000; // 30 sekunder
 
-/**
- * Validerar om en Google Calendar access token fortfarande är giltig
- * @param {string} token - Access token att validera
- * @returns {Promise<boolean>} - true om token är giltig, false annars
- */
-export const validateToken = async (token) => {
-  if (!token) {
-    return false;
-  }
+  static async validateToken(token, provider = 'auto') {
+    if (!token) return false;
 
-  try {
-    const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/settings/timezone', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    return response.status !== 401;
-  } catch (error) {
-    console.error('Error validating token:', error);
-    return false;
-  }
-};
-
-/**
- * Validerar token och omdirigerar till login om den är ogiltig
- * @param {string} token - Access token att validera
- * @param {boolean} saveReturnUrl - Om true, sparar nuvarande URL för att återvända efter login
- * @returns {Promise<boolean>} - true om token är giltig, false annars (och omdirigerar)
- */
-export const validateTokenAndRedirect = async (token, saveReturnUrl = true) => {
-  const isValid = await validateToken(token);
-  
-  if (!isValid) {
-    console.log('Token has expired, redirecting to login...');
+    // ✅ CACHE CHECK
+    const cacheKey = `${token.substring(0, 10)}_${provider}`;
+    const cached = this.cache.get(cacheKey);
     
-    if (saveReturnUrl) {
-      localStorage.setItem('bookr_return_url', window.location.href);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      return cached.isValid;
     }
-    
-    // Rensa användardata
-    localStorage.removeItem('bookr_user');
-    sessionStorage.removeItem('hasTriedSession');
-    
-    // Omdirigera till logout som rensar allt och sedan tillbaka till login
-    setTimeout(() => {
-      window.location.href = 'https://www.onebookr.se/auth/logout';
-    }, 1500);
-    
-    return false;
-  }
-  
-  return true;
-};
 
-/**
- * React hook för token-validering
- * @param {string} token - Access token att validera
- * @returns {Object} - { isValidating, isValid }
- */
-export const useTokenValidation = (token) => {
-  const [isValidating, setIsValidating] = React.useState(true);
-  const [isValid, setIsValid] = React.useState(false);
+    try {
+      let isValid = false;
 
-  React.useEffect(() => {
-    const validate = async () => {
-      if (!token) {
-        setIsValidating(false);
-        setIsValid(false);
-        return;
+      if (provider === 'google' || provider === 'auto') {
+        try {
+          const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          isValid = response.ok;
+          
+          if (isValid && provider === 'auto') {
+            provider = 'google';
+          }
+        } catch (error) {
+          console.warn('Google token validation failed:', error.message);
+        }
       }
 
-      const valid = await validateTokenAndRedirect(token, true);
-      setIsValid(valid);
-      setIsValidating(false);
-    };
+      if (!isValid && (provider === 'microsoft' || provider === 'auto')) {
+        try {
+          const response = await fetch('https://graph.microsoft.com/v1.0/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          isValid = response.ok;
+          
+          if (isValid && provider === 'auto') {
+            provider = 'microsoft';
+          }
+        } catch (error) {
+          console.warn('Microsoft token validation failed:', error.message);
+        }
+      }
 
-    validate();
-  }, [token]);
+      // ✅ CACHE RESULT
+      this.cache.set(cacheKey, {
+        isValid,
+        provider: isValid ? provider : null,
+        timestamp: Date.now()
+      });
 
-  return { isValidating, isValid };
-};
+      return isValid;
+    } catch (error) {
+      console.error('Token validation error:', error);
+      return false;
+    }
+  }
+
+  static clearCache() {
+    this.cache.clear();
+  }
+
+  static async validateUserSession() {
+    try {
+      const response = await fetch('/api/user', {
+        credentials: 'include'
+      });
+
+      if (response.status === 401) {
+        const errorData = await response.json().catch(() => ({}));
+        
+        if (errorData.requiresReauth || errorData.code === 'TOKEN_EXPIRED') {
+          console.log('🔄 Session expired, redirecting to login');
+          this.clearCache();
+          window.location.href = '/auth/logout';
+          return false;
+        }
+      }
+
+      return response.ok;
+    } catch (error) {
+      console.error('Session validation error:', error);
+      return false;
+    }
+  }
+}
+
+// ✅ EXPORT DEFAULT FUNCTION FOR EASY USE
+export default TokenValidator;

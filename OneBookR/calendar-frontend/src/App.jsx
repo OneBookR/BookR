@@ -97,7 +97,7 @@ function App() {
     }
   }, [params.error]);
 
-  // ✅ USER CHECK
+  // ✅ USER CHECK WITH TOKEN VALIDATION
   useEffect(() => {
     const checkUser = async () => {
       try {
@@ -110,8 +110,22 @@ function App() {
           setUser(data.user);
           console.log('✅ User authenticated:', data.user.email);
         } else {
-          console.log('ℹ️ User not authenticated');
-          setUser(null);
+          const errorData = await res.json().catch(() => ({}));
+          
+          // ✅ HANTERA TOKEN EXPIRATION
+          if (errorData.code === 'TOKEN_EXPIRED' || errorData.requiresReauth) {
+            console.log('🔄 Token expired, clearing user data and forcing re-authentication');
+            setUser(null);
+            localStorage.removeItem('bookr_user');
+            
+            // ✅ VISA MEDDELANDE OM TOKEN HAR GÅTT UT
+            const url = new URL(window.location);
+            url.searchParams.set('error', 'token_expired');
+            window.history.replaceState({}, '', url);
+          } else {
+            console.log('ℹ️ User not authenticated');
+            setUser(null);
+          }
         }
       } catch (error) {
         console.error('❌ Failed to check user:', error);
@@ -200,11 +214,12 @@ function App() {
             </Typography>
             
             {params.error && (
-              <Alert severity="error" sx={{ mb: 3 }}>
+              <Alert severity={params.error === 'token_expired' ? 'warning' : 'error'} sx={{ mb: 3 }}>
                 {params.error === 'google_auth_failed' && 'Google-inloggning misslyckades. Försök igen.'}
                 {params.error === 'microsoft_auth_failed' && 'Microsoft-inloggning misslyckades. Försök igen.'}
                 {params.error === 'callback_failed' && 'Inloggning misslyckades. Försök igen.'}
-                {!['google_auth_failed', 'microsoft_auth_failed', 'callback_failed'].includes(params.error) && 'Ett fel uppstod vid inloggning.'}
+                {params.error === 'token_expired' && 'Din session har gått ut. Logga in igen för att fortsätta.'}
+                {!['google_auth_failed', 'microsoft_auth_failed', 'callback_failed', 'token_expired'].includes(params.error) && 'Ett fel uppstod vid inloggning.'}
               </Alert>
             )}
             
@@ -236,6 +251,12 @@ function App() {
               </Button>
             </Box>
 
+            {params.error === 'token_expired' && (
+              <Typography variant="body2" sx={{ mt: 2, color: '#666', fontStyle: 'italic' }}>
+                🔄 Logga in igen för att komma åt kalenderjjämförelsen
+              </Typography>
+            )}
+            
             <Typography variant="caption" sx={{ mt: 2, display: 'block', color: '#666' }}>
               Debug: API_BASE_URL = {API_BASE_URL || 'vite proxy'}
             </Typography>

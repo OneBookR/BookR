@@ -34,7 +34,10 @@ try {
 // ===== IN-MEMORY STORAGE =====
 const activeGroups = new Map();
 
-// ===== CONFIGURATION =====
+// ===== ENVIRONMENT-SPECIFIC CONFIGURATION =====
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const IS_LOCALHOST = !IS_PRODUCTION;
+
 const CONFIG = {
   session: {
     secret: process.env.SESSION_SECRET || 'dev-secret-key-change-in-production',
@@ -42,15 +45,20 @@ const CONFIG = {
     maxAge: 24 * 60 * 60 * 1000,
   },
   cors: {
-    allowedOrigins: [
+    allowedOrigins: IS_LOCALHOST ? [
       'http://localhost:5173',
-      'http://localhost:3000',
+      'http://localhost:3000', 
       'http://127.0.0.1:5173',
-      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3000'
+    ] : [
       'https://www.onebookr.se',
-      'https://onebookr.se', // Redirect till www
-      'https://api.onebookr.se' // För Railway API subdomain
+      'https://onebookr.se',
+      'https://api.onebookr.se'
     ]
+  },
+  urls: {
+    frontend: IS_LOCALHOST ? 'http://localhost:5173' : 'https://www.onebookr.se',
+    backend: IS_LOCALHOST ? 'http://localhost:3000' : 'https://www.onebookr.se'
   },
   calendar: {
     maxEvents: 2500,
@@ -65,6 +73,10 @@ const CONFIG = {
   }
 };
 
+console.log(`🔧 Environment: ${IS_PRODUCTION ? 'PRODUCTION' : 'LOCALHOST'}`);
+console.log(`🌐 Frontend URL: ${CONFIG.urls.frontend}`);
+console.log(`🔗 Backend URL: ${CONFIG.urls.backend}`);
+
 // ===== ERROR HANDLING =====
 class BookRError extends Error {
   constructor(message, statusCode = 500, code = 'INTERNAL_ERROR') {
@@ -77,6 +89,38 @@ class BookRError extends Error {
 
 // ===== VALIDATION HELPERS =====
 const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+// ✅ VALIDERA ANVÄNDARTOKEN
+async function validateUserToken(user) {
+  if (!user || !user.accessToken) {
+    return false;
+  }
+
+  try {
+    // ✅ TESTA TOKEN MOT RÄTT API BASERAT PÅ PROVIDER
+    if (user.provider === 'microsoft') {
+      const response = await fetchWithRetry('https://graph.microsoft.com/v1.0/me', {
+        headers: {
+          'Authorization': `Bearer ${user.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      return response.ok;
+    } else {
+      // Google (default)
+      const response = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: {
+          'Authorization': `Bearer ${user.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      return response.ok;
+    }
+  } catch (error) {
+    console.warn(`⚠️ Token validation failed for ${anonymizeEmail(user.email)}:`, error.message);
+    return false;
+  }
+}
 
 const validateDateRange = (startDate, endDate) => {
   const start = new Date(startDate);
@@ -938,8 +982,29 @@ const validateAuth = (req, res, next) => {
 
 // ===== API ROUTES =====
 
-app.get('/api/user', (req, res) => {
+app.get('/api/user', async (req, res) => {
   if (req.user) {
+    // ✅ VALIDERA TOKEN INNAN VI RETURNERAR USER
+    const isValidToken = await validateUserToken(req.user);
+    
+    if (!isValidToken) {
+      console.log(`❌ Invalid token for user ${anonymizeEmail(req.user.email)}, forcing re-authentication`);
+      
+      // ✅ RENSA SESSION OCH TVINGA OMAUTENTISERING
+      req.logout((err) => {
+        if (err) console.error('❌ Logout error:', err);
+        req.session.destroy(() => {
+          res.clearCookie(CONFIG.session.name);
+          res.status(401).json({ 
+            error: 'Token expired', 
+            code: 'TOKEN_EXPIRED',
+            requiresReauth: true 
+          });
+        });
+      });
+      return;
+    }
+    
     res.json({ user: req.user });
   } else {
     res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
@@ -1139,42 +1204,51 @@ function getGroupMembersDecrypted(group) {
 
 app.post('/api/invite', async (req, res) => {
   try {
-    const { emails, fromUser, fromToken, groupName: rawGroupName, directAccessEmails } = req.body;
+    // ✅ SINGLE DESTRUCTURING WITH PROPER VARIABLE NAMES
+    const { emails: inviteEmails, fromUser: senderInfo, fromToken, groupName: rawGroupName, directAccessEmails } = req.body;
     
+    // ✅ GDPR LOGGING WITH CORRECT EMAIL COUNT
     gdprLog('Invite request received', { 
-      emailCount: Array.isArray(emails) ? emails.length : 0,
+      emailCount: Array.isArray(inviteEmails) ? inviteEmails.length : 0,
       fromUser: anonymizeEmail(
-        typeof fromUser === 'string' ? fromUser : (fromUser?.email || fromUser?.emails?.[0]?.value || 'unknown')
+        typeof senderInfo === 'string' ? senderInfo : (senderInfo?.email || senderInfo?.emails?.[0]?.value || 'unknown')
       )
     });
 
-    if (!Array.isArray(emails) || emails.length === 0) {
+    // ✅ VALIDATION: EMAILS ARRAY
+    if (!Array.isArray(inviteEmails) || inviteEmails.length === 0) {
       throw new BookRError('Emails array is required and must not be empty', 400, 'MISSING_EMAILS');
     }
 
-    if (emails.length > CONFIG.email.maxRecipients) {
+    if (inviteEmails.length > CONFIG.email.maxRecipients) {
       throw new BookRError(`Maximum ${CONFIG.email.maxRecipients} recipients allowed`, 400, 'TOO_MANY_RECIPIENTS');
     }
 
-    if (!fromUser) {
+    // ✅ VALIDATION: SENDER INFO
+    if (!senderInfo) {
       throw new BookRError('From user is required', 400, 'MISSING_FROM_USER');
     }
 
-    const invalidEmails = emails.filter(email => !validateEmail(email));
-    if (invalidEmails.length > 0) {
-      throw new BookRError(`Invalid email addresses: ${invalidEmails.join(', ')}`, 400, 'INVALID_EMAILS');
-    }
+    // ✅ EXTRACT SENDER EMAIL AND NAME
+    const senderEmail = typeof senderInfo === 'string' ? senderInfo : senderInfo.email;
+    const senderName = typeof senderInfo === 'string' 
+      ? senderInfo.split('@')[0] 
+      : (senderInfo.name || senderInfo.displayName || senderEmail?.split('@')[0] || 'Unknown');
 
-    const groupId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-
-    const senderName = typeof fromUser === 'string' ? fromUser.split('@')[0] : (fromUser.name || fromUser.displayName || fromUser.email || fromUser);
-    const senderEmail = typeof fromUser === 'string' ? fromUser : fromUser.email;
-
+    // ✅ VALIDATION: SENDER EMAIL
     if (!validateEmail(senderEmail)) {
       throw new BookRError('Invalid sender email address', 400, 'INVALID_SENDER_EMAIL');
     }
 
+    // ✅ VALIDATION: INVITE EMAILS
+    const invalidEmails = inviteEmails.filter(email => !validateEmail(email));
+    if (invalidEmails.length > 0) {
+      throw new BookRError(`Invalid email addresses: ${invalidEmails.join(', ')}`, 400, 'INVALID_EMAILS');
+    }
+
+    // ✅ GROUP SETUP
+    const groupId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const frontendUrl = process.env.FRONTEND_URL || CONFIG.urls.frontend;
     const groupName = rawGroupName?.trim() || 'Kalenderjämförelse';
 
     // ✅ DETEKTERA CREATOR PROVIDER
@@ -1203,7 +1277,7 @@ app.post('/api/invite', async (req, res) => {
         joinedAt: new Date().toISOString(),
         isCreator: true
       }],
-      invitedEmails: emails, // Synliga för att visa vem som bjudits in
+      invitedEmails: inviteEmails, // Synliga för att visa vem som bjudits in
       status: 'active'
     };
 
@@ -1213,11 +1287,11 @@ app.post('/api/invite', async (req, res) => {
     const emailResults = [];
     const inviteLinks = [];
 
-    for (const email of emails) {
+    for (const email of inviteEmails) {
       const inviteLink = `${frontendUrl}/?group=${groupId}&invitee=${encodeURIComponent(email)}`;
       inviteLinks.push(inviteLink);
 
-      console.log(`\n🔄 Processing email ${emails.indexOf(email) + 1}/${emails.length}:`);
+      console.log(`\n🔄 Processing email ${inviteEmails.indexOf(email) + 1}/${inviteEmails.length}:`);
       console.log(`   📧 To: ${email}`);
       console.log(`   👤 From: ${senderName} <${senderEmail}>`);
       console.log(`   📅 Group: ${groupName}`);
@@ -1241,7 +1315,7 @@ app.post('/api/invite', async (req, res) => {
     const successfulEmails = emailResults.filter(r => r.sent);
     const failedEmails = emailResults.filter(r => !r.sent);
 
-    console.log(`✅ Group ${groupId} created with ${successfulEmails.length}/${emails.length} emails sent`);
+    console.log(`✅ Group ${groupId} created with ${successfulEmails.length}/${inviteEmails.length} emails sent`);
 
     if (failedEmails.length > 0) {
       console.warn(`⚠️ Failed emails: ${failedEmails.map(f => f.email).join(', ')}`);
@@ -1253,13 +1327,13 @@ app.post('/api/invite', async (req, res) => {
         const firebaseGroupId = await createGroup({
           name: groupName,
           creator: senderEmail,
-          memberCount: emails.length + 1 // +1 för skaparen
+          memberCount: inviteEmails.length + 1 // +1 för skaparen
         });
         
         gdprLog('Firebase: Group created', { 
           firebaseId: firebaseGroupId,
           memoryId: groupId.substring(0, 12) + '...',
-          memberCount: emails.length + 1
+          memberCount: inviteEmails.length + 1
         });
       } catch (firebaseError) {
         console.warn('⚠️ Firebase group creation failed:', firebaseError.message);
@@ -1268,7 +1342,7 @@ app.post('/api/invite', async (req, res) => {
 
     // ✅ FIREBASE: SPARA INBJUDNINGAR
     if (db) {
-      for (const email of emails) {
+      for (const email of inviteEmails) {
         try {
           const invitationId = await createInvitation({
             email,
@@ -1291,7 +1365,7 @@ app.post('/api/invite', async (req, res) => {
 
     gdprLog('Group created with visible emails for participants', {
       groupId: groupId.substring(0, 12) + '...',
-      memberCount: emails.length + 1,
+      memberCount: inviteEmails.length + 1,
       creator: anonymizeEmail(senderEmail) // Endast anonymisera i server-loggar
     });
 
@@ -1300,9 +1374,9 @@ app.post('/api/invite', async (req, res) => {
       groupId,
       inviteLinks,
       emailResults,
-      message: successfulEmails.length === emails.length
-        ? `Alla ${emails.length} inbjudningar skickade!`
-        : `${successfulEmails.length} av ${emails.length} inbjudningar skickade. ${failedEmails.length} misslyckades.`
+      message: successfulEmails.length === inviteEmails.length
+        ? `Alla ${inviteEmails.length} inbjudningar skickade!`
+        : `${successfulEmails.length} av ${inviteEmails.length} inbjudningar skickade. ${failedEmails.length} misslyckades.`
     });
   } catch (error) {
     console.error('❌ Invite error:', error);
@@ -1445,9 +1519,62 @@ app.post('/api/availability', async (req, res) => {
       dayEnd
     });
 
+    // ✅ VALIDERA ALLA TOKENS FÖRST
+    const validTokens = [];
+    const invalidTokens = [];
+    
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (!token) {
+        invalidTokens.push(i);
+        continue;
+      }
+      
+      try {
+        // ✅ TESTA TOKEN
+        const testResponse = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (testResponse.ok) {
+          validTokens.push(token);
+        } else {
+          // ✅ FÖRSÖK MICROSOFT OM GOOGLE MISSLYCKAS
+          const msTestResponse = await fetchWithRetry('https://graph.microsoft.com/v1.0/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (msTestResponse.ok) {
+            validTokens.push(token);
+          } else {
+            invalidTokens.push(i);
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Token ${i + 1} validation failed:`, error.message);
+        invalidTokens.push(i);
+      }
+    }
+    
+    if (invalidTokens.length > 0) {
+      console.warn(`⚠️ Found ${invalidTokens.length} invalid tokens out of ${tokens.length}`);
+      
+      if (validTokens.length === 0) {
+        return res.status(401).json({
+          error: 'All tokens are invalid or expired',
+          code: 'ALL_TOKENS_EXPIRED',
+          requiresReauth: true,
+          invalidTokens
+        });
+      }
+    }
+
     if (!Array.isArray(tokens) || tokens.length === 0) {
       throw new BookRError('Tokens array is required and must not be empty', 400, 'MISSING_TOKENS');
     }
+    
+    // ✅ ANVÄND ENDAST GILTIGA TOKENS
+    const tokensToUse = validTokens.length > 0 ? validTokens : tokens;
 
     if (!timeMin || !timeMax) {
       throw new BookRError('timeMin and timeMax are required', 400, 'MISSING_TIME_RANGE');
@@ -1462,8 +1589,8 @@ app.post('/api/availability', async (req, res) => {
     const allBusyTimes = [];
 
     // ✅ FÖRBÄTTRAD TOKEN PROCESSING MED GDPR-SÄKER EMAIL-HÄMTNING
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
+    for (let i = 0; i < tokensToUse.length; i++) {
+      const token = tokensToUse[i];
       if (!token) continue;
 
       try {

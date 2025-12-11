@@ -48,17 +48,13 @@ export function sanitizeCalendarEvent(event, userEmail) {
   };
 }
 
-// ✅ FÖRBÄTTRAD GDPR LOGGING MED KORREKT EMAIL HANTERING
+// ✅ GDPR-SÄKER LOGGING MED ANVÄNDBAR SESSION-HANTERING
 export function gdprLog(message, data = {}) {
   const sanitizedData = {};
   
   for (const [key, value] of Object.entries(data)) {
     if (key.includes('email') || key.includes('Email')) {
-      if (typeof value === 'string') {
-        sanitizedData[key] = anonymizeEmail(value);
-      } else {
-        sanitizedData[key] = value; // Behåll originalvärde om det inte är string
-      }
+      sanitizedData[key] = anonymizeEmail(value);
     } else if (Array.isArray(value)) {
       sanitizedData[key] = value.map(item => 
         typeof item === 'string' && item.includes('@') ? anonymizeEmail(item) : item
