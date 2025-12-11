@@ -185,9 +185,16 @@ async function sendInviteEmail(toEmail, fromName, fromEmail, groupName, inviteLi
       throw new BookRError('Invalid recipient email address', 400, 'INVALID_EMAIL');
     }
 
-    console.log(`📧 Sending invite email to: ${toEmail}`);
+    // ✅ VALIDERA RESEND API KEY
+    if (!process.env.RESEND_API_KEY) {
+      console.error('❌ RESEND_API_KEY is missing from environment variables');
+      return { success: false, error: 'Email service not configured' };
+    }
 
-    const result = await resend.emails.send({
+    console.log(`📧 Sending invite email to: ${toEmail}`);
+    console.log(`🔧 Using Resend API Key: ${process.env.RESEND_API_KEY.substring(0, 8)}...`);
+
+    const emailData = {
       from: CONFIG.email.from,
       to: [toEmail],
       subject: `📅 ${fromName} vill jämföra kalendrar med dig - BookR`,
@@ -196,12 +203,44 @@ async function sendInviteEmail(toEmail, fromName, fromEmail, groupName, inviteLi
       headers: {
         'X-Entity-Ref-ID': `invite-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       },
+    };
+
+    console.log('📤 Email payload:', {
+      from: emailData.from,
+      to: emailData.to,
+      subject: emailData.subject,
+      hasHtml: Boolean(emailData.html),
+      hasText: Boolean(emailData.text)
     });
 
-    console.log(`✅ Email sent successfully to ${toEmail}:`, result.id);
-    return { success: true, id: result.id };
+    const result = await resend.emails.send(emailData);
+    
+    console.log('📧 Resend API Response:', result);
+
+    // ✅ FÖRBÄTTRAD ERROR HANDLING
+    if (!result) {
+      throw new Error('No response from Resend API');
+    }
+
+    if (result.error) {
+      throw new Error(`Resend API error: ${result.error.message || JSON.stringify(result.error)}`);
+    }
+
+    if (!result.data && !result.id) {
+      throw new Error('Invalid response format from Resend API');
+    }
+
+    const emailId = result.data?.id || result.id;
+    console.log(`✅ Email sent successfully to ${toEmail}:`, emailId);
+    return { success: true, id: emailId };
+
   } catch (error) {
-    console.error(`❌ Failed to send email to ${toEmail}:`, error.message);
+    console.error(`❌ Failed to send email to ${toEmail}:`, error);
+    console.error('❌ Full error details:', {
+      message: error.message,
+      stack: error.stack,
+      response: error.response?.data || 'No response data'
+    });
     return { success: false, error: error.message };
   }
 }
@@ -1100,26 +1139,31 @@ function getGroupMembersDecrypted(group) {
 
 app.post('/api/invite', async (req, res) => {
   try {
+    // ✅ FIX GDPR LOGGING - RÄTT EMAIL COUNT
+    const { emails, fromUser, fromToken, groupName, directAccessEmails } = req.body;
+    
     gdprLog('Invite request received', { 
-      emailCount: req.body.emails?.length || 0,
-      fromUser: anonymizeEmail(req.body.fromUser?.email || req.body.fromUser)
+      emailCount: Array.isArray(emails) ? emails.length : 0, // ✅ FIX: Rätt email count
+      fromUser: anonymizeEmail(
+        typeof fromUser === 'string' ? fromUser : (fromUser?.email || fromUser?.emails?.[0]?.value || 'unknown')
+      )
     });
 
-    const { emails, fromUser, fromToken, groupName, directAccessEmails } = req.body;
+    const { emails: inviteEmails, fromUser: senderInfo, fromToken, groupName: rawGroupName } = req.body;
 
-    if (!Array.isArray(emails) || emails.length === 0) {
+    if (!Array.isArray(inviteEmails) || inviteEmails.length === 0) {
       throw new BookRError('Emails array is required and must not be empty', 400, 'MISSING_EMAILS');
     }
 
-    if (emails.length > CONFIG.email.maxRecipients) {
+    if (inviteEmails.length > CONFIG.email.maxRecipients) {
       throw new BookRError(`Maximum ${CONFIG.email.maxRecipients} recipients allowed`, 400, 'TOO_MANY_RECIPIENTS');
     }
 
-    if (!fromUser) {
+    if (!senderInfo) {
       throw new BookRError('From user is required', 400, 'MISSING_FROM_USER');
     }
 
-    const invalidEmails = emails.filter(email => !validateEmail(email));
+    const invalidEmails = inviteEmails.filter(email => !validateEmail(email));
     if (invalidEmails.length > 0) {
       throw new BookRError(`Invalid email addresses: ${invalidEmails.join(', ')}`, 400, 'INVALID_EMAILS');
     }
@@ -1127,14 +1171,14 @@ app.post('/api/invite', async (req, res) => {
     const groupId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-    const senderName = typeof fromUser === 'string' ? fromUser.split('@')[0] : (fromUser.name || fromUser.displayName || fromUser.email || fromUser);
-    const senderEmail = typeof fromUser === 'string' ? fromUser : fromUser.email;
+    const senderName = typeof senderInfo === 'string' ? senderInfo.split('@')[0] : (senderInfo.name || senderInfo.displayName || senderInfo.email || senderInfo);
+    const senderEmail = typeof senderInfo === 'string' ? senderInfo : senderInfo.email;
 
     if (!validateEmail(senderEmail)) {
       throw new BookRError('Invalid sender email address', 400, 'INVALID_SENDER_EMAIL');
     }
 
-    const groupNameToUse = groupName?.trim() || 'Kalenderjämförelse';
+    const groupName = rawGroupName?.trim() || 'Kalenderjämförelse';
 
     // ✅ DETEKTERA CREATOR PROVIDER
     let creatorProvider = 'google';
@@ -1152,7 +1196,7 @@ app.post('/api/invite', async (req, res) => {
     // ✅ SKAPA GRUPP MED SYNLIGA EMAILS FÖR DELTAGARE
     const group = {
       id: groupId,
-      name: groupNameToUse,
+      name: groupName,
       creator: senderEmail, // Synlig för deltagare
       createdAt: new Date().toISOString(),
       members: [{
@@ -1162,20 +1206,32 @@ app.post('/api/invite', async (req, res) => {
         joinedAt: new Date().toISOString(),
         isCreator: true
       }],
-      invitedEmails: emails, // Synliga för att visa vem som bjudits in
+      invitedEmails: inviteEmails, // Synliga för att visa vem som bjudits in
       status: 'active'
     };
 
     activeGroups.set(groupId, group);
 
+    // ✅ FÖRBÄTTRAD EMAIL DEBUGGING
     const emailResults = [];
     const inviteLinks = [];
 
-    for (const email of emails) {
+    for (const email of inviteEmails) {
       const inviteLink = `${frontendUrl}/?group=${groupId}&invitee=${encodeURIComponent(email)}`;
       inviteLinks.push(inviteLink);
 
-      const emailResult = await sendInviteEmail(email, senderName, senderEmail, groupNameToUse, inviteLink);
+      console.log(`\n🔄 Processing email ${inviteEmails.indexOf(email) + 1}/${inviteEmails.length}:`);
+      console.log(`   📧 To: ${email}`);
+      console.log(`   👤 From: ${senderName} <${senderEmail}>`);
+      console.log(`   📅 Group: ${groupName}`);
+      console.log(`   🔗 Link: ${inviteLink}`);
+
+      const emailResult = await sendInviteEmail(email, senderName, senderEmail, groupName, inviteLink);
+
+      console.log(`   📊 Result: ${emailResult.success ? '✅ SUCCESS' : '❌ FAILED'}`);
+      if (!emailResult.success) {
+        console.log(`   ❌ Error: ${emailResult.error}`);
+      }
 
       emailResults.push({
         email,
@@ -1188,7 +1244,7 @@ app.post('/api/invite', async (req, res) => {
     const successfulEmails = emailResults.filter(r => r.sent);
     const failedEmails = emailResults.filter(r => !r.sent);
 
-    console.log(`✅ Group ${groupId} created with ${successfulEmails.length}/${emails.length} emails sent`);
+    console.log(`✅ Group ${groupId} created with ${successfulEmails.length}/${inviteEmails.length} emails sent`);
 
     if (failedEmails.length > 0) {
       console.warn(`⚠️ Failed emails: ${failedEmails.map(f => f.email).join(', ')}`);
@@ -1198,15 +1254,15 @@ app.post('/api/invite', async (req, res) => {
     if (db) {
       try {
         const firebaseGroupId = await createGroup({
-          name: groupNameToUse,
+          name: groupName,
           creator: senderEmail,
-          memberCount: emails.length + 1 // +1 för skaparen
+          memberCount: inviteEmails.length + 1 // +1 för skaparen
         });
         
         gdprLog('Firebase: Group created', { 
           firebaseId: firebaseGroupId,
           memoryId: groupId.substring(0, 12) + '...',
-          memberCount: emails.length + 1
+          memberCount: inviteEmails.length + 1
         });
       } catch (firebaseError) {
         console.warn('⚠️ Firebase group creation failed:', firebaseError.message);
@@ -1215,13 +1271,13 @@ app.post('/api/invite', async (req, res) => {
 
     // ✅ FIREBASE: SPARA INBJUDNINGAR
     if (db) {
-      for (const email of emails) {
+      for (const email of inviteEmails) {
         try {
           const invitationId = await createInvitation({
             email,
             groupId,
             fromEmail: senderEmail,
-            groupName: groupNameToUse,
+            groupName: groupName,
             directAccess: false
           });
           
@@ -1238,7 +1294,7 @@ app.post('/api/invite', async (req, res) => {
 
     gdprLog('Group created with visible emails for participants', {
       groupId: groupId.substring(0, 12) + '...',
-      memberCount: emails.length + 1,
+      memberCount: inviteEmails.length + 1,
       creator: anonymizeEmail(senderEmail) // Endast anonymisera i server-loggar
     });
 
@@ -1247,9 +1303,9 @@ app.post('/api/invite', async (req, res) => {
       groupId,
       inviteLinks,
       emailResults,
-      message: successfulEmails.length === emails.length
-        ? `Alla ${emails.length} inbjudningar skickade!`
-        : `${successfulEmails.length} av ${emails.length} inbjudningar skickade. ${failedEmails.length} misslyckades.`
+      message: successfulEmails.length === inviteEmails.length
+        ? `Alla ${inviteEmails.length} inbjudningar skickade!`
+        : `${successfulEmails.length} av ${inviteEmails.length} inbjudningar skickade. ${failedEmails.length} misslyckades.`
     });
   } catch (error) {
     console.error('❌ Invite error:', error);
@@ -2216,25 +2272,68 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// ✅ START SERVER - MED ROUTE LOGGING
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 BookR server running on port ${PORT}`);
-  console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-  console.log(`🔑 Google OAuth: ${process.env.CLIENT_ID ? '✅ configured' : '❌ missing'}`);
-  console.log(`🔑 Microsoft OAuth: ${process.env.MICROSOFT_CLIENT_ID ? '✅ configured' : '❌ missing'}`);
-  console.log(`📧 Email (Resend): ${process.env.RESEND_API_KEY ? '✅ configured' : '❌ missing'}`);
-  console.log(`🔥 Firebase: ${db ? '✅ connected' : '❌ not available'}`);
-  
-  // ✅ DEBUG: VISA VIKTIGA ENDPOINTS
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('\n📋 Key API Endpoints:');
-    console.log('   POST /api/availability');
-    console.log('   GET  /api/group/:groupId/availability');
-    console.log('   POST /api/group/:groupId/join');
-    console.log('   GET  /api/group/:groupId/status');
-    console.log('   GET  /api/debug/routes (development only)');
-    console.log('\n🔧 Test group availability endpoint:');
+// ✅ DEBUG ENDPOINT FÖR EMAIL TESTING (ENDAST DEVELOPMENT)
+if (process.env.NODE_ENV !== 'production') {
+  app.post('/api/debug/test-email', async (req, res) => {
+    try {
+      const { to = 'info@onebookr.se' } = req.body;
+      
+      console.log('🧪 Testing email service...');
+      console.log('   API Key:', process.env.RESEND_API_KEY ? 'Present' : 'Missing');
+      console.log('   From:', CONFIG.email.from);
+      console.log('   To:', to);
+
+      const result = await resend.emails.send({
+        from: CONFIG.email.from,
+        to: [to],
+        subject: '🧪 BookR Email Test',
+        html: '<h1>Test Email</h1><p>If you receive this, email service is working!</p>',
+        text: 'Test Email - If you receive this, email service is working!'
+      });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+});  }    console.log('   GET  /api/debug/routes (development only)');    console.log('   GET  /api/group/:groupId/status');    console.log('   POST /api/group/:groupId/join');    console.log('   GET  /api/group/:groupId/availability');    console.log('   POST /api/availability');    console.log('\n📋 Key API Endpoints:');  if (process.env.NODE_ENV !== 'production') {  // ✅ DEBUG: VISA VIKTIGA ENDPOINTS    console.log(`🔥 Firebase: ${db ? '✅ connected' : '❌ not available'}`);  console.log(`📧 Email (Resend): ${process.env.RESEND_API_KEY ? '✅ configured' : '❌ missing'}`);  console.log(`🔑 Microsoft OAuth: ${process.env.MICROSOFT_CLIENT_ID ? '✅ configured' : '❌ missing'}`);  console.log(`🔑 Google OAuth: ${process.env.CLIENT_ID ? '✅ configured' : '❌ missing'}`);  console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);  console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);  console.log(`🚀 BookR server running on port ${PORT}`);const server = app.listen(PORT, '0.0.0.0', () => {// ✅ START SERVER - MED ROUTE LOGGING}  });    }      });        details: error.stack        error: error.message,        success: false,      res.status(500).json({      console.error('❌ Test email failed:', error);    } catch (error) {      });        }          to: to          from: CONFIG.email.from,          hasApiKey: Boolean(process.env.RESEND_API_KEY),        config: {        result,        success: true,      res.json({      console.log('📧 Test email result:', result);    console.log('\n🔧 Test group availability endpoint:');
     console.log(`   curl http://localhost:${PORT}/api/debug/routes`);
   }
 });

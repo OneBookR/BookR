@@ -1,0 +1,32 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# API Keys & Secrets
+**/secrets/
+**/*.key
+**/*.pem
+service-account-key.json
+
+# Development
+node_modules/
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Build outputs
+dist/
+build/
+.next/
+.cache/
+
+# Dependencies
+package-lock.json
+yarn.lock
+
+# Local development
+.local/
+temp/
+tmp/
