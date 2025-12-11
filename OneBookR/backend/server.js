@@ -2164,8 +2164,18 @@ app.get('/api', (req, res) => {
   });
 });
 
-app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found', code: 'NOT_FOUND', path: req.path, method: req.method });
+// ✅ SERVE FRONTEND STATIC FILES
+app.use(express.static('OneBookR/calendar-frontend/dist'));
+
+// ✅ SPA FALLBACK - ALLA ROUTES TILL INDEX.HTML
+app.get('*', (req, res) => {
+  // Skip API routes
+  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/') || req.path.startsWith('/health')) {
+    return res.status(404).json({ error: 'Endpoint not found', code: 'NOT_FOUND', path: req.path, method: req.method });
+  }
+  
+  // Serve frontend for all other routes
+  res.sendFile('index.html', { root: 'OneBookR/calendar-frontend/dist' });
 });
 
 app.use((error, req, res, next) => {
