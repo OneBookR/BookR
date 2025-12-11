@@ -1,0 +1,1604 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Calendar, momentLocalizer } from 'react-big-calendar';
+import moment from 'moment';
+import 'moment/locale/sv';
+import 'react-big-calendar/lib/css/react-big-calendar.css';
+
+// ✅ CLEAN IMPORTS - Ta bort onödiga imports
+import '../styles/theme.css';
+import { 
+  Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, 
+  DialogActions, Paper, CircularProgress, Snackbar, Alert, IconButton, Chip 
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import { useTheme } from '../hooks/useTheme';
+import { API_BASE_URL } from '../config';
+
+// ✅ FÖRBÄTTRAD API BASE URL HANTERING FÖR PRODUCTION
+const getApiBaseUrl = () => {
+  // Om API_BASE_URL är "vite proxy" eller undefined, använd backend port direkt
+  if (!API_BASE_URL || API_BASE_URL === 'vite proxy' || API_BASE_URL.includes('vite')) {
+    // I development, använd direkt backend URL
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:3000';
+    }
+    // I production, använd production API med www
+    return 'https://www.onebookr.se';
+  }
+  return API_BASE_URL;
+};
+
+const API_URL = getApiBaseUrl();
+
+// ✅ LÄGG TILL LOGGING FÖR DEBUG
+console.log('🔧 CompareCalendar API Configuration:', {
+  originalAPIBaseURL: API_BASE_URL,
+  resolvedAPIURL: API_URL,
+  hostname: window.location.hostname,
+  isProduction: process.env.NODE_ENV === 'production'
+});
+
+moment.locale('sv');
+const localizer = momentLocalizer(moment);
+
+// ✅ RENSA BORT TUNGA INLINESTYLE-LOGIK
+const useCalendarStyles = (theme) => {
+  return useMemo(() => ({
+    calendar: {
+      fontFamily: "'Inter', 'Segoe UI', 'Roboto', 'Arial', sans-serif",
+      background: theme.colors.surface,
+      borderRadius: '8px',
+      border: `1px solid ${theme.colors.border}`,
+      height: '500px'
+    },
+    eventProps: (event) => ({
+      style: {
+        backgroundColor: '#e3f2fd',
+        color: '#1976d2',
+        border: '1px solid #1976d2',
+        borderRadius: '4px'
+      }
+    })
+  }), [theme]);
+};
+
+export default function CompareCalendar({
+  myToken,
+  invitedTokens = [],
+  user,
+  groupId: propGroupId,
+  directAccess,
+  contactEmail,
+  contactName,
+  autoCompare = false
+}) {
+  const theme = useTheme().theme || { 
+    colors: { surface: '#fff', border: '#e0e3e7', text: '#222', bg: '#f7f9fb' } 
+  };
+  const styles = useCalendarStyles(theme);
+
+  // ✅ LÄGG TILL SAKNAD userData DEFINITION
+  const userData = useMemo(() => ({
+    email: user?.email || user?.emails?.[0]?.value || user?.emails?.[0],
+    provider: user?.provider || (user?.mail ? 'microsoft' : 'google'),
+    accessToken: user?.accessToken,
+    isLoggedIn: Boolean(user && user.accessToken)
+  }), [user]);
+
+  // ✅ FÖRENKLA STATE - Ta bort onödig state
+  const [availability, setAvailability] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  
+  // ✅ ENDAST NÖDVÄNDIGA FORM STATES
+  const [timeMin, setTimeMin] = useState('');
+  const [timeMax, setTimeMax] = useState('');
+  const [meetingDuration, setMeetingDuration] = useState(60);
+  const [dayStart, setDayStart] = useState('09:00');
+  const [dayEnd, setDayEnd] = useState('17:00');
+  
+  // ✅ FÖRENKLA DIALOG STATE
+  const [suggestDialog, setSuggestDialog] = useState({ open: false, slot: null });
+  const [meetingTitle, setMeetingTitle] = useState('');
+  const [withMeet, setWithMeet] = useState(true);
+  const [meetingLocation, setMeetingLocation] = useState('');
+  
+  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
+
+  // ✅ ROBUST RATE LIMITING
+  const [requestState, setRequestState] = useState({
+    lastFetch: 0,
+    inProgress: false
+  });
+
+  // ✅ LÄGG TILL VÄNTRUM STATE
+  const [waitingRoom, setWaitingRoom] = useState({
+    show: false,
+    members: [],
+    isCreator: false
+  });
+
+  // ✅ GROUP MANAGEMENT STATE (BEHÅLL BARA EN GÅNG)
+  const [groupInfo, setGroupInfo] = useState(null);
+  const [hasJoinedGroup, setHasJoinedGroup] = useState(false);
+
+  // ✅ LÄGG TILL INCLUDE ALL OPTION
+  const [includeAllEvents, setIncludeAllEvents] = useState(false);
+  const [showDebugEvents, setShowDebugEvents] = useState(false);
+  
+  // ✅ MOBILE DETECTION
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // ✅ URL PARAMS PROCESSING
+  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const inviteeEmail = urlParams.get('invitee');
+  const isInvitee = Boolean(inviteeEmail);
+
+  // ✅ CLEAN RENDER - SÄKER ANVÄNDNING AV futureSlots (FLYTTA FÖRE ANVÄNDNING)
+  const filteredAvailability = useMemo(() => 
+    Array.isArray(availability) 
+      ? availability.filter(slot => slot?.start && slot?.end && new Date(slot.start) < new Date(slot.end))
+      : []
+  , [availability]);
+
+  const futureSlots = useMemo(() => {
+    const now = new Date();
+    
+    return filteredAvailability
+      .filter(slot => {
+        try {
+          // ✅ ROBUST FILTERING - ENDAST FRAMTIDA SLOTS
+          const slotStart = new Date(slot.start);
+          const slotEnd = new Date(slot.end);
+          
+          // Validera tiderna
+          if (isNaN(slotStart.getTime()) || isNaN(slotEnd.getTime())) {
+            return false;
+          }
+          
+          // ✅ KRITIK: Slot måste SLUTA i framtiden (för att inte visa gamla slots)
+          // Exempel: Om nu är 12:47:
+          // - Slot 09:00-10:00 = FALSE (slutar innan nu)
+          // - Slot 10:00-11:00 = FALSE (slutar innan nu)
+          // - Slot 11:00-12:00 = FALSE (slutar innan nu)
+          // - Slot 12:00-13:00 = TRUE (slutar efter nu, även om det började innan nu)
+          // - Slot 13:00-14:00 = TRUE (helt i framtiden)
+          
+          // Slot är framtida om den slutar EFTER nu (med 1 min marginal för UI)
+          const oneMinuteFromNow = new Date(now.getTime() + 60000);
+          return slotEnd > oneMinuteFromNow;
+        } catch {
+          return false;
+        }
+      })
+      .sort((a, b) => {
+        try {
+          return new Date(a.start) - new Date(b.start);
+        } catch {
+          return 0;
+        }
+      });
+  }, [filteredAvailability]);
+
+  // ✅ FETCH GROUP AVAILABILITY (ERSÄTT GAMLA FUNKTIONER)
+  // ✅ FÖRHINDRA INFINITE LOOP MED DEBOUNCED FETCHING
+  const [fetchState, setFetchState] = useState({
+    lastFetch: 0,
+    isInProgress: false,
+    results: null
+  });
+
+  // ✅ DEBOUNCED GROUP AVAILABILITY FETCH
+  const fetchGroupAvailability = useCallback(async () => {
+    if (!propGroupId || !hasJoinedGroup || !groupInfo) return;
+    
+    // Förhindra för många anrop
+    const now = Date.now();
+    if (now - fetchState.lastFetch < 5000 || fetchState.isInProgress) {
+      console.log('⏳ Skipping fetch - too soon or already in progress');
+      return;
+    }
+    
+    // Kräv minst 2 medlemmar med tokens
+    if (!groupInfo.members || groupInfo.memberCount < 2) {
+      console.log('⏳ Waiting for more group members...');
+      return;
+    }
+    
+    setFetchState(prev => ({ ...prev, isInProgress: true, lastFetch: now }));
+    setIsLoading(true);
+    setHasSearched(true);
+    setError(null);
+
+    try {
+      console.log(`📅 Fetching group availability for ${propGroupId} (${groupInfo.memberCount} members)`);
+
+      // ✅ BERÄKNA TIDSINTERVALL
+      const nowDate = new Date();
+      const defaultStart = new Date(nowDate.getTime() + 24 * 60 * 60 * 1000);
+      const defaultEnd = new Date(nowDate.getTime() + 14 * 60 * 60 * 1000);
+      
+      const params = new URLSearchParams({
+        timeMin: timeMin ? new Date(timeMin).toISOString() : defaultStart.toISOString(),
+        timeMax: timeMax ? new Date(timeMax).toISOString() : defaultEnd.toISOString(),
+        duration: String(meetingDuration),
+        dayStart,
+        dayEnd
+      });
+      
+      const response = await fetch(`${API_URL}/api/group/${propGroupId}/availability?${params}`, {
+        credentials: 'include'
+      });
+      
+      if (response.status === 429) {
+        setError('För många förfrågningar. Vänta en minut och försök igen.');
+        return;
+      }
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        const validSlots = Array.isArray(data) ? data.filter(slot => 
+          slot.start && slot.end && new Date(slot.start) < new Date(slot.end)
+        ) : [];
+        
+        setAvailability(validSlots);
+        setFetchState(prev => ({ ...prev, results: validSlots }));
+        
+        if (validSlots.length === 0) {
+          setToast({ 
+            open: true, 
+            message: 'Inga gemensamma lediga tider hittades. Alla har upptagna kalendrar under denna period.', 
+            severity: 'warning' 
+          });
+        } else {
+          setToast({ 
+            open: true, 
+            message: `Hittade ${validSlots.length} gemensamma lediga tider där alla ${groupInfo.memberCount} medlemmar är lediga!`, 
+            severity: 'success' 
+          });
+        }
+      } else {
+        setError(data.error || 'Kunde inte hämta gruppens kalendrar');
+        setAvailability([]);
+      }
+      
+    } catch (err) {
+      console.error('❌ Group availability error:', err);
+      setError('Tekniskt fel vid hämtning av gruppkalender');
+      setAvailability([]);
+    } finally {
+      setIsLoading(false);
+      setFetchState(prev => ({ ...prev, isInProgress: false }));
+    }
+  }, [propGroupId, hasJoinedGroup, groupInfo, fetchState.lastFetch, fetchState.isInProgress, timeMin, timeMax, meetingDuration, dayStart, dayEnd]);
+
+  // ✅ JOIN GROUP AUTOMATICALLY - FIXA API URL
+  const joinGroup = useCallback(async () => {
+    if (!propGroupId || !user || !myToken) return;
+    
+    try {
+      const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+      
+      console.log(`👥 Joining group ${propGroupId} as ${userEmail}`);
+      
+      const response = await fetch(`${API_URL}/api/group/${propGroupId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: userEmail,
+          token: myToken
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Joined group successfully:', data);
+        setHasJoinedGroup(true);
+        return true;
+      } else {
+        console.error('❌ Failed to join group:', response.status);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Join group error:', error);
+      return false;
+    }
+  }, [propGroupId, user, myToken]);
+
+  // ✅ FETCH GROUP STATUS - FIXA API URL
+  const fetchGroupStatus = useCallback(async () => {
+    if (!propGroupId) return;
+    
+    try {
+      const response = await fetch(`${API_URL}/api/group/${propGroupId}/status`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setGroupInfo(data);
+        console.log('✅ Group status:', data);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch group status:', error);
+    }
+  }, [propGroupId]);
+
+  // ✅ JOIN GROUP AND FETCH STATUS ON MOUNT
+  useEffect(() => {
+    if (propGroupId && !hasJoinedGroup) {
+      joinGroup().then(success => {
+        if (success) {
+          fetchGroupStatus();
+        }
+      });
+    } else if (propGroupId) {
+      fetchGroupStatus();
+    }
+  }, [propGroupId, hasJoinedGroup, joinGroup, fetchGroupStatus]);
+
+  // ✅ UPPDATERA AVAILABILITY FETCH FUNCTION - VISA LEDIGA TIDER FRÅN IDAG
+  const fetchAvailability = useCallback(async () => {
+    // Förhindra samtidiga anrop
+    if (isLoading) {
+      console.log('⏳ Already fetching, skipping...');
+      return;
+    }
+    
+    setIsLoading(true);
+    setHasSearched(true);
+    setError(null);
+
+    try {
+      let endpoint;
+      let requestOptions;
+      
+      // ✅ FÖRBÄTTRAD TIDSINTERVALL BERÄKNING - FRÅN IDAG
+      const now = new Date();
+      
+      // Om vi har specificerat start/end, använd dem
+      let startTime, endTime;
+      
+      if (timeMin && timeMax) {
+        // Användaren har valt specifika datum
+        startTime = new Date(timeMin).toISOString();
+        endTime = new Date(timeMax).toISOString();
+      } else {
+        // Default: från idag (från nu) till 2 veckor senare
+        // Sätt start tid till början av idag
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        
+        const twoWeeksLater = new Date(today);
+        twoWeeksLater.setDate(twoWeeksLater.getDate() + 14); // 14 dagar = 2 veckor från idag
+        twoWeeksLater.setHours(23, 59, 59, 999); // Sätt till slutet av dagen
+        
+        startTime = today.toISOString();
+        endTime = twoWeeksLater.toISOString();
+      }
+      
+      if (propGroupId) {
+        // ✅ GROUP ENDPOINT MED KORREKT API URL
+        console.log(`🔍 Fetching group availability for ${propGroupId}`);
+        
+        const params = new URLSearchParams({
+          timeMin: startTime,
+          timeMax: endTime,
+          duration: String(meetingDuration),
+          dayStart,
+          dayEnd,
+          includeAll: String(includeAllEvents)
+        });
+        
+        endpoint = `${API_URL}/api/group/${propGroupId}/availability?${params}`;
+        requestOptions = {
+          method: 'GET',
+          credentials: 'include'
+        };
+      } else {
+        // ✅ DIRECT COMPARISON MED KORREKT API URL
+        console.log(`🔍 Direct calendar comparison`);
+        
+        const validTokens = [myToken, ...invitedTokens].filter(Boolean);
+        
+        if (validTokens.length < 2) {
+          setError('Behöver minst två kalendrar för jämförelse');
+          return;
+        }
+        
+        endpoint = `${API_URL}/api/availability`;
+        requestOptions = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            tokens: validTokens,
+            timeMin: startTime,
+            timeMax: endTime,
+            duration: meetingDuration,
+            dayStart,
+            dayEnd,
+            includeAll: includeAllEvents
+          })
+        };
+      }
+      
+      console.log('📤 Making request to:', endpoint);
+      console.log('📅 Date range:', { startTime: new Date(startTime).toLocaleString('sv-SE'), endTime: new Date(endTime).toLocaleString('sv-SE') });
+      
+      const response = await fetch(endpoint, requestOptions);
+      
+      if (response.status === 429) {
+        setError('För många förfrågningar. Vänta en minut och försök igen.');
+        return;
+      }
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // ✅ VALIDERA OCH RENSA DATA
+      const validSlots = Array.isArray(data) ? data.filter(slot => 
+        slot?.start && 
+        slot?.end && 
+        !isNaN(new Date(slot.start).getTime()) &&
+        !isNaN(new Date(slot.end).getTime()) &&
+        new Date(slot.start) < new Date(slot.end)
+      ) : [];
+      
+      console.log(`✅ Received ${validSlots.length} valid availability slots`);
+      
+      setAvailability(validSlots);
+      
+      // ✅ ANVÄNDARFEEDBACK
+      if (validSlots.length === 0) {
+        setToast({ 
+          open: true, 
+          message: includeAllEvents 
+            ? 'Inga gemensamma lediga tider hittades även med alla events inkluderade. Alla har upptagna kalendrar under denna period.' 
+            : 'Inga gemensamma lediga tider hittades under denna period. Prova att aktivera "Inkludera alla events" eller justera datum/arbetstider.', 
+          severity: 'warning' 
+        });
+      } else {
+        const memberCount = propGroupId ? groupInfo?.memberCount || 2 : 2;
+        setToast({ 
+          open: true, 
+          message: `Hittade ${validSlots.length} gemensamma lediga tider där alla ${memberCount} deltagare är lediga!${includeAllEvents ? ' (Alla events inkluderade)' : ''}`, 
+          severity: 'success' 
+        });
+      }
+      
+    } catch (err) {
+      console.error('❌ Fetch availability error:', err);
+      setError(`Kunde inte hämta kalenderjämförelse: ${err.message}`);
+      setAvailability([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [
+    isLoading,
+    propGroupId,
+    myToken,
+    invitedTokens,
+    timeMin,
+    timeMax,
+    meetingDuration,
+    dayStart,
+    dayEnd,
+    groupInfo?.memberCount,
+    includeAllEvents
+  ]);
+
+  // ✅ AUTO-FETCH NÄR GRUPP ÄR REDO (EN GÅNG)
+  useEffect(() => {
+    if (propGroupId && hasJoinedGroup && groupInfo?.memberCount >= 2 && !hasSearched) {
+      console.log('✅ Group ready - auto-fetching availability');
+      
+      // Vänta lite för att säkerställa att backend är uppdaterat
+      const timer = setTimeout(() => {
+        fetchAvailability();
+      }, 1500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [propGroupId, hasJoinedGroup, groupInfo?.memberCount, hasSearched, fetchAvailability]);
+
+  // ✅ FÖRBÄTTRAD KALENDER RENDERING - VISA ENDAST LEDIGA TIDER
+  const calendarEvents = useMemo(() => {
+    // ✅ ANVÄND futureSlots ISTÄLLET FÖR filteredAvailability
+    return futureSlots.map((slot, index) => ({
+      id: `free-slot-${index}`,
+      title: `Ledig tid (${slot.duration || meetingDuration} min)`,
+      start: new Date(slot.start),
+      end: new Date(slot.end),
+      resource: 'free_time',
+      allDay: false
+    }));
+  }, [futureSlots, meetingDuration]);
+
+  // ✅ KALENDER EVENT STYLING
+  const eventPropGetter = useCallback((event) => {
+    if (event.resource === 'free_time') {
+      return {
+        style: {
+          backgroundColor: '#4caf50',
+          color: '#ffffff',
+          border: '2px solid #388e3c',
+          borderRadius: '6px',
+          fontSize: '12px',
+          fontWeight: '600',
+          padding: '2px 6px'
+        }
+      };
+    }
+    
+    return {
+      style: {
+        backgroundColor: '#e3f2fd',
+        color: '#1976d2',
+        border: '1px solid #1976d2',
+        borderRadius: '4px'
+      }
+    };
+  }, []);
+
+  // ✅ FETCH SUGGESTIONS FUNCTION - FIXA API URL
+  const fetchSuggestions = useCallback(async () => {
+    if (!propGroupId) return;
+    
+    try {
+      const response = await fetch(`${API_URL}/api/group/${propGroupId}/suggestions`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSuggestions(data.suggestions || []);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch suggestions:', error);
+    }
+  }, [propGroupId]);
+
+  // ✅ HANDLE SUGGEST FUNCTION
+  const handleSuggest = useCallback((slot) => {
+    if (!slot) return;
+    setSuggestDialog({ open: true, slot });
+  }, []);
+
+  // ✅ CONFIRM SUGGEST FUNCTION - FÖRBÄTTRAD MED ERROR HANDLING
+  const confirmSuggest = useCallback(async () => {
+    if (!suggestDialog.slot || !propGroupId) return;
+    
+    // ✅ VALIDERA INPUT
+    if (!meetingTitle.trim()) {
+      setToast({ open: true, message: 'Mötestitel krävs', severity: 'error' });
+      return;
+    }
+
+    if (meetingTitle.length > 200) {
+      setToast({ open: true, message: 'Mötestitel kan inte vara längre än 200 tecken', severity: 'error' });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/group/${propGroupId}/suggest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          start: suggestDialog.slot.start,
+          end: suggestDialog.slot.end,
+          email: user?.email || user?.emails?.[0]?.value || user?.emails?.[0],
+          title: meetingTitle.trim(),
+          withMeet,
+          location: meetingLocation.trim()
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Kunde inte skicka förslag');
+      }
+
+      const data = await response.json();
+      
+      setToast({ 
+        open: true, 
+        message: `✅ Mötesförslag skickat! Väntar på svar från ${Object.keys(data.suggestion.votes).length} deltagare.`, 
+        severity: 'success' 
+      });
+      
+      setSuggestDialog({ open: false, slot: null });
+      setMeetingTitle('');
+      setMeetingLocation('');
+      
+      // ✅ UPPDATERA SUGGESTIONS LISTAN
+      fetchSuggestions();
+      
+    } catch (error) {
+      console.error('❌ Suggest error:', error);
+      setToast({ 
+        open: true, 
+        message: `Fel: ${error.message}`, 
+        severity: 'error' 
+      });
+    }
+  }, [suggestDialog.slot, propGroupId, user, meetingTitle, meetingLocation, withMeet, fetchSuggestions]);
+
+  // ✅ VOTE SUGGESTION FUNCTION - FÖRBÄTTRAD
+  const voteSuggestion = useCallback(async (suggestionId, vote) => {
+    if (!propGroupId) return;
+    
+    try {
+      const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+      
+      const response = await fetch(`${API_URL}/api/group/${propGroupId}/suggestion/${suggestionId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: userEmail,
+          vote
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Kunde inte registrera röst');
+      }
+
+      const data = await response.json();
+      
+      // ✅ VISA FEEDBACK BASERAT PÅ RESULTAT
+      if (vote === 'accepted') {
+        setToast({ 
+          open: true, 
+          message: data.suggestion.status === 'accepted' 
+            ? '🎉 Du accepterade! Möte skapas för alla.' 
+            : '✅ Du accepterade förslaget!', 
+          severity: 'success' 
+        });
+      } else {
+        setToast({ 
+          open: true, 
+          message: '❌ Du nekade förslaget.', 
+          severity: 'info' 
+        });
+      }
+
+      // ✅ UPPDATERA SUGGESTIONS LISTAN
+      fetchSuggestions();
+      
+    } catch (error) {
+      console.error('❌ Vote error:', error);
+      setToast({ 
+        open: true, 
+        message: `Röstningsfel: ${error.message}`, 
+        severity: 'error' 
+      });
+    }
+  }, [propGroupId, user, fetchSuggestions]);
+
+  // ✅ SUGGESTIONS POLLING - FÖRENKLAD
+  useEffect(() => {
+    if (!propGroupId) return;
+    
+    // Hämta suggestions bara en gång, inte kontinuerligt
+    fetchSuggestions();
+  }, [propGroupId, fetchSuggestions]);
+
+  // ✅ LÄGG TILL SAKNAD DEBUG-FUNKTION (FLYTTA FÖRE ANVÄNDNING)
+  const fetchDebugEvents = useCallback(async () => {
+    if (!propGroupId) return;
+    
+    try {
+      const now = new Date();
+      const defaultStart = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const defaultEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+      
+      const startTime = timeMin ? new Date(timeMin).toISOString() : defaultStart.toISOString();
+      const endTime = timeMax ? new Date(timeMax).toISOString() : defaultEnd.toISOString();
+      
+      const params = new URLSearchParams({
+        timeMin: startTime,
+        timeMax: endTime
+      });
+      
+      const response = await fetch(`${API_URL}/api/group/${propGroupId}/debug-events?${params}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('🔍 Debug Events Data:', data);
+        
+        // Visa i en alert eller modal
+        const summary = data.debugData.map(member => 
+          `${member.email}: ${member.totalEvents || 0} events total, ${member.processedEvents || 0} processed`
+        ).join('\n');
+        
+        alert(`Debug Events Summary:\n\n${summary}\n\nSe konsolen för fullständiga detaljer.`);
+      }
+    } catch (error) {
+      console.error('Debug events error:', error);
+    }
+  }, [propGroupId, timeMin, timeMax]);
+
+  // ✅ ROBUST RENDERING FUNCTIONS - FLYTTA FÖRE MAIN RETURN
+  const renderComparisonForm = useCallback(() => (
+    <Paper sx={{ p: 3, mb: 3, borderRadius: 2, border: `1px solid ${theme.colors.border}` }}>
+      <Typography variant="h5" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
+        📅 Kalenderjämförelse
+        {propGroupId && (
+          <Chip 
+            label={`Grupp: ${groupInfo?.name || 'Laddar...'}`} 
+            color="primary" 
+            size="small"
+            sx={{ ml: 2 }}
+          />
+        )}
+      </Typography>
+      
+      {/* ✅ GRUPPINFORMATION */}
+      {groupInfo && (
+        <Box sx={{ mb: 3, p: 2, bgcolor: '#f0f8ff', borderRadius: 1, border: '1px solid #e3f2fd' }}>
+          <Typography variant="subtitle2" sx={{ mb: 1, color: '#1976d2', fontWeight: 600 }}>
+            👥 Gruppinformation
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            <strong>Namn:</strong> {groupInfo.name}
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            <strong>Anslutna medlemmar:</strong> {groupInfo.memberCount}
+          </Typography>
+          
+          {/* ✅ VISA ANSLUTNA MEDLEMMAR MED EMAILS */}
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 600, display: 'block', mb: 1 }}>
+              ✅ Anslutna ({groupInfo.members?.length || 0}):
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              {groupInfo.members?.map((member, index) => (
+                <Chip
+                  key={index}
+                  label={`${member.isCreator ? '👑 ' : ''}${member.email}`}
+                  size="small"
+                  color={member.isCreator ? 'primary' : 'success'}
+                  sx={{ fontSize: '0.75rem' }}
+                />
+              ))}
+            </Box>
+          </Box>
+
+          {/* ✅ VISA VÄNTANDE MEDLEMMAR MED EMAILS */}
+          {groupInfo.pendingMembers && groupInfo.pendingMembers.length > 0 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="caption" sx={{ color: '#ed6c02', fontWeight: 600, display: 'block', mb: 1 }}>
+                ⏳ Väntar på ({groupInfo.pendingMembers.length}):
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {groupInfo.pendingMembers.map((email, index) => (
+                  <Chip
+                    key={index}
+                    label={`⏳ ${email}`}
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    sx={{ fontSize: '0.75rem' }}
+                  />
+                ))}
+              </Box>
+              <Typography variant="caption" sx={{ color: '#ed6c02', display: 'block', mt: 1, fontStyle: 'italic' }}>
+                Dessa personer har fått inbjudningar men har inte anslutit än.
+              </Typography>
+            </Box>
+          )}
+          
+          {groupInfo.memberCount < 2 && (
+            <Alert severity="warning" sx={{ mt: 1 }}>
+              <Typography variant="caption">
+                ⚠️ Väntar på att fler medlemmar ska ansluta för att kunna jämföra kalendrar...
+              </Typography>
+            </Alert>
+          )}
+        </Box>
+      )}
+      
+      {/* ✅ VISA STATUS FÖR KALENDRAR - ANVÄND userData KORREKT */}
+      <Box sx={{ mb: 3, p: 2, bgcolor: '#f8f9fa', borderRadius: 1 }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, color: '#666' }}>
+          📅 Kalendrar som jämförs:
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {myToken && (
+            <Chip 
+              label={`Din kalender (${userData.email || 'okänd'})`} 
+              color="primary" 
+              size="small" 
+            />
+          )}
+          {propGroupId && groupInfo?.members && groupInfo.members
+            .filter(member => member.email !== userData.email)
+            .map((member, index) => (
+              <Chip 
+                key={index}
+                label={`${member.email} ${member.isCreator ? '(skapare)' : ''}`}
+                color="secondary" 
+                size="small" 
+              />
+            ))}
+          {contactEmail && (
+            <Chip 
+              label={contactEmail} 
+              color="info" 
+              size="small" 
+            />
+          )}
+        </Box>
+        
+        {/* ✅ FÖRBÄTTRADE STATUSMEDDELANDEN */}
+        {!propGroupId && [myToken, ...invitedTokens].filter(Boolean).length < 2 && (
+          <Alert severity="warning" sx={{ mt: 1 }}>
+            ⚠️ Behöver minst 2 kalendrar för jämförelse
+          </Alert>
+        )}
+        
+        {propGroupId && (!groupInfo || groupInfo.memberCount < 2) && (
+          <Alert severity="info" sx={{ mt: 1 }}>
+            <Typography variant="body2">
+              ⏳ Väntar på att fler medlemmar ska ansluta gruppen
+            </Typography>
+            {groupInfo?.pendingMembers && groupInfo.pendingMembers.length > 0 && (
+              <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+                Inbjudningar skickade till: {groupInfo.pendingMembers.join(', ')}
+              </Typography>
+            )}
+          </Alert>
+        )}
+      </Box>
+      
+      {/* ✅ NYA AVANCERADE ALTERNATIV */}
+      <Box sx={{ mb: 3, p: 2, bgcolor: '#f0f8ff', borderRadius: 1, border: '1px solid #e3f2fd' }}>
+        <Typography variant="subtitle2" sx={{ mb: 2, color: '#1976d2', fontWeight: 600 }}>
+          🔧 Avancerade alternativ
+        </Typography>
+        
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <input 
+              type="checkbox" 
+              id="includeAllEvents"
+              checked={includeAllEvents}
+              onChange={(e) => setIncludeAllEvents(e.target.checked)}
+            />
+            <label htmlFor="includeAllEvents" style={{ cursor: 'pointer' }}>
+              <Typography variant="body2">
+                <strong>Inkludera alla events</strong> - Även tentativa, transparenta och heldagsevent
+              </Typography>
+            </label>
+          </Box>
+          
+          {process.env.NODE_ENV === 'development' && propGroupId && (
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={fetchDebugEvents}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              🔍 Debug Events
+            </Button>
+          )}
+        </Box>
+        
+        <Typography variant="caption" sx={{ display: 'block', color: '#666', mt: 1 }}>
+          💡 Om du inte ser alla dina kalenderevent, aktivera "Inkludera alla events"
+        </Typography>
+      </Box>
+      
+      {/* ✅ FÖRENKLAD FORM */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <TextField
+            label="Från datum"
+            type="date"
+            value={timeMin ? timeMin.split('T')[0] : ''}
+            onChange={e => setTimeMin(e.target.value ? `${e.target.value}T00:00` : '')}
+            InputLabelProps={{ shrink: true }}
+            sx={{ flex: 1, minWidth: 200 }}
+            helperText="Lämna tom för imorgon"
+          />
+          <TextField
+            label="Till datum"
+            type="date"
+            value={timeMax ? timeMax.split('T')[0] : ''}
+            onChange={e => setTimeMax(e.target.value ? `${e.target.value}T23:59` : '')}
+            InputLabelProps={{ shrink: true }}
+            sx={{ flex: 1, minWidth: 200 }}
+            helperText="Lämna tom för +2 veckor"
+          />
+        </Box>
+        
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <TextField
+            label="Möteslängd (minuter)"
+            type="number"
+            value={meetingDuration}
+            onChange={e => setMeetingDuration(Number(e.target.value))}
+            inputProps={{ min: 15, max: 480, step: 15 }}
+            sx={{ width: 180 }}
+          />
+          <TextField
+            label="Arbetsdag start"
+            type="time"
+            value={dayStart}
+            onChange={e => setDayStart(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ width: 140 }}
+          />
+          <TextField
+            label="Arbetsdag slut"
+            type="time"
+            value={dayEnd}
+            onChange={e => setDayEnd(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ width: 140 }}
+          />
+        </Box>
+      </Box>
+      
+      <Button 
+        onClick={fetchAvailability}
+        variant="contained"
+        disabled={
+          isLoading || 
+          (propGroupId ? (!groupInfo || groupInfo.memberCount < 2) : [myToken, ...invitedTokens].filter(Boolean).length < 2)
+        }
+        sx={{ px: 4, py: 1.2, fontWeight: 600 }}
+        size="large"
+      >
+        {isLoading ? (
+          <>
+            <CircularProgress size={20} sx={{ mr: 1 }} />
+            {propGroupId ? 'Jämför gruppkalendrar...' : 'Jämför kalendrar...'}
+          </>
+        ) : (
+          <>
+            {propGroupId ? '🔍 Jämför gruppkalendrar' : '🔍 Jämför kalendrar'}
+            {includeAllEvents && ' (Alla events)'}
+          </>
+        )}
+      </Button>
+      
+      {includeAllEvents && (
+        <Typography variant="caption" sx={{ display: 'block', color: '#f57c00', mt: 1 }}>
+          ⚠️ "Inkludera alla events" är aktiverat - även tentativa och transparenta events räknas som upptagna
+        </Typography>
+      )}
+    </Paper>
+  ), [
+    theme, 
+    propGroupId, 
+    groupInfo, 
+    userData, // ✅ LÄGG TILL userData I DEPENDENCIES
+    myToken, 
+    invitedTokens, 
+    contactEmail, 
+    includeAllEvents, 
+    fetchDebugEvents, 
+    timeMin, 
+    timeMax, 
+    meetingDuration, 
+    dayStart, 
+    dayEnd, 
+    fetchAvailability, 
+    isLoading
+  ]);
+
+  const renderAvailableSlots = useMemo(() => {
+    if (!hasSearched) return null;
+    
+    if (isLoading) {
+      return (
+        <Paper sx={{ p: 3, mb: 3, borderRadius: 2, textAlign: 'center' }}>
+          <CircularProgress sx={{ mb: 2 }} />
+          <Typography>Jämför kalendrar...</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Detta kan ta några sekunder
+          </Typography>
+        </Paper>
+      );
+    }
+    
+    // ✅ SÄKER CHECK AV futureSlots
+    const safeFutureSlots = Array.isArray(futureSlots) ? futureSlots : [];
+    
+    if (safeFutureSlots.length === 0) {
+      return (
+        <Paper sx={{ p: 3, mb: 3, borderRadius: 2, textAlign: 'center', bgcolor: '#fff3e0' }}>
+          <Typography variant="h6" sx={{ mb: 2, color: '#f57c00' }}>
+            Inga gemensamma lediga tider
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Vi hittade inga tider där alla deltagare är lediga samtidigt.
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            💡 Försök utöka tidsintervallet eller justera arbetstider
+          </Typography>
+        </Paper>
+      );
+    }
+    
+    // ✅ GRUPPERA SLOTS PER DAG FÖR BÄTTRE ÖVERBLICK
+    const slotsByDay = safeFutureSlots.reduce((acc, slot) => {
+      if (!slot?.start || !slot?.end) return acc;
+      
+      try {
+        const date = new Date(slot.start).toDateString();
+        if (!acc[date]) acc[date] = [];
+        acc[date].push(slot);
+        return acc;
+      } catch {
+        return acc;
+      }
+    }, {});
+    
+    return (
+      <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#2e7d32' }}>
+          🎉 Gemensamma lediga tider ({safeFutureSlots.length})
+        </Typography>
+        
+        <Typography variant="body2" sx={{ mb: 3, color: '#666' }}>
+          Dessa tider passar alla deltagare ({meetingDuration} min möten):
+        </Typography>
+        
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {Object.entries(slotsByDay).slice(0, 7).map(([dateString, daySlots]) => {
+            const date = new Date(dateString);
+            const isToday = date.toDateString() === new Date().toDateString();
+            const isTomorrow = date.toDateString() === new Date(Date.now() + 24*60*60*1000).toDateString();
+            
+            return (
+              <Box key={dateString}>
+                <Typography variant="subtitle1" sx={{ 
+                  fontWeight: 600, 
+                  color: '#1565c0', 
+                  mb: 2,
+                  borderBottom: '2px solid #e3f2fd',
+                  pb: 1
+                }}>
+                  {isToday ? '🔥 Idag' : isTomorrow ? '📅 Imorgon' : date.toLocaleDateString('sv-SE', { 
+                    weekday: 'long', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </Typography>
+                
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                  {daySlots.map((slot, slotIndex) => {
+                    try {
+                      const start = new Date(slot.start);
+                      const end = new Date(slot.end);
+                      
+                      if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+                      
+                      const duration = Math.round((end - start) / 60000);
+                      
+                      return (
+                        <Card 
+                          key={`${dateString}-${slotIndex}`}
+                          sx={{ 
+                            p: 2, 
+                            minWidth: 200,
+                            cursor: propGroupId ? 'pointer' : 'default',
+                            '&:hover': propGroupId ? { 
+                              bgcolor: '#f0f7ff', 
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 6px 20px rgba(0,0,0,0.1)'
+                            } : {},
+                            border: '1px solid #e3f2fd',
+                            borderLeft: '4px solid #2196f3',
+                            transition: 'all 0.3s ease',
+                            bgcolor: '#fafbff'
+                          }}
+                          onClick={propGroupId ? () => handleSuggest(slot) : undefined}
+                        >
+                          <Typography variant="body1" sx={{ fontWeight: 600, color: '#1565c0', mb: 1 }}>
+                            {start.toLocaleTimeString('sv-SE', { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })} - {end.toLocaleTimeString('sv-SE', { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            ⏱️ {duration} minuter
+                          </Typography>
+                          <Typography variant="caption" color="success.main" sx={{ fontWeight: 500 }}>
+                            ✅ Alla lediga
+                          </Typography>
+                          
+                          {propGroupId && (
+                            <Typography variant="caption" sx={{ 
+                              display: 'block',
+                              color: '#1976d2', 
+                              fontWeight: 500,
+                              mt: 1,
+                              opacity: 0.8
+                            }}>
+                              Klicka för att föreslå
+                            </Typography>
+                          )}
+                        </Card>
+                      );
+                    } catch (slotError) {
+                      console.error('Error rendering slot:', slotError);
+                      return null;
+                    }
+                  })}
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+        
+        {Object.keys(slotsByDay).length > 7 && (
+          <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: '#666', mt: 3 }}>
+            Visar första 7 dagarna. Totalt {safeFutureSlots.length} lediga tider hittades.
+          </Typography>
+        )}
+      </Paper>
+    );
+  }, [hasSearched, isLoading, futureSlots, propGroupId, handleSuggest, meetingDuration]);
+
+
+
+  // ✅ LÄGG TILL SAKNAD SUGGESTIONS RENDERING
+  const renderSuggestions = useCallback(() => {
+    if (!propGroupId || !Array.isArray(suggestions) || suggestions.length === 0) {
+      return null;
+    }
+
+    return (
+      <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
+          📋 Mötesförslag ({suggestions.length})
+        </Typography>
+        
+        {suggestions.map(suggestion => {
+          const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+          const userVote = suggestion.votes?.[userEmail];
+          const voteCount = suggestion.voteCount || {
+            accepted: Object.values(suggestion.votes || {}).filter(v => v === 'accepted').length,
+            rejected: Object.values(suggestion.votes || {}).filter(v => v === 'rejected').length,
+            pending: Object.values(suggestion.votes || {}).filter(v => v === 'pending').length
+          };
+
+          return (
+            <Card key={suggestion.id} sx={{ p: 3, mb: 2, border: '2px solid #e3f2fd', borderRadius: 2 }}>
+              {/* ✅ TITEL OCH FÖRSLAGS INFO */}
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: '#1565c0', mb: 0.5 }}>
+                  {suggestion.title}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Föreslagen av <strong>{suggestion.suggestedBy}</strong> • {new Date(suggestion.createdAt).toLocaleString('sv-SE')}
+                </Typography>
+              </Box>
+
+              {/* ✅ TID OCH PLATS */}
+              <Box sx={{ mb: 2, p: 2, bgcolor: '#f8f9fa', borderRadius: 1 }}>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <strong>📅 Tid:</strong> {new Date(suggestion.start).toLocaleString('sv-SE', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })} - {new Date(suggestion.end).toLocaleTimeString('sv-SE', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </Typography>
+                {suggestion.withMeet ? (
+                  <Typography variant="body2">
+                    <strong>📹 Möte:</strong> Google Meet kommer att skapas
+                  </Typography>
+                ) : suggestion.location && (
+                  <Typography variant="body2">
+                    <strong>📍 Plats:</strong> {suggestion.location}
+                  </Typography>
+                )}
+              </Box>
+
+              {/* ✅ RÖSTRESULTAT */}
+              <Box sx={{ mb: 2, p: 2, bgcolor: '#f0f8ff', borderRadius: 1 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                  Röstningsresultat:
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                  <Chip
+                    label={`✅ ${voteCount.accepted} accepterat`}
+                    color={voteCount.accepted > 0 ? 'success' : 'default'}
+                    size="small"
+                  />
+                  <Chip
+                    label={`❌ ${voteCount.rejected} nekat`}
+                    color={voteCount.rejected > 0 ? 'error' : 'default'}
+                    size="small"
+                  />
+                  <Chip
+                    label={`⏳ ${voteCount.pending} väntar`}
+                    color={voteCount.pending > 0 ? 'warning' : 'default'}
+                    size="small"
+                  />
+                </Box>
+              </Box>
+
+              {/* ✅ RÖSTNINGSSEKTION */}
+              {userVote === 'pending' && (
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={() => voteSuggestion(suggestion.id, 'accepted')}
+                    sx={{ flex: 1 }}
+                  >
+                    ✅ Acceptera
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    onClick={() => voteSuggestion(suggestion.id, 'rejected')}
+                    sx={{ flex: 1 }}
+                  >
+                    ❌ Neka
+                  </Button>
+                </Box>
+              )}
+
+              {/* ✅ VISAR DIN RÖST */}
+              {userVote !== 'pending' && (
+                <Alert severity={userVote === 'accepted' ? 'success' : 'error'} sx={{ mb: 0 }}>
+                  {userVote === 'accepted' 
+                    ? '✅ Du accepterade detta förslag' 
+                    : '❌ Du nekade detta förslag'}
+                </Alert>
+              )}
+
+              {/* ✅ SUCCESMEDDELANDE */}
+              {suggestion.status === 'accepted' && (
+                <Alert severity="success">
+                  🎉 Alla accepterade! Kalendereventen har skapats för alla deltagare.
+                </Alert>
+              )}
+
+              {/* ✅ REJECTED MEDDELANDE */}
+              {suggestion.status === 'rejected' && (
+                <Alert severity="warning">
+                  Förslaget avvisades av en eller flera deltagare.
+                </Alert>
+              )}
+            </Card>
+          );
+        })}
+      </Paper>
+    );
+  }, [suggestions, propGroupId, user, voteSuggestion]);
+
+  // ✅ CLEAN RENDER - FLYTTA TILLBAKA TILL MAIN RETURN
+  // const renderSuggestions = () => {
+  //   if (!propGroupId || !Array.isArray(suggestions) || suggestions.length === 0) {
+  //     return null;
+  //   }
+
+  //   return (
+  //     <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+  //       <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
+  //         📋 Mötesförslag ({suggestions.length})
+  //       </Typography>
+        
+  //       {suggestions.map(suggestion => {
+  //         const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+  //         const userVote = suggestion.votes?.[userEmail];
+  //         const voteCount = suggestion.voteCount || {
+  //           accepted: Object.values(suggestion.votes || {}).filter(v => v === 'accepted').length,
+  //           rejected: Object.values(suggestion.votes || {}).filter(v => v === 'rejected').length,
+  //           pending: Object.values(suggestion.votes || {}).filter(v => v === 'pending').length
+  //         };
+
+  //         return (
+  //           <Card key={suggestion.id} sx={{ p: 3, mb: 2, border: '2px solid #e3f2fd', borderRadius: 2 }}>
+  //             {/* ✅ TITEL OCH FÖRSLAGS INFO */}
+  //             <Box sx={{ mb: 2 }}>
+  //               <Typography variant="h6" sx={{ fontWeight: 600, color: '#1565c0', mb: 0.5 }}>
+  //                 {suggestion.title}
+  //               </Typography>
+  //               <Typography variant="caption" color="text.secondary">
+  //                 Föreslagen av <strong>{suggestion.suggestedBy}</strong> • {new Date(suggestion.createdAt).toLocaleString('sv-SE')}
+  //               </Typography>
+  //             </Box>
+
+  //             {/* ✅ TID OCH PLATS */}
+  //             <Box sx={{ mb: 2, p: 2, bgcolor: '#f8f9fa', borderRadius: 1 }}>
+  //               <Typography variant="body2" sx={{ mb: 1 }}>
+  //                 <strong>📅 Tid:</strong> {new Date(suggestion.start).toLocaleString('sv-SE', {
+  //                   weekday: 'long',
+  //                   month: 'long',
+  //                   day: 'numeric',
+  //                   hour: '2-digit',
+  //                   minute: '2-digit'
+  //                 })} - {new Date(suggestion.end).toLocaleTimeString('sv-SE', {
+  //                   hour: '2-digit',
+  //                   minute: '2-digit'
+  //                 })}
+  //               </Typography>
+  //               {suggestion.withMeet ? (
+  //                 <Typography variant="body2">
+  //                   <strong>📹 Möte:</strong> Google Meet kommer att skapas
+  //                 </Typography>
+  //               ) : suggestion.location && (
+  //                 <Typography variant="body2">
+  //                   <strong>📍 Plats:</strong> {suggestion.location}
+  //                 </Typography>
+  //               )}
+  //             </Box>
+
+  //             {/* ✅ RÖSTRESULTAT */}
+  //             <Box sx={{ mb: 2, p: 2, bgcolor: '#f0f8ff', borderRadius: 1 }}>
+  //               <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+  //                 Röstningsresultat:
+  //               </Typography>
+  //               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+  //                 <Chip
+  //                   label={`✅ ${voteCount.accepted} accepterat`}
+  //                   color={voteCount.accepted > 0 ? 'success' : 'default'}
+  //                   size="small"
+  //                 />
+  //                 <Chip
+  //                   label={`❌ ${voteCount.rejected} nekat`}
+  //                   color={voteCount.rejected > 0 ? 'error' : 'default'}
+  //                   size="small"
+  //                 />
+  //                 <Chip
+  //                   label={`⏳ ${voteCount.pending} väntar`}
+  //                   color={voteCount.pending > 0 ? 'warning' : 'default'}
+  //                   size="small"
+  //                 />
+  //               </Box>
+  //             </Box>
+
+  //             {/* ✅ RÖSTNINGSSEKTION */}
+  //             {userVote === 'pending' && (
+  //               <Box sx={{ display: 'flex', gap: 2 }}>
+  //                 <Button
+  //                   variant="contained"
+  //                   color="success"
+  //                   onClick={() => voteSuggestion(suggestion.id, 'accepted')}
+  //                   sx={{ flex: 1 }}
+  //                 >
+  //                   ✅ Acceptera
+  //                 </Button>
+  //                 <Button
+  //                   variant="outlined"
+  //                   color="error"
+  //                   onClick={() => voteSuggestion(suggestion.id, 'rejected')}
+  //                   sx={{ flex: 1 }}
+  //                 >
+  //                   ❌ Neka
+  //                 </Button>
+  //               </Box>
+  //             )}
+
+  //             {/* ✅ VISAR DIN RÖST */}
+  //             {userVote !== 'pending' && (
+  //               <Alert severity={userVote === 'accepted' ? 'success' : 'error'} sx={{ mb: 0 }}>
+  //                 {userVote === 'accepted' 
+  //                   ? '✅ Du accepterade detta förslag' 
+  //                   : '❌ Du nekade detta förslag'}
+  //               </Alert>
+  //             )}
+
+  //             {/* ✅ SUCCESMEDDELANDE */}
+  //             {suggestion.status === 'accepted' && (
+  //               <Alert severity="success">
+  //                 🎉 Alla accepterade! Kalendereventen har skapats för alla deltagare.
+  //               </Alert>
+  //             )}
+
+  //             {/* ✅ REJECTED MEDDELANDE */}
+  //             {suggestion.status === 'rejected' && (
+  //               <Alert severity="warning">
+  //                 Förslaget avvisades av en eller flera deltagare.
+  //               </Alert>
+  //             )}
+  //           </Card>
+  //         );
+  //       })}
+  //     </Paper>
+  //   );
+  // };
+
+  // ✅ MOBILE RENDER FUNCTIONS (SIMPLIFIED VERSIONS)
+  const renderMobileComparisonForm = useCallback(() => renderComparisonForm(), [renderComparisonForm]);
+  const renderMobileAvailableSlots = renderAvailableSlots;
+
+  // ✅ MAIN RETURN STATEMENT
+  return (
+    <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, sm: 3 } }}>
+      {/* ✅ RENDER MOBILE OR DESKTOP VERSION */}
+      {isMobile ? renderMobileComparisonForm() : renderComparisonForm()}
+
+      {/* ✅ ERROR HANDLING */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            Fel vid kalenderjämförelse
+          </Typography>
+          {error}
+        </Alert>
+      )}
+
+      {/* ✅ RENDER MOBILE OR DESKTOP SLOTS */}
+      {isMobile ? renderMobileAvailableSlots : renderAvailableSlots}
+
+      {/* ✅ SUGGESTIONS - MOBILE OPTIMIZED */}
+      {renderSuggestions()}
+
+      {/* ✅ CALENDAR VIEW - HIDDEN ON MOBILE */}
+      {hasSearched && futureSlots.length > 0 && !isMobile && (
+        <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
+            📅 Kalendervy
+          </Typography>
+          <Box sx={styles.calendar}>
+            <Calendar
+              localizer={localizer}
+              events={calendarEvents}
+              startAccessor="start"
+              endAccessor="end"
+              style={{ height: 500 }}
+              eventPropGetter={eventPropGetter}
+              views={['month', 'week', 'day']}
+              defaultView="week"
+              messages={{
+                next: 'Nästa',
+                previous: 'Föregående',
+                today: 'Idag',
+                month: 'Månad',
+                week: 'Vecka',
+                day: 'Dag'
+              }}
+            />
+          </Box>
+        </Paper>
+      )}
+
+      {/* ✅ MOBILE-OPTIMIZED SUGGEST DIALOG */}
+      <Dialog
+        open={suggestDialog.open}
+        onClose={() => setSuggestDialog({ open: false, slot: null })}
+        maxWidth="sm"
+        fullWidth
+        fullScreen={isMobile} // Fullscreen on mobile
+      >
+        <DialogTitle>
+          Föreslå mötestid
+          {isMobile && (
+            <IconButton
+              edge="end"
+              color="inherit"
+              onClick={() => setSuggestDialog({ open: false, slot: null })}
+              sx={{ position: 'absolute', right: 8, top: 8 }}
+            >
+              <CloseIcon />
+            </IconButton>
+          )}
+        </DialogTitle>
+        
+        <Box sx={{ p: { xs: 2, sm: 3 } }}>
+          {suggestDialog.slot && (
+            <Typography variant="body2" sx={{ mb: 2, p: 2, bgcolor: '#f0f8ff', borderRadius: 1 }}>
+              <strong>📅 Vald tid:</strong><br/>
+              {new Date(suggestDialog.slot.start).toLocaleString('sv-SE')} - {new Date(suggestDialog.slot.end).toLocaleString('sv-SE')}
+            </Typography>
+          )}
+          
+          <TextField
+            label="Mötestitel"
+            placeholder="T.ex. Projektmöte, Demoöversyn, etc."
+            value={meetingTitle}
+            onChange={(e) => setMeetingTitle(e.target.value)}
+            fullWidth
+            inputProps={{ maxLength: 200 }}
+            helperText={`${meetingTitle.length}/200`}
+            sx={{ mb: 2 }}
+          />
+          
+          <Box sx={{ mb: 2 }}>
+            <Button
+              variant={withMeet ? 'contained' : 'outlined'}
+              onClick={() => setWithMeet(!withMeet)}
+              fullWidth
+            >
+              {withMeet ? '📹 Google Meet' : '📍 Plats'}
+            </Button>
+          </Box>
+          
+          {!withMeet && (
+            <TextField
+              label="Plats (valfritt)"
+              placeholder="T.ex. Konferensrum A, Zoom-länk, etc."
+              value={meetingLocation}
+              onChange={(e) => setMeetingLocation(e.target.value)}
+              fullWidth
+              inputProps={{ maxLength: 200 }}
+              sx={{ mb: 2 }}
+            />
+          )}
+        </Box>
+        
+        {!isMobile && (
+          <DialogActions>
+            <Button onClick={() => setSuggestDialog({ open: false, slot: null })}>
+              Avbryt
+            </Button>
+            <Button onClick={confirmSuggest} variant="contained" color="primary">
+              Skicka förslag
+            </Button>
+          </DialogActions>
+        )}
+        
+        {isMobile && (
+          <Box sx={{ p: 2, pt: 0 }}>
+            <Button 
+              onClick={confirmSuggest} 
+              variant="contained" 
+              fullWidth
+              sx={{ mb: 1 }}
+            >
+              Skicka förslag
+            </Button>
+            <Button 
+              onClick={() => setSuggestDialog({ open: false, slot: null })}
+              fullWidth
+              variant="text"
+            >
+              Avbryt
+            </Button>
+          </Box>
+        )}
+      </Dialog>
+
+      {/* ✅ TOAST NOTIFICATIONS */}
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={4000}
+        onClose={() => setToast({ ...toast, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setToast({ ...toast, open: false })}
+          severity={toast.severity}
+          sx={{ width: '100%' }}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  );
+}

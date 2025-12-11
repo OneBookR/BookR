@@ -1,0 +1,29 @@
+{
+  "name": "bookr-calendar",
+  "version": "1.0.0",
+  "description": "BookR Calendar Comparison App - Full Stack Deployment",
+  "main": "OneBookR/backend/server.js",
+  "scripts": {
+    "start": "cd OneBookR/backend && node server.js",
+    "build": "cd OneBookR/calendar-frontend && npm install && npm run build",
+    "postinstall": "cd OneBookR/backend && npm install && cd ../calendar-frontend && npm install",
+    "dev:backend": "cd OneBookR/backend && npm run dev",
+    "dev:frontend": "cd OneBookR/calendar-frontend && npm run dev",
+    "scan-secrets": "bash scripts/scan_secrets.sh"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "passport-microsoft": "^2.1.0",
+    "resend": "^6.0.1",
+    "node-cache": "^5.1.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "private"
+  },
+  "keywords": ["calendar", "booking", "scheduling", "comparison"],
+  "author": "BookR Team",
+  "license": "Private"
+}

@@ -1,0 +1,26 @@
+# Git & metadata
+.git
+.gitignore
+
+# Node deps & builds
+node_modules
+**/node_modules
+dist
+build
+*/dist
+*/build
+
+# Env/keys/secrets
+**/.env
+**/firebase-key.json
+**/*firebase-adminsdk*.json
+**/*serviceaccount*.json
+**/*service-account*.json
+**/*.pem
+**/*.p12
+twilio_2FA_recovery_code.txt
+
+# OS/IDE noise
+*.log
+npm-debug.log*
+.DS_Store

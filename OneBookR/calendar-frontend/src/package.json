@@ -1,0 +1,16 @@
+{
+  "name": "bookr-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "resend": "^6.0.1",
+    "node-cache": "^5.1.2"
+  },
+  "devDependencies": {
+  }
+}
+

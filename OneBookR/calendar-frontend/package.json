@@ -1,0 +1,33 @@
+{
+  "homepage": "https://onebookr.github.io/calendar-frontend",
+  "name": "calendar-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^7.1.0",
+    "@mui/material": "^7.0.2",
+    "axios": "^1.6.0",
+    "moment": "^2.30.1",
+    "moment-timezone": "^0.6.0",
+    "node-fetch": "^3.3.2",
+    "react": "^18.2.0",
+    "react-big-calendar": "^1.18.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.5.2",
+    "vite": "^7.1.11",
+    "@vitejs/plugin-react": "^4.7.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.23.0",
+    "@babel/preset-react": "^7.23.0"
+  }
+}
