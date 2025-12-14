@@ -2017,10 +2017,21 @@ app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
   }
 });
 
-// ✅ GET SUGGESTIONS FOR GROUP
+// ✅ GET SUGGESTIONS FOR GROUP - MED CACHING
+const suggestionCache = new Map();
 app.get('/api/group/:groupId/suggestions', validateGroup, async (req, res) => {
   try {
     const { groupId } = req.params;
+    const cacheKey = `suggestions_${groupId}`;
+    const now = Date.now();
+    
+    // ✅ KONTROLLERA CACHE (5 sekunder)
+    if (suggestionCache.has(cacheKey)) {
+      const cached = suggestionCache.get(cacheKey);
+      if (now - cached.timestamp < 5000) {
+        return res.json(cached.data);
+      }
+    }
 
     // ✅ HÄMTA ALLA FÖRSLAG FÖR DENNA GRUPP
     const suggestions = Array.from(meetingSuggestions.values())
@@ -2043,9 +2054,15 @@ app.get('/api/group/:groupId/suggestions', validateGroup, async (req, res) => {
         }
       }));
 
-    console.log(`📋 Retrieved ${suggestions.length} pending suggestions for group ${groupId}`);
+    const result = { suggestions };
+    
+    // ✅ CACHE RESULTATET
+    suggestionCache.set(cacheKey, {
+      data: result,
+      timestamp: now
+    });
 
-    res.json({ suggestions });
+    res.json(result);
 
   } catch (error) {
     console.error('❌ Get suggestions error:', error);
