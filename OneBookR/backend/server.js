@@ -866,11 +866,21 @@ app.use(passport.session());
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 200,
   message: { error: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path.startsWith('/auth/')
+  skip: (req) => {
+    return req.path.startsWith('/auth/') || 
+           req.path.startsWith('/css/') ||
+           req.path.startsWith('/js/') ||
+           req.path.startsWith('/assets/') ||
+           req.path.includes('favicon') ||
+           req.path.includes('sw.js') ||
+           req.path.includes('.png') ||
+           req.path === '/' ||
+           req.path === '/version.json';
+  }
 });
 app.use(limiter);
 
