@@ -71,15 +71,13 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Cache successful responses
+          const responseToCache = response.clone();
           if (response.ok) {
-            const cache = caches.open(CACHE_NAME);
-            cache.then(c => c.put(request, response.clone()));
+            caches.open(CACHE_NAME).then(c => c.put(request, responseToCache));
           }
           return response;
         })
         .catch(() => {
-          // Fallback to cache
           return caches.match(request);
         })
     );
@@ -90,8 +88,9 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(request).then((response) => {
       return response || fetch(request).then((response) => {
+        const responseToCache = response.clone();
         if (response.ok) {
-          caches.open(CACHE_NAME).then(c => c.put(request, response.clone()));
+          caches.open(CACHE_NAME).then(c => c.put(request, responseToCache));
         }
         return response;
       });

@@ -9,6 +9,13 @@ const appVersion = packageJson.version;
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      react: resolve(__dirname, './node_modules/react'),
+      'react-dom': resolve(__dirname, './node_modules/react-dom'),
+    },
+    dedupe: ['react', 'react-dom'],
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

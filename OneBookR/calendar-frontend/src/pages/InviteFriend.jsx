@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
-import { useContacts } from '../hooks/useContacts';
-import { useTheme } from '../hooks/useTheme';
 import { API_BASE_URL } from '../config';
 
 const InviteFriend = ({ fromUser, fromToken, theme }) => {
@@ -38,8 +36,8 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
   const [lastContactsUpdate, setLastContactsUpdate] = useState(0);
 
   const inputRef = useRef();
-  const { contacts } = useContacts();
-  const currentTheme = theme || useTheme().theme;
+  const contacts = [];
+  const currentTheme = theme || { colors: { surface: '#fff', border: '#e0e3e7', text: '#222', primary: '#1976d2' } };
 
   // ✅ SET WINDOW.USER ONCE
   useEffect(() => {

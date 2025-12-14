@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'moment/locale/sv';
@@ -11,16 +11,28 @@ import {
   DialogActions, Paper, CircularProgress, Snackbar, Alert, IconButton, Chip 
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import { useTheme } from '../hooks/useTheme';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
 
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
 
-// ✅ RENSA BORT TUNGA INLINESTYLE-LOGIK
-const useCalendarStyles = (theme) => {
-  return useMemo(() => ({
+export default function CompareCalendar({
+  myToken,
+  invitedTokens = [],
+  user,
+  groupId: propGroupId,
+  directAccess,
+  contactEmail,
+  contactName,
+  autoCompare = false
+}) {
+  const theme = { 
+    colors: { surface: '#fff', border: '#e0e3e7', text: '#222', bg: '#f7f9fb' } 
+  };
+  
+  // ✅ INLINE STYLES - NO HOOKS
+  const styles = {
     calendar: {
       fontFamily: "'Inter', 'Segoe UI', 'Roboto', 'Arial', sans-serif",
       background: theme.colors.surface,
@@ -36,23 +48,7 @@ const useCalendarStyles = (theme) => {
         borderRadius: '4px'
       }
     })
-  }), [theme]);
-};
-
-export default function CompareCalendar({
-  myToken,
-  invitedTokens = [],
-  user,
-  groupId: propGroupId,
-  directAccess,
-  contactEmail,
-  contactName,
-  autoCompare = false
-}) {
-  const theme = useTheme().theme || { 
-    colors: { surface: '#fff', border: '#e0e3e7', text: '#222', bg: '#f7f9fb' } 
   };
-  const styles = useCalendarStyles(theme);
 
   // ✅ LÄGG TILL SAKNAD userData DEFINITION
   const userData = useMemo(() => ({
@@ -168,12 +164,7 @@ export default function CompareCalendar({
 
 
   // ✅ FETCH GROUP AVAILABILITY (ERSÄTT GAMLA FUNKTIONER)
-  // ✅ FÖRHINDRA INFINITE LOOP MED DEBOUNCED FETCHING
-  const [fetchState, setFetchState] = useState({
-    lastFetch: 0,
-    isInProgress: false,
-    results: null
-  });
+  // ✅ REMOVED OLD fetchState - SIMPLIFIED REFRESHING LOGIC
 
   // ✅ ROBUST TOKEN VALIDATION USING EXISTING VALIDATOR (FLYTTA FÖRE ANVÄNDNING)
   const validateToken = useCallback(async () => {
@@ -240,90 +231,7 @@ export default function CompareCalendar({
     }
   }, [propGroupId, user, myToken, validateToken]);
 
-  // ✅ DEBOUNCED GROUP AVAILABILITY FETCH
-  const fetchGroupAvailability = useCallback(async () => {
-    if (!propGroupId || !hasJoinedGroup || !groupInfo) return;
-    
-    // Förhindra för många anrop
-    const now = Date.now();
-    if (now - fetchState.lastFetch < 5000 || fetchState.isInProgress) {
-      console.log('⏳ Skipping fetch - too soon or already in progress');
-      return;
-    }
-    
-    // Kräv minst 2 medlemmar med tokens
-    if (!groupInfo.members || groupInfo.memberCount < 2) {
-      console.log('⏳ Waiting for more group members...');
-      return;
-    }
-    
-    setFetchState(prev => ({ ...prev, isInProgress: true, lastFetch: now }));
-    setIsLoading(true);
-    setHasSearched(true);
-    setError(null);
-
-    try {
-      console.log(`📅 Fetching group availability for ${propGroupId} (${groupInfo.memberCount} members)`);
-
-      // ✅ BERÄKNA TIDSINTERVALL
-      const nowDate = new Date();
-      const defaultStart = new Date(nowDate.getTime() + 24 * 60 * 60 * 1000);
-      const defaultEnd = new Date(nowDate.getTime() + 14 * 60 * 60 * 1000);
-      
-      const params = new URLSearchParams({
-        timeMin: timeMin ? new Date(timeMin).toISOString() : defaultStart.toISOString(),
-        timeMax: timeMax ? new Date(timeMax).toISOString() : defaultEnd.toISOString(),
-        duration: String(meetingDuration),
-        dayStart,
-        dayEnd
-      });
-      
-      const response = await fetch(createApiUrl(`/api/group/${propGroupId}/availability?${params}`), {
-        credentials: 'include'
-      });
-      
-      if (response.status === 429) {
-        setError('För många förfrågningar. Vänta en minut och försök igen.');
-        return;
-      }
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        const validSlots = Array.isArray(data) ? data.filter(slot => 
-          slot.start && slot.end && new Date(slot.start) < new Date(slot.end)
-        ) : [];
-        
-        setAvailability(validSlots);
-        setFetchState(prev => ({ ...prev, results: validSlots }));
-        
-        if (validSlots.length === 0) {
-          setToast({ 
-            open: true, 
-            message: 'Inga gemensamma lediga tider hittades. Alla har upptagna kalendrar under denna period.', 
-            severity: 'warning' 
-          });
-        } else {
-          setToast({ 
-            open: true, 
-            message: `Hittade ${validSlots.length} gemensamma lediga tider där alla ${groupInfo.memberCount} medlemmar är lediga!`, 
-            severity: 'success' 
-          });
-        }
-      } else {
-        setError(data.error || 'Kunde inte hämta gruppens kalendrar');
-        setAvailability([]);
-      }
-      
-    } catch (err) {
-      console.error('❌ Group availability error:', err);
-      setError('Tekniskt fel vid hämtning av gruppkalender');
-      setAvailability([]);
-    } finally {
-      setIsLoading(false);
-      setFetchState(prev => ({ ...prev, isInProgress: false }));
-    }
-  }, [propGroupId, hasJoinedGroup, groupInfo, fetchState.lastFetch, fetchState.isInProgress, timeMin, timeMax, meetingDuration, dayStart, dayEnd]);
+  // ✅ REMOVED OLD fetchGroupAvailability - REPLACED WITH UNIFIED fetchAvailability
 
   // ✅ FETCH GROUP STATUS - FIXA API URL
   const fetchGroupStatus = useCallback(async () => {
@@ -342,18 +250,48 @@ export default function CompareCalendar({
     }
   }, [propGroupId]);
 
-  // ✅ JOIN GROUP AND FETCH STATUS ON MOUNT
+  // ✅ SETUP: Join group och initial status
   useEffect(() => {
     if (propGroupId && !hasJoinedGroup) {
       joinGroup().then(success => {
-        if (success) {
-          fetchGroupStatus();
-        }
+        if (success) fetchGroupStatus();
       });
-    } else if (propGroupId) {
-      fetchGroupStatus();
     }
-  }, [propGroupId, hasJoinedGroup, joinGroup, fetchGroupStatus]);
+  }, [propGroupId, hasJoinedGroup]);
+
+  // ✅ AUTO-REFRESH: Endast för skapare när alla anslutit
+  useEffect(() => {
+    if (!propGroupId || !groupInfo || !user) return;
+    
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+    const isCreator = groupInfo.members?.some(m => m.email === userEmail && m.isCreator);
+    
+    if (!isCreator) return;
+    
+    const reloadKey = `bookr_refreshed_${propGroupId}`;
+    if (sessionStorage.getItem(reloadKey) === 'true') return;
+    
+    const pendingCount = groupInfo.pendingMembers?.length || 0;
+    const memberCount = groupInfo.memberCount || 0;
+    
+    if (pendingCount === 0 && memberCount >= 2) {
+      console.log('🎉 AUTO-REFRESH: Alla anslutna!');
+      sessionStorage.setItem(reloadKey, 'true');
+      window.location.reload();
+    }
+  }, [propGroupId, groupInfo, user]);
+  
+  // ✅ POLLING: Enkel 3-sekunders polling
+  useEffect(() => {
+    if (!propGroupId || !hasJoinedGroup) return;
+    
+    const timer = setInterval(() => {
+      fetchGroupStatus();
+      fetchSuggestions(); // ✅ Uppdatera även förslag
+    }, 3000);
+    
+    return () => clearInterval(timer);
+  }, [propGroupId, hasJoinedGroup]);
 
 
 
@@ -532,19 +470,22 @@ export default function CompareCalendar({
     validateToken
   ]);
 
-  // ✅ AUTO-FETCH NÄR GRUPP ÄR REDO (EN GÅNG)
+  // ✅ AUTO-FETCH ENDAST EFTER REFRESH - INTE INNAN
   useEffect(() => {
-    if (propGroupId && hasJoinedGroup && groupInfo?.memberCount >= 2 && !hasSearched) {
-      console.log('✅ Group ready - auto-fetching availability');
-      
-      // Vänta lite för att säkerställa att backend är uppdaterat
+    if (!propGroupId || !hasJoinedGroup || !groupInfo) return;
+    
+    const reloadKey = `bookr_refreshed_${propGroupId}`;
+    const hasRefreshed = sessionStorage.getItem(reloadKey) === 'true';
+    
+    // Endast auto-fetch EFTER att vi har refreshat och alla är anslutna
+    if (hasRefreshed && groupInfo.memberCount >= 2 && !hasSearched && !isLoading) {
+      console.log('✅ Efter refresh - startar automatisk kalenderjämförelse');
       const timer = setTimeout(() => {
         fetchAvailability();
-      }, 1500);
-      
+      }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [propGroupId, hasJoinedGroup, groupInfo?.memberCount, hasSearched, fetchAvailability]);
+  }, [propGroupId, hasJoinedGroup, groupInfo?.memberCount, hasSearched, isLoading, fetchAvailability]);
 
   // ✅ FÖRBÄTTRAD KALENDER RENDERING - VISA ENDAST LEDIGA TIDER
   const calendarEvents = useMemo(() => {
@@ -717,13 +658,11 @@ export default function CompareCalendar({
     }
   }, [propGroupId, user, fetchSuggestions]);
 
-  // ✅ SUGGESTIONS POLLING - FÖRENKLAD
+  // ✅ INITIAL SUGGESTIONS FETCH
   useEffect(() => {
     if (!propGroupId) return;
-    
-    // Hämta suggestions bara en gång, inte kontinuerligt
     fetchSuggestions();
-  }, [propGroupId, fetchSuggestions]);
+  }, [propGroupId]);
 
   // ✅ LÄGG TILL SAKNAD DEBUG-FUNKTION (FLYTTA FÖRE ANVÄNDNING)
   const fetchDebugEvents = useCallback(async () => {
@@ -774,6 +713,18 @@ export default function CompareCalendar({
           />
         )}
       </Typography>
+      
+      {/* ✅ AUTO-REFRESH STATUS */}
+      {propGroupId && groupInfo && groupInfo.pendingMembers?.length === 0 && groupInfo.memberCount >= 2 && (
+        <Box sx={{ mb: 3, p: 2, bgcolor: '#e8f5e8', borderRadius: 1, border: '1px solid #4caf50' }}>
+          <Typography variant="subtitle2" sx={{ mb: 1, color: '#2e7d32', fontWeight: 600 }}>
+            ✅ Alla medlemmar anslutna!
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#1b5e20' }}>
+            Nu kan du jämföra alla kalendrar för att hitta gemensamma lediga tider.
+          </Typography>
+        </Box>
+      )}
       
       {/* ✅ GRUPPINFORMATION */}
       {groupInfo && (
@@ -1015,7 +966,7 @@ export default function CompareCalendar({
     theme, 
     propGroupId, 
     groupInfo, 
-    userData, // ✅ LÄGG TILL userData I DEPENDENCIES
+    userData,
     myToken, 
     invitedTokens, 
     contactEmail, 
@@ -1322,139 +1273,6 @@ export default function CompareCalendar({
       </Paper>
     );
   }, [suggestions, propGroupId, user, voteSuggestion]);
-
-  // ✅ CLEAN RENDER - FLYTTA TILLBAKA TILL MAIN RETURN
-  // const renderSuggestions = () => {
-  //   if (!propGroupId || !Array.isArray(suggestions) || suggestions.length === 0) {
-  //     return null;
-  //   }
-
-  //   return (
-  //     <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-  //       <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
-  //         📋 Mötesförslag ({suggestions.length})
-  //       </Typography>
-        
-  //       {suggestions.map(suggestion => {
-  //         const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
-  //         const userVote = suggestion.votes?.[userEmail];
-  //         const voteCount = suggestion.voteCount || {
-  //           accepted: Object.values(suggestion.votes || {}).filter(v => v === 'accepted').length,
-  //           rejected: Object.values(suggestion.votes || {}).filter(v => v === 'rejected').length,
-  //           pending: Object.values(suggestion.votes || {}).filter(v => v === 'pending').length
-  //         };
-
-  //         return (
-  //           <Card key={suggestion.id} sx={{ p: 3, mb: 2, border: '2px solid #e3f2fd', borderRadius: 2 }}>
-  //             {/* ✅ TITEL OCH FÖRSLAGS INFO */}
-  //             <Box sx={{ mb: 2 }}>
-  //               <Typography variant="h6" sx={{ fontWeight: 600, color: '#1565c0', mb: 0.5 }}>
-  //                 {suggestion.title}
-  //               </Typography>
-  //               <Typography variant="caption" color="text.secondary">
-  //                 Föreslagen av <strong>{suggestion.suggestedBy}</strong> • {new Date(suggestion.createdAt).toLocaleString('sv-SE')}
-  //               </Typography>
-  //             </Box>
-
-  //             {/* ✅ TID OCH PLATS */}
-  //             <Box sx={{ mb: 2, p: 2, bgcolor: '#f8f9fa', borderRadius: 1 }}>
-  //               <Typography variant="body2" sx={{ mb: 1 }}>
-  //                 <strong>📅 Tid:</strong> {new Date(suggestion.start).toLocaleString('sv-SE', {
-  //                   weekday: 'long',
-  //                   month: 'long',
-  //                   day: 'numeric',
-  //                   hour: '2-digit',
-  //                   minute: '2-digit'
-  //                 })} - {new Date(suggestion.end).toLocaleTimeString('sv-SE', {
-  //                   hour: '2-digit',
-  //                   minute: '2-digit'
-  //                 })}
-  //               </Typography>
-  //               {suggestion.withMeet ? (
-  //                 <Typography variant="body2">
-  //                   <strong>📹 Möte:</strong> Google Meet kommer att skapas
-  //                 </Typography>
-  //               ) : suggestion.location && (
-  //                 <Typography variant="body2">
-  //                   <strong>📍 Plats:</strong> {suggestion.location}
-  //                 </Typography>
-  //               )}
-  //             </Box>
-
-  //             {/* ✅ RÖSTRESULTAT */}
-  //             <Box sx={{ mb: 2, p: 2, bgcolor: '#f0f8ff', borderRadius: 1 }}>
-  //               <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-  //                 Röstningsresultat:
-  //               </Typography>
-  //               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-  //                 <Chip
-  //                   label={`✅ ${voteCount.accepted} accepterat`}
-  //                   color={voteCount.accepted > 0 ? 'success' : 'default'}
-  //                   size="small"
-  //                 />
-  //                 <Chip
-  //                   label={`❌ ${voteCount.rejected} nekat`}
-  //                   color={voteCount.rejected > 0 ? 'error' : 'default'}
-  //                   size="small"
-  //                 />
-  //                 <Chip
-  //                   label={`⏳ ${voteCount.pending} väntar`}
-  //                   color={voteCount.pending > 0 ? 'warning' : 'default'}
-  //                   size="small"
-  //                 />
-  //               </Box>
-  //             </Box>
-
-  //             {/* ✅ RÖSTNINGSSEKTION */}
-  //             {userVote === 'pending' && (
-  //               <Box sx={{ display: 'flex', gap: 2 }}>
-  //                 <Button
-  //                   variant="contained"
-  //                   color="success"
-  //                   onClick={() => voteSuggestion(suggestion.id, 'accepted')}
-  //                   sx={{ flex: 1 }}
-  //                 >
-  //                   ✅ Acceptera
-  //                 </Button>
-  //                 <Button
-  //                   variant="outlined"
-  //                   color="error"
-  //                   onClick={() => voteSuggestion(suggestion.id, 'rejected')}
-  //                   sx={{ flex: 1 }}
-  //                 >
-  //                   ❌ Neka
-  //                 </Button>
-  //               </Box>
-  //             )}
-
-  //             {/* ✅ VISAR DIN RÖST */}
-  //             {userVote !== 'pending' && (
-  //               <Alert severity={userVote === 'accepted' ? 'success' : 'error'} sx={{ mb: 0 }}>
-  //                 {userVote === 'accepted' 
-  //                   ? '✅ Du accepterade detta förslag' 
-  //                   : '❌ Du nekade detta förslag'}
-  //               </Alert>
-  //             )}
-
-  //             {/* ✅ SUCCESMEDDELANDE */}
-  //             {suggestion.status === 'accepted' && (
-  //               <Alert severity="success">
-  //                 🎉 Alla accepterade! Kalendereventen har skapats för alla deltagare.
-  //               </Alert>
-  //             )}
-
-  //             {/* ✅ REJECTED MEDDELANDE */}
-  //             {suggestion.status === 'rejected' && (
-  //               <Alert severity="warning">
-  //                 Förslaget avvisades av en eller flera deltagare.
-  //               </Alert>
-  //             )}
-  //           </Card>
-  //         );
-  //       })}
-  //     </Paper>
-  //   );
-  // };
 
   // ✅ MOBILE RENDER FUNCTIONS (SIMPLIFIED VERSIONS)
   const renderMobileComparisonForm = useCallback(() => renderComparisonForm(), [renderComparisonForm]);

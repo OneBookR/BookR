@@ -123,6 +123,14 @@ function App() {
           const data = await res.json();
           setUser(data.user);
           console.log('✅ User authenticated:', data.user.email);
+          
+          // ✅ ENKEL RELOAD EFTER INLOGGNING OM DET FINNS GROUP PARAMETRAR
+          const urlParams = new URLSearchParams(window.location.search);
+          if (urlParams.get('group') && !sessionStorage.getItem('post_login_reloaded')) {
+            sessionStorage.setItem('post_login_reloaded', 'true');
+            window.location.reload();
+            return;
+          }
         } else {
           const errorData = await res.json().catch(() => ({}));
           
@@ -168,6 +176,8 @@ function App() {
     // Återgå till shortcut dashboard
     setCurrentView('shortcut');
   }, []);
+
+
 
   // ✅ NAVIGATION HANDLER
   const handleNavigateToMeeting = useCallback((type) => {
@@ -320,7 +330,7 @@ function App() {
       </Box>
       
       {!shouldShowTask && <Footer />}
-      <MobileNavigation currentPath={window.location.pathname + window.location.search} user={user} />
+      <MobileNavigation currentPath={window.location.pathname + window.location.search} user={user} onNavigate={handleNavigateToMeeting} />
     </>
   );
 }
