@@ -240,7 +240,7 @@ async function sendInviteEmail(toEmail, fromName, fromEmail, groupName, inviteLi
 
     // ✅ ANVÄND DIN FÖRETAGSADRESS FRÅN .env
     const emailData = {
-      from: process.env.RESEND_FROM || 'noreply@onebookr.se',
+      from: 'BookR <noreply@onebookr.se>',
       to: [toEmail],
       subject: `📅 ${fromName} vill jämföra kalendrar med dig - BookR`,
       html: createInviteEmailHtml(fromName, fromEmail, groupName, inviteLink),
@@ -866,10 +866,11 @@ app.use(passport.session());
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 20,
   message: { error: 'Too many requests, please try again later' },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  skip: (req) => req.path.startsWith('/auth/')
 });
 app.use(limiter);
 
