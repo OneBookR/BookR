@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="sv">
+  <head>
+    <!-- Iubenda Cookie Consent -->
+    <script type="text/javascript">
+    var _iub = _iub || [];
+    _iub.csConfiguration = {"siteId":4265573,"cookiePolicyId":71871656,"lang":"sv","storage":{"useSiteId":true}};
+    </script>
+    <script type="text/javascript" src="https://cs.iubenda.com/autoblocking/4265573.js"></script>
+    <script type="text/javascript" src="//cdn.iubenda.com/cs/gpp/stub.js"></script>
+    <script type="text/javascript" src="//cdn.iubenda.com/cs/iubenda_cs.js" charset="UTF-8" async></script>
+    
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-BN7W80K6QD"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-BN7W80K6QD');
+    </script>
+    <link rel="manifest" href="/manifest.json">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#1976d2" />
+    <title>BookR - Kalenderjämförelse</title>
+    <meta name="description" content="Jämför kalendrar och hitta gemensamma lediga tider för möten. Perfekt för grupper, team och vänner." />
+    
+    <!-- Iubenda Script -->
+    <script type="text/javascript">(function (w,d) {var loader = function () {var s = d.createElement("script"), tag = d.getElementsByTagName("script")[0]; s.src="https://cdn.iubenda.com/iubenda.js"; tag.parentNode.insertBefore(s,tag);}; if(w.addEventListener){w.addEventListener("load", loader, false);}else if(w.attachEvent){w.attachEvent("onload", loader);}else{w.onload = loader;}})(window, document);</script>
+    
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    
+    <!-- ✅ PWA META TAGS -->
+    <meta name="theme-color" content="#635bff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="BookR" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    
+    <!-- ✅ DESCRIPTION & SEO MED KONSISTENT DOMÄN -->
+    <meta name="description" content="BookR - Hitta lediga tider och schemalägg möten enkelt genom kalenderjämförelse på www.onebookr.se" />
+    <meta name="keywords" content="kalender, möten, schemaläggning, booking, tidbokning, BookR, onebookr" />
+    <meta property="og:url" content="https://www.onebookr.se" />
+    <meta property="og:title" content="BookR - Kalenderjämförelse" />
+    <meta property="og:description" content="Hitta lediga tider och schemalägg möten enkelt" />
+    <meta property="og:site_name" content="BookR" />
+    
+    <!-- ✅ CANONICAL URL -->
+    <link rel="canonical" href="https://www.onebookr.se" />
+    
+    <!-- ✅ PWA MANIFEST -->
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- ✅ APPLE TOUCH ICONS -->
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-192.png" />
+    
+    <!-- ✅ SPLASH SCREENS FOR iOS -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    
+    <!-- ✅ DISABLE ZOOM ON INPUTS (MOBILE) -->
+    <style>
+      input[type="color"],
+      input[type="date"],
+      input[type="datetime"],
+      input[type="datetime-local"],
+      input[type="email"],
+      input[type="month"],
+      input[type="number"],
+      input[type="password"],
+      input[type="search"],
+      input[type="tel"],
+      input[type="text"],
+      input[type="time"],
+      input[type="url"],
+      input[type="week"],
+      select:focus,
+      textarea {
+        font-size: 16px !important;
+      }
+      
+      /* ✅ SMOOTH SCROLLING */
+      html {
+        scroll-behavior: smooth;
+      }
+      
+      /* ✅ PREVENT BOUNCE ON iOS */
+      body {
+        position: fixed;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+      }
+      
+      #root {
+        overflow: auto;
+        height: 100vh;
+        width: 100vw;
+      }
+    </style>
+  </head>
+  <body style="margin: 0; padding: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    
+    <!-- ✅ PWA INSTALL PROMPT -->
+    <script>
+      // Simple install prompt for PWA
+      let deferredPrompt;
+      
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        
+        // Show custom install button or banner
+        console.log('📱 PWA install available');
+      });
+      
+      window.addEventListener('appinstalled', () => {
+        console.log('📱 PWA installed successfully');
+        deferredPrompt = null;
+      });
+    </script>
+  </body>
+</html>

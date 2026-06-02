@@ -1,0 +1,39 @@
+# Environment variables - NEVER commit these
+.env
+.env.*
+*.env
+!.env.example
+
+# Secrets & Keys
+**/secrets/
+**/*.key
+**/*.pem
+service-account-key.json
+
+# Node modules
+node_modules/
+*/node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+.tmp/
+temp/

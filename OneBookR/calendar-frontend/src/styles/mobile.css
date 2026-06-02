@@ -1,0 +1,234 @@
+/* Mobile-specific styles for BookR */
+
+/* Mobile calendar optimizations */
+@media (max-width: 768px) {
+  .rbc-calendar {
+    font-size: 12px !important;
+  }
+  
+  .rbc-toolbar {
+    flex-direction: column !important;
+    gap: 8px !important;
+    padding: 8px !important;
+  }
+  
+  .rbc-toolbar .rbc-toolbar-label {
+    font-size: 16px !important;
+    margin: 0 !important;
+    text-align: center !important;
+  }
+  
+  .rbc-btn-group {
+    display: flex !important;
+    justify-content: center !important;
+    gap: 4px !important;
+  }
+  
+  .rbc-btn-group button {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+    margin: 0 2px !important;
+  }
+  
+  .rbc-header {
+    font-size: 12px !important;
+    padding: 4px 2px !important;
+  }
+  
+  .rbc-event {
+    font-size: 10px !important;
+    padding: 1px 2px !important;
+  }
+  
+  .rbc-time-slot {
+    min-height: 20px !important;
+  }
+  
+  .rbc-time-gutter {
+    font-size: 10px !important;
+  }
+  
+  /* Agenda view optimizations for mobile */
+  .rbc-agenda-view table {
+    font-size: 12px !important;
+  }
+  
+  .rbc-agenda-date-cell,
+  .rbc-agenda-time-cell,
+  .rbc-agenda-event-cell {
+    padding: 4px 6px !important;
+  }
+  
+  /* Hide some elements on very small screens */
+  @media (max-width: 480px) {
+    .rbc-time-gutter {
+      width: 40px !important;
+    }
+    
+    .rbc-header {
+      font-size: 10px !important;
+    }
+  }
+}
+
+/* Touch-friendly improvements */
+@media (hover: none) and (pointer: coarse) {
+  .rbc-event {
+    min-height: 24px !important;
+    touch-action: manipulation;
+  }
+  
+  .rbc-btn-group button {
+    min-height: 44px !important;
+    min-width: 44px !important;
+    touch-action: manipulation;
+  }
+  
+  .rbc-time-slot {
+    min-height: 30px !important;
+  }
+}
+
+/* Mobile-specific form improvements */
+@media (max-width: 768px) {
+  .MuiTextField-root {
+    margin-bottom: 16px !important;
+  }
+  
+  .MuiButton-root {
+    min-height: 48px !important;
+    font-size: 16px !important;
+  }
+  
+  .MuiDialog-paper {
+    margin: 8px !important;
+    width: calc(100% - 16px) !important;
+    max-height: calc(100% - 16px) !important;
+  }
+  
+  .MuiDialogTitle-root {
+    padding: 16px !important;
+    font-size: 18px !important;
+  }
+  
+  .MuiDialogContent-root {
+    padding: 16px !important;
+  }
+  
+  .MuiDialogActions-root {
+    padding: 16px !important;
+    gap: 8px !important;
+  }
+}
+
+/* Improve touch targets */
+@media (max-width: 768px) {
+  .MuiIconButton-root {
+    padding: 12px !important;
+  }
+  
+  .MuiListItem-root {
+    min-height: 48px !important;
+  }
+  
+  .MuiTab-root {
+    min-height: 48px !important;
+  }
+}
+
+/* Mobile navigation improvements */
+@media (max-width: 768px) {
+  .MuiAppBar-root {
+    padding: 0 8px !important;
+  }
+  
+  .MuiToolbar-root {
+    min-height: 56px !important;
+    padding: 0 8px !important;
+  }
+}
+
+/* Mobile card improvements */
+@media (max-width: 768px) {
+  .MuiCard-root {
+    margin: 8px 0 !important;
+    border-radius: 8px !important;
+  }
+  
+  .MuiCardContent-root {
+    padding: 16px !important;
+  }
+  
+  .MuiCardContent-root:last-child {
+    padding-bottom: 16px !important;
+  }
+}
+
+/* Mobile typography improvements */
+@media (max-width: 768px) {
+  .MuiTypography-h1 {
+    font-size: 2rem !important;
+  }
+  
+  .MuiTypography-h2 {
+    font-size: 1.75rem !important;
+  }
+  
+  .MuiTypography-h3 {
+    font-size: 1.5rem !important;
+  }
+  
+  .MuiTypography-h4 {
+    font-size: 1.25rem !important;
+  }
+  
+  .MuiTypography-h5 {
+    font-size: 1.125rem !important;
+  }
+  
+  .MuiTypography-h6 {
+    font-size: 1rem !important;
+  }
+}
+
+/* Mobile container improvements */
+@media (max-width: 768px) {
+  .MuiContainer-root {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
+
+/* Mobile grid improvements */
+@media (max-width: 768px) {
+  .MuiGrid-container {
+    margin: 0 !important;
+    width: 100% !important;
+  }
+  
+  .MuiGrid-item {
+    padding: 8px !important;
+  }
+}
+
+/* Accessibility improvements for mobile */
+@media (max-width: 768px) {
+  /* Ensure text is readable */
+  body {
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+  }
+  
+  /* Improve focus indicators */
+  *:focus {
+    outline: 2px solid #1976d2 !important;
+    outline-offset: 2px !important;
+  }
+  
+  /* Improve button accessibility */
+  button:focus,
+  .MuiButton-root:focus {
+    outline: 2px solid #1976d2 !important;
+    outline-offset: 2px !important;
+  }
+}

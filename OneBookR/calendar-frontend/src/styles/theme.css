@@ -1,0 +1,166 @@
+/* ✅ SIMPLIFIED CSS VARIABLES */
+:root {
+  --primary: #1976d2;
+  --primary-gradient: linear-gradient(90deg, #635bff 0%, #6c47ff 100%);
+  --surface: #ffffff;
+  --background: #f5f5f5;
+  --border: #e0e3e7;
+  --text: #000000;
+  --text-secondary: #666666;
+  --success: #4caf50;
+  --error: #f44336;
+  --warning: #ff9800;
+}
+
+[data-theme="dark"] {
+  --surface: #1e1e1e;
+  --background: #121212;
+  --border: #333333;
+  --text: #ffffff;
+  --text-secondary: #b0b0b0;
+}
+
+/* ✅ GLOBAL STYLES */
+* {
+  font-family: 'Inter', 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text);
+  margin: 0;
+  padding: 0;
+  line-height: 1.5;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ✅ UTILITY ANIMATIONS */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.slide-up {
+  animation: slideUp 0.4s ease-out;
+}
+
+.pulse {
+  animation: pulse 0.6s ease-in-out;
+}
+
+/* ✅ RESPONSIVE UTILITIES */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+.flex {
+  display: flex;
+  gap: 16px;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ✅ MOBILE RESPONSIVE */
+@media (max-width: 768px) {
+  .container {
+    padding: 0 12px;
+  }
+  
+  .grid {
+    gap: 12px;
+  }
+  
+  .flex {
+    gap: 12px;
+  }
+}
+
+/* ✅ CALENDAR OVERRIDES */
+.rbc-calendar {
+  font-family: 'Inter', 'Segoe UI', 'Roboto', 'Arial', sans-serif !important;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+}
+
+.rbc-toolbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  font-family: inherit !important;
+}
+
+.rbc-event {
+  background: #e3f2fd !important;
+  color: #1976d2 !important;
+  border: 1px solid #1976d2 !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+}
+
+.rbc-today {
+  background: #fff3e0 !important;
+}
+
+.rbc-header {
+  background: var(--surface);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+
+/* ✅ PRINT STYLES */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .container {
+    max-width: none;
+    padding: 0;
+  }
+}
