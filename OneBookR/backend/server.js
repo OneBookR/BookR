@@ -7,6 +7,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { Resend } from 'resend';
+import { randomUUID } from 'crypto';
 import { initializeFirebase } from './firestore.js';
 import { 
   addToWaitlist, createGroup, createInvitation, createUser, updateUserLastLogin,
@@ -37,6 +38,14 @@ const activeGroups = new Map();
 // ===== ENVIRONMENT-SPECIFIC CONFIGURATION =====
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const IS_LOCALHOST = !IS_PRODUCTION;
+
+// ✅ SÄKERHET: Vägra starta i produktion utan en riktig SESSION_SECRET.
+// Utan denna spärr skulle servern falla tillbaka på en publik, hårdkodad
+// sträng och sessioner skulle kunna förfalskas av vem som helst.
+if (IS_PRODUCTION && !process.env.SESSION_SECRET) {
+  console.error('KRITISKT: SESSION_SECRET saknas i miljövariabler. Avbryter start i produktion.');
+  process.exit(1);
+}
 
 const CONFIG = {
   session: {
@@ -1261,9 +1270,19 @@ function getGroupMembersDecrypted(group) {
 
 app.post('/api/invite', async (req, res) => {
   try {
+    // ✅ SÄKERHET: Kräv inloggad session — avsändaren och tokenet hämtas
+    // alltid från den autentiserade sessionen, aldrig från request body.
+    // Annars kan vem som helst skicka BookR-mejl som utger sig för att
+    // vara en godtycklig person (phishing/spoofing).
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+
     // ✅ SINGLE DESTRUCTURING WITH PROPER VARIABLE NAMES
-    const { emails: inviteEmails, fromUser: senderInfo, fromToken, groupName: rawGroupName, directAccessEmails } = req.body;
-    
+    const { emails: inviteEmails, groupName: rawGroupName, directAccessEmails } = req.body;
+    const senderInfo = req.user;
+    const fromToken = req.user.accessToken;
+
     // ✅ GDPR LOGGING WITH CORRECT EMAIL COUNT
     gdprLog('Invite request received', { 
       emailCount: Array.isArray(inviteEmails) ? inviteEmails.length : 0,
@@ -1304,22 +1323,14 @@ app.post('/api/invite', async (req, res) => {
     }
 
     // ✅ GROUP SETUP
-    const groupId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // ✅ SÄKERHET: Kryptografiskt säkert ID — groupId är den enda spärren
+    // som skyddar gruppens kalenderdata, så det får inte vara gissbart.
+    const groupId = `group_${randomUUID()}`;
     const frontendUrl = process.env.FRONTEND_URL || CONFIG.urls.frontend;
     const groupName = rawGroupName?.trim() || 'Kalenderjämförelse';
 
-    // ✅ DETEKTERA CREATOR PROVIDER
-    let creatorProvider = 'google';
-    if (fromToken) {
-      try {
-        const testGoogle = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo?fields=email', {
-          headers: { 'Authorization': `Bearer ${fromToken}` }
-        });
-        creatorProvider = testGoogle.ok ? 'google' : 'microsoft';
-      } catch {
-        creatorProvider = 'microsoft';
-      }
-    }
+    // ✅ Provider är redan känd från den autentiserade sessionen
+    const creatorProvider = req.user.provider || 'google';
 
     // ✅ SKAPA GRUPP MED SYNLIGA EMAILS FÖR DELTAGARE
     const group = {
@@ -1452,27 +1463,22 @@ app.post('/api/invite', async (req, res) => {
 
 app.post('/api/group/:groupId/join', validateGroup, async (req, res) => {
   try {
-    const { email, token } = req.body;
+    // ✅ SÄKERHET: Identitet och token hämtas alltid från den autentiserade
+    // sessionen — aldrig från request body. Annars kan vem som helst gå
+    // med i en grupp "som" en annan medlem genom att bara skicka dennes
+    // e-post plus ett eget/godtyckligt token.
+    if (!req.user?.email) {
+      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+
+    const email = req.user.email;
+    const token = req.user.accessToken;
+    const provider = req.user.provider || 'google';
 
     console.log(`👥 Join request for group ${req.params.groupId} from ${anonymizeEmail(email)}`);
 
-    if (!email || !token) {
-      throw new BookRError('Email and token are required', 400, 'MISSING_PARAMETERS');
-    }
-
-    if (!validateEmail(email)) {
-      throw new BookRError('Invalid email format', 400, 'INVALID_EMAIL');
-    }
-
-    // ✅ DETEKTERA PROVIDER FRÅN TOKEN
-    let provider = 'google';
-    try {
-      const testGoogle = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo?fields=email', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      provider = testGoogle.ok ? 'google' : 'microsoft';
-    } catch {
-      provider = 'microsoft';
+    if (!token) {
+      throw new BookRError('No calendar access token for this session', 400, 'MISSING_TOKEN');
     }
 
     const existingMember = req.group.members.find(m => m.email.toLowerCase() === email.toLowerCase());
@@ -1931,11 +1937,19 @@ const suggestionVotes = new Map();
 // ✅ CREATE MEETING SUGGESTION
 app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
   try {
+    // ✅ SÄKERHET: Vem förslaget kommer från hämtas från den autentiserade
+    // sessionen — aldrig från request body — annars kan vem som helst
+    // lägga ett förslag "som" en annan gruppmedlem.
+    if (!req.user?.email) {
+      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+
     const { groupId } = req.params;
-    const { start, end, email, title, withMeet, location } = req.body;
+    const { start, end, title, withMeet, location } = req.body;
+    const email = req.user.email;
 
     // ✅ VALIDERA INPUT
-    if (!start || !end || !email || !title) {
+    if (!start || !end || !title) {
       throw new BookRError('Missing required fields', 400, 'MISSING_FIELDS');
     }
 
@@ -1959,7 +1973,7 @@ app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
     }
 
     // ✅ SKAPA FÖRSLAG MED UNIK ID
-    const suggestionId = `suggest_${groupId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const suggestionId = `suggest_${groupId}_${randomUUID()}`;
     
     const suggestion = {
       id: suggestionId,
@@ -2073,12 +2087,20 @@ app.get('/api/group/:groupId/suggestions', validateGroup, async (req, res) => {
 // ✅ VOTE ON SUGGESTION
 app.post('/api/group/:groupId/suggestion/:suggestionId/vote', validateGroup, async (req, res) => {
   try {
+    // ✅ SÄKERHET: Vem som röstar hämtas från den autentiserade sessionen
+    // — aldrig från request body — annars kan vem som helst rösta "som"
+    // en annan gruppmedlem och tvinga fram/avslå möten åt dem.
+    if (!req.user?.email) {
+      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+
     const { groupId, suggestionId } = req.params;
-    const { email, vote } = req.body;
+    const { vote } = req.body;
+    const email = req.user.email;
 
     // ✅ VALIDERA INPUT
-    if (!email || !vote) {
-      throw new BookRError('Missing email or vote', 400, 'MISSING_FIELDS');
+    if (!vote) {
+      throw new BookRError('Missing vote', 400, 'MISSING_FIELDS');
     }
 
     if (!['accepted', 'rejected'].includes(vote)) {

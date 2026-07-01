@@ -214,6 +214,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
       
       const res = await fetch(`${API_BASE_URL}/api/invite`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
       });
