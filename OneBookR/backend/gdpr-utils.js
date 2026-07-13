@@ -1,6 +1,48 @@
 // ===== GDPR-SÄKER DATAHANTERING FÖR BOOKR =====
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
-// ✅ ANONYMISERA EMAIL-ADRESSER FÖR LOGGING
+// AES-256-GCM token encryption.
+// TOKEN_ENCRYPTION_KEY must be a 64-char hex string (32 bytes) set in Railway env vars.
+// In dev, a fixed fallback key is used — never use the fallback in production.
+const RAW_KEY = process.env.TOKEN_ENCRYPTION_KEY;
+const ENCRYPT_KEY = RAW_KEY
+  ? Buffer.from(RAW_KEY, 'hex')
+  : Buffer.from('0'.repeat(64), 'hex'); // dev-only fallback
+
+if (!RAW_KEY && process.env.NODE_ENV === 'production') {
+  console.error('KRITISKT: TOKEN_ENCRYPTION_KEY saknas i miljövariabler. Tokens lagras okrypterade.');
+}
+
+export function encryptToken(plaintext) {
+  if (!plaintext) return null;
+  try {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', ENCRYPT_KEY, iv);
+    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    // Format: iv(12):tag(16):ciphertext — all base64
+    return `${iv.toString('base64')}:${tag.toString('base64')}:${encrypted.toString('base64')}`;
+  } catch {
+    return plaintext; // graceful fallback — better unencrypted than broken
+  }
+}
+
+export function decryptToken(ciphertext) {
+  if (!ciphertext) return null;
+  if (!ciphertext.includes(':')) return ciphertext; // already plaintext (legacy session)
+  try {
+    const [ivB64, tagB64, dataB64] = ciphertext.split(':');
+    const iv = Buffer.from(ivB64, 'base64');
+    const tag = Buffer.from(tagB64, 'base64');
+    const data = Buffer.from(dataB64, 'base64');
+    const decipher = createDecipheriv('aes-256-gcm', ENCRYPT_KEY, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(data, undefined, 'utf8') + decipher.final('utf8');
+  } catch {
+    return null; // tampered or wrong key — caller should treat as expired
+  }
+}
+
 export function anonymizeEmail(email) {
   if (!email || typeof email !== 'string') return 'unknown@privacy.local';
   
@@ -14,14 +56,13 @@ export function anonymizeEmail(email) {
   return `${anonUsername}@${anonDomain}`;
 }
 
-// Email-kryptering är ej implementerad — funktionerna är stub tills
-// AES-256 nyckelhantering är satt upp i Railway env vars.
+// Email-kryptering använder samma AES-256-GCM som token-krypteringen ovan.
 export function encryptEmail(email) {
-  return email || null;
+  return encryptToken(email);
 }
 
 export function decryptEmail(encryptedEmail) {
-  return encryptedEmail || null;
+  return decryptToken(encryptedEmail);
 }
 
 // ✅ RENSA KÄNSLIG DATA FRÅN EVENT-OBJEKT

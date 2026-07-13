@@ -13,7 +13,7 @@ import {
   addToWaitlist, createGroup, createInvitation, createUser, updateUserLastLogin,
   logDataAccess, createBookingSession, updateBookingSession
 } from './firestore.js';
-import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
+import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import 'dotenv/config';
 
 // ===== APPLICATION SETUP =====
@@ -935,11 +935,21 @@ const pollingLimiter = rateLimit({
 
 // ===== PASSPORT CONFIGURATION - UPPDATERA CALLBACK URLs =====
 passport.serializeUser((user, done) => {
-  done(null, user);
+  const serialized = {
+    ...user,
+    accessToken: encryptToken(user.accessToken),
+    refreshToken: encryptToken(user.refreshToken),
+  };
+  done(null, serialized);
 });
 
 passport.deserializeUser((user, done) => {
-  done(null, user);
+  const deserialized = {
+    ...user,
+    accessToken: decryptToken(user.accessToken),
+    refreshToken: decryptToken(user.refreshToken),
+  };
+  done(null, deserialized);
 });
 
 // ✅ ENDAST EN GOOGLE STRATEGY
