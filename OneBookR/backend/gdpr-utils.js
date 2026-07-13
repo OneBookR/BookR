@@ -14,23 +14,14 @@ export function anonymizeEmail(email) {
   return `${anonUsername}@${anonDomain}`;
 }
 
-// ✅ KRYPTERA EMAIL FÖR LAGRING (REVERSIBELT)
+// Email-kryptering är ej implementerad — funktionerna är stub tills
+// AES-256 nyckelhantering är satt upp i Railway env vars.
 export function encryptEmail(email) {
-  if (!email) return null;
-  
-  // Enkel base64-kryptering för demonstration
-  // I produktion, använd proper kryptering som AES
-  return Buffer.from(email).toString('base64');
+  return email || null;
 }
 
 export function decryptEmail(encryptedEmail) {
-  if (!encryptedEmail) return null;
-  
-  try {
-    return Buffer.from(encryptedEmail, 'base64').toString();
-  } catch {
-    return null;
-  }
+  return encryptedEmail || null;
 }
 
 // ✅ RENSA KÄNSLIG DATA FRÅN EVENT-OBJEKT
@@ -144,18 +135,13 @@ export function containsSensitiveInfo(text) {
   return sensitivePatterns.some(pattern => pattern.test(text));
 }
 
-// ✅ GDPR DATA EXPORT HELPER
+// ✅ GDPR DATA EXPORT HELPER — returnerar användarens faktiska email
+// (inte anonymiserad — exporten är för användaren själv, Art. 15 GDPR)
 export function createGDPRExport(userData) {
   return {
     exportDate: new Date().toISOString(),
-    userEmail: userData.email ? anonymizeEmail(userData.email) : 'unknown',
-    dataIncluded: [
-      'User profile information',
-      'Group memberships',
-      'Calendar comparison sessions',
-      'Meeting suggestions'
-    ],
-    note: 'This export contains all data we have about you in a privacy-safe format.',
+    requestedBy: userData.email || 'unknown',
+    note: 'This export contains all data BookR has stored about you.',
     contactInfo: {
       email: 'support@onebookr.se',
       subject: 'GDPR Data Request'

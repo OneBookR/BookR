@@ -1157,6 +1157,122 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
+// ===== GDPR ENDPOINTS (Art. 15 rätt till tillgång, Art. 17 rätt till radering) =====
+
+app.get('/api/gdpr/export', (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+
+  const userEmail = req.user.email;
+
+  // Hitta alla aktiva grupper där användaren är med
+  const userGroups = [];
+  for (const [groupId, group] of activeGroups.entries()) {
+    const member = group.members.find(m => m.email.toLowerCase() === userEmail.toLowerCase());
+    if (member) {
+      userGroups.push({
+        groupId: groupId.substring(0, 8) + '...',  // Truncerat av integritetsskäl
+        role: member.isCreator ? 'creator' : 'member',
+        joinedAt: member.joinedAt || group.createdAt,
+        memberCount: group.members.length
+      });
+    }
+  }
+
+  const exportData = {
+    exportDate: new Date().toISOString(),
+    requestedBy: userEmail,
+    personalData: {
+      email: userEmail,
+      provider: req.user.provider || 'google',
+      displayName: req.user.displayName || req.user.name?.givenName || null
+    },
+    activeCalendarSessions: userGroups,
+    dataBookRStores: [
+      'E-postadress (för identifiering och inbjudningar)',
+      'OAuth-provider (Google eller Microsoft)',
+      'Aktiva gruppsessioner och tillhörande mötestider',
+      'Anonym serverlogg för felsökning (utan personlig data)'
+    ],
+    dataBookRDoesNotStore: [
+      'Kalenderevents, titlar, platser eller beskrivningar',
+      'Kontaktuppgifter utöver e-post',
+      'OAuth-tokens sparas ej permanent — rensas vid utloggning'
+    ],
+    dataRetentionPolicy: 'All sessionsdata raderas automatiskt efter 24 timmar.',
+    legalBasis: 'Berättigat intresse (tillhandahålla kalenderjämförelsetjänst). Analytik-cookies kräver aktivt samtycke.',
+    subProcessors: [
+      { name: 'Google LLC', purpose: 'OAuth-autentisering och kalenderåtkomst', location: 'USA (EU-US DPF)' },
+      { name: 'Microsoft Corporation', purpose: 'OAuth-autentisering och kalenderåtkomst', location: 'USA (EU-US DPF)' },
+      { name: 'Resend Inc.', purpose: 'E-postutskick för inbjudningar', location: 'USA' },
+      { name: 'Railway Corp.', purpose: 'Serverdrift och hosting', location: 'USA' },
+      { name: 'Google Firebase', purpose: 'Anonym driftsloggning', location: 'USA (EU-US DPF)' }
+    ],
+    yourRights: {
+      access: 'Du har rätt att få tillgång till din data — detta är den exporten.',
+      erasure: 'Du kan radera all din data via knappen "Radera all data" i GDPR-dialogen.',
+      portability: 'Denna export är maskinläsbar JSON.',
+      objection: 'Kontakta support@onebookr.se för invändningar mot behandling.',
+      complaints: 'Du kan anmäla klagomål till Integritetsskyddsmyndigheten (IMY) på imy.se.'
+    },
+    contact: 'support@onebookr.se'
+  };
+
+  gdprLog('GDPR export requested', { userEmail: anonymizeEmail(userEmail) });
+  res.json(exportData);
+});
+
+app.delete('/api/gdpr/delete', (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+
+  const userEmail = req.user.email;
+  let groupsRemoved = 0;
+
+  // Ta bort användaren från alla aktiva grupper
+  for (const [groupId, group] of activeGroups.entries()) {
+    const before = group.members.length;
+    group.members = group.members.filter(
+      m => m.email.toLowerCase() !== userEmail.toLowerCase()
+    );
+    if (group.members.length < before) {
+      groupsRemoved++;
+      // Radera hela gruppen om skaparen lämnar eller gruppen är tom
+      if (group.members.length === 0) {
+        activeGroups.delete(groupId);
+      } else {
+        activeGroups.set(groupId, group);
+      }
+    }
+  }
+
+  // Ta bort från Firestore om tillgängligt
+  if (db) {
+    db.collection('users').where('email', '==', userEmail).get()
+      .then(snapshot => {
+        const batch = db.batch();
+        snapshot.forEach(doc => batch.delete(doc.ref));
+        return batch.commit();
+      })
+      .catch(err => console.warn('⚠️ Firebase delete failed (non-blocking):', err.message));
+  }
+
+  gdprLog('GDPR delete requested — user data removed', {
+    userEmail: anonymizeEmail(userEmail),
+    groupsRemoved
+  });
+
+  // Logga ut och förstör session
+  req.logout((err) => {
+    if (err) console.error('❌ Logout error during GDPR delete:', err);
+    req.session.destroy((destroyErr) => {
+      if (destroyErr) console.error('❌ Session destroy error during GDPR delete:', destroyErr);
+      res.clearCookie(CONFIG.session.name);
+      res.clearCookie('connect.sid');
+      res.clearCookie('bookr_session');
+      res.json({ success: true, message: 'All data deleted and session terminated.' });
+    });
+  });
+});
+
 // ===== FIREBASE LOGGING MIDDLEWARE =====
 app.use(async (req, res, next) => {
   // ✅ LOGGA ALLA API-ANROP TILL FIREBASE
