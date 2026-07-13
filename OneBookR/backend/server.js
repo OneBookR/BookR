@@ -886,6 +886,7 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Global limiter — all routes except static assets
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,
@@ -893,8 +894,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    return req.path.startsWith('/auth/') || 
-           req.path.startsWith('/css/') ||
+    return req.path.startsWith('/css/') ||
            req.path.startsWith('/js/') ||
            req.path.startsWith('/assets/') ||
            req.path.includes('favicon') ||
@@ -905,6 +905,33 @@ const limiter = rateLimit({
   }
 });
 app.use(limiter);
+
+// Auth limiter — strict, applied to OAuth initiation endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts, please try again in 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Invite limiter — prevent email spam
+const inviteLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many invitations sent, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Polling limiter — group status/availability polling
+const pollingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  message: { error: 'Too many requests, please slow down' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ===== PASSPORT CONFIGURATION - UPPDATERA CALLBACK URLs =====
 passport.serializeUser((user, done) => {
@@ -1098,7 +1125,7 @@ app.get('/api/user', async (req, res) => {
   }
 });
 
-app.get('/auth/google', (req, res, next) => {
+app.get('/auth/google', authLimiter, (req, res, next) => {
   try {
     passport.authenticate('google', { scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'] })(req, res, next);
   } catch (error) {
@@ -1116,7 +1143,7 @@ app.get('/auth/google/callback',
   }
 );
 
-app.get('/auth/microsoft', (req, res, next) => {
+app.get('/auth/microsoft', authLimiter, (req, res, next) => {
   try {
     passport.authenticate('microsoft', { scope: ['user.read', 'calendars.read'] })(req, res, next);
   } catch (error) {
@@ -1415,7 +1442,7 @@ function getGroupMembersDecrypted(group) {
 
 // ===== API ROUTES =====
 
-app.post('/api/invite', async (req, res) => {
+app.post('/api/invite', inviteLimiter, async (req, res) => {
   try {
     // ✅ SÄKERHET: Kräv inloggad session — avsändaren och tokenet hämtas
     // alltid från den autentiserade sessionen, aldrig från request body.
@@ -1693,7 +1720,7 @@ app.post('/api/group/:groupId/join', validateGroup, async (req, res) => {
 });
 
 // ✅ UPPDATERAD GROUP STATUS - VISA EMAILS FÖR DELTAGARE
-app.get('/api/group/:groupId/status', validateGroup, (req, res) => {
+app.get('/api/group/:groupId/status', pollingLimiter, validateGroup, (req, res) => {
   res.json({
     id: req.group.id,
     name: req.group.name,
@@ -1909,7 +1936,7 @@ app.post('/api/availability', async (req, res) => {
   }
 });
 
-app.get('/api/group/:groupId/availability', validateGroup, async (req, res) => {
+app.get('/api/group/:groupId/availability', pollingLimiter, validateGroup, async (req, res) => {
   try {
     const { timeMin, timeMax, duration = 60, dayStart = '09:00', dayEnd = '17:00', includeAll = 'false' } = req.query;
 
