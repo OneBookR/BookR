@@ -372,7 +372,8 @@ function App() {
                 {params.error === 'microsoft_auth_failed' && 'Microsoft-inloggning misslyckades. Försök igen.'}
                 {params.error === 'callback_failed' && 'Inloggning misslyckades. Försök igen.'}
                 {params.error === 'token_expired' && 'Din session har gått ut. Logga in igen för att fortsätta.'}
-                {!['google_auth_failed', 'microsoft_auth_failed', 'callback_failed', 'token_expired'].includes(params.error) && 'Ett fel uppstod vid inloggning.'}
+                {params.error === 'oauth_state_mismatch' && 'Inloggningen avbröts av säkerhetsskäl. Försök igen.'}
+                {!['google_auth_failed', 'microsoft_auth_failed', 'callback_failed', 'token_expired', 'oauth_state_mismatch'].includes(params.error) && 'Ett fel uppstod vid inloggning.'}
                 {urlParams.get('logout') === 'success' && 'Du har loggats ut. Logga in igen för att fortsätta.'}
                   </Alert>
                 )}

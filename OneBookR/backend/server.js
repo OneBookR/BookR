@@ -1127,39 +1127,63 @@ app.get('/api/user', async (req, res) => {
 
 app.get('/auth/google', authLimiter, (req, res, next) => {
   try {
-    passport.authenticate('google', { scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'] })(req, res, next);
+    const state = randomUUID();
+    req.session.oauthState = state;
+    req.session.oauthProvider = 'google';
+    passport.authenticate('google', {
+      scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
+      state,
+    })(req, res, next);
   } catch (error) {
     console.error('❌ Google auth init error:', error);
     res.redirect(`${CONFIG.urls.frontend}?error=auth_init_failed`);
   }
 });
 
-app.get('/auth/google/callback',
-  passport.authenticate('google', { 
-    failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed` 
-  }),
-  (req, res) => {
-    res.redirect(CONFIG.urls.frontend);
+app.get('/auth/google/callback', (req, res, next) => {
+  const { state } = req.query;
+  if (!state || state !== req.session.oauthState || req.session.oauthProvider !== 'google') {
+    console.warn('⚠️ Google OAuth CSRF state mismatch');
+    return res.redirect(`${CONFIG.urls.frontend}?error=oauth_state_mismatch`);
   }
-);
+  delete req.session.oauthState;
+  delete req.session.oauthProvider;
+  passport.authenticate('google', {
+    failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed`,
+  })(req, res, next);
+}, (req, res) => {
+  res.redirect(CONFIG.urls.frontend);
+});
 
 app.get('/auth/microsoft', authLimiter, (req, res, next) => {
   try {
-    passport.authenticate('microsoft', { scope: ['user.read', 'calendars.read'] })(req, res, next);
+    const state = randomUUID();
+    req.session.oauthState = state;
+    req.session.oauthProvider = 'microsoft';
+    passport.authenticate('microsoft', {
+      scope: ['user.read', 'calendars.read'],
+      state,
+    })(req, res, next);
   } catch (error) {
     console.error('❌ Microsoft auth init error:', error);
     res.redirect(`${CONFIG.urls.frontend}?error=auth_init_failed`);
   }
 });
 
-app.get('/auth/microsoft/callback',
-  passport.authenticate('microsoft', { 
-    failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed` 
-  }),
-  (req, res) => {
-    res.redirect(CONFIG.urls.frontend);
+app.get('/auth/microsoft/callback', (req, res, next) => {
+  const { state } = req.query;
+  if (!state || state !== req.session.oauthState || req.session.oauthProvider !== 'microsoft') {
+    console.warn('⚠️ Microsoft OAuth CSRF state mismatch');
+    return res.redirect(`${CONFIG.urls.frontend}?error=oauth_state_mismatch`);
   }
-);
+  delete req.session.oauthState;
+  delete req.session.oauthProvider;
+  passport.authenticate('microsoft', {
+    failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed`,
+  })(req, res, next);
+}, (req, res) => {
+  res.redirect(CONFIG.urls.frontend);
+});
 
 app.get('/auth/logout', (req, res) => {
   console.log('🚪 Logout request received');
