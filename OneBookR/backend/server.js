@@ -567,16 +567,22 @@ async function fetchMicrosoftCalendarEvents(token, timeMin, timeMax, userEmail) 
   try {
     const startTime = new Date(timeMin).toISOString();
     const endTime = new Date(timeMax).toISOString();
-    
-    const eventsUrl = `https://graph.microsoft.com/v1.0/me/events?` +
-      `$filter=start/dateTime ge '${startTime}' and end/dateTime le '${endTime}'&` +
+
+    // ✅ Använd calendarView (inte /events med $filter) — calendarView hanterar
+    // tidszoner korrekt och returnerar events som ÖVERLAPPAR intervallet, inte
+    // bara de som startar och slutar inuti det. /events?$filter=start/dateTime ge '...'
+    // jämför UTC-sträng mot lokal tid utan Z-suffix och missar ofta Outlook-events.
+    const eventsUrl = `https://graph.microsoft.com/v1.0/me/calendarView?` +
+      `startDateTime=${encodeURIComponent(startTime)}&` +
+      `endDateTime=${encodeURIComponent(endTime)}&` +
       `$select=subject,start,end,showAs,responseStatus,isAllDay,isCancelled,attendees&` +
       `$orderby=start/dateTime&$top=2500`;
 
     const response = await fetchWithRetry(eventsUrl, {
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Prefer': 'outlook.timezone="UTC"'
       }
     });
 
@@ -654,9 +660,9 @@ async function fetchInvitedEvents(token, userEmail, timeMin, timeMax) {
 }
 
 // ===== FREE SLOT DETECTION - KORREKT KONTROLL AV ALLA DELTAGARE =====
-function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '09:00', dayEnd = '17:00') {
+function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '09:00', dayEnd = '17:00', allParticipants = []) {
   const freeSlots = [];
-  
+
   try {
     const [startHour, startMinute] = dayStart.split(':').map(Number);
     const [endHour, endMinute] = dayEnd.split(':').map(Number);
@@ -665,24 +671,31 @@ function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '
       throw new BookRError('Invalid work hours format', 400, 'INVALID_WORK_HOURS');
     }
 
-    // ✅ GRUPPERA BUSY TIMES PER PERSON
+    // ✅ GRUPPERA BUSY TIMES PER PERSON — använd email direkt (ej anonymiserad)
+    // så att vi aldrig slår ihop två olika personers data av misstag.
     const busyTimesByPerson = {};
     const personEmails = new Set();
-    
+
     busyTimes.forEach(busy => {
       if (busy && busy.email && busy.start && busy.end) {
-        if (!busyTimesByPerson[busy.email]) {
-          busyTimesByPerson[busy.email] = [];
+        const key = busy.email;
+        if (!busyTimesByPerson[key]) {
+          busyTimesByPerson[key] = [];
         }
-        busyTimesByPerson[busy.email].push({
+        busyTimesByPerson[key].push({
           start: new Date(busy.start),
           end: new Date(busy.end)
         });
-        personEmails.add(busy.email);
+        personEmails.add(key);
       }
     });
 
-    const participants = Array.from(personEmails);
+    // ✅ participants = ALLA gruppmedlemmar, inte bara de med events.
+    // Säkerställer att en person vars kalender är tom eller vars fetch
+    // misslyckas fortfarande räknas med (tom kalender = aldrig blockerar).
+    const participants = allParticipants.length > 0
+      ? allParticipants
+      : Array.from(personEmails);
     console.log(`🔍 Analyzing free times for participants: ${participants.join(', ')}`);
     console.log(`📊 Busy periods per person:`, participants.map(email => 
       `${email}: ${busyTimesByPerson[email]?.length || 0} periods`
@@ -1803,7 +1816,14 @@ app.get('/api/group/:groupId/availability', validateGroup, async (req, res) => {
       return res.json([]);
     }
 
-    const allMemberBusyTimes = [];
+    // ✅ Bygg upp busyTimes per faktisk email (ej anonymiserad) så att
+    // findFreeTimeSlots kan kontrollera ALLA deltagare — även de utan events.
+    // Om vi bara bygger participants från de som HAR events ignoreras de
+    // vars kalender är tom eller vars fetch misslyckas.
+    const busyTimesByEmail = {};
+    for (const { email } of memberTokens) {
+      busyTimesByEmail[email] = [];
+    }
 
     const memberPromises = memberTokens.map(async ({ email, token }) => {
       try {
@@ -1812,11 +1832,10 @@ app.get('/api/group/:groupId/availability', validateGroup, async (req, res) => {
         // ✅ DETEKTERA PROVIDER BASERAT PÅ GRUPPMEDLEM
         const member = req.group.members.find(m => m.email === email);
         let provider = 'google';
-        
+
         if (member && member.provider) {
           provider = member.provider;
         } else {
-          // ✅ FÖRSÖK DETEKTERA PROVIDER
           try {
             const testGoogle = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo?fields=email', {
               headers: { 'Authorization': `Bearer ${token}` }
@@ -1833,23 +1852,34 @@ app.get('/api/group/:groupId/availability', validateGroup, async (req, res) => {
         const busyTimes = processCalendarEvents(calendarEvents, email, includeAll === 'true');
         console.log(`✅ Member ${email}: ${busyTimes.length} busy periods after processing`);
 
-        return busyTimes;
+        return { email, busyTimes };
       } catch (error) {
         console.error(`❌ Error fetching calendar for ${email}:`, error.message);
-        return [];
+        return { email, busyTimes: [] };
       }
     });
 
     const memberResults = await Promise.allSettled(memberPromises);
+    const allMemberBusyTimes = [];
+
     memberResults.forEach(result => {
       if (result.status === 'fulfilled') {
-        allMemberBusyTimes.push(...result.value);
+        const { email, busyTimes } = result.value;
+        // ✅ Tagga varje busyTime med den faktiska (ej anonymiserade) emailen
+        // så att findFreeTimeSlots kan aggregera korrekt per person.
+        busyTimes.forEach(bt => {
+          allMemberBusyTimes.push({ ...bt, email });
+        });
+        console.log(`📋 ${email}: ${busyTimes.length} busy periods added`);
       }
     });
 
     console.log(`📊 Total busy periods across all members: ${allMemberBusyTimes.length}`);
 
-    const freeSlots = findFreeTimeSlots(start, end, allMemberBusyTimes, parseInt(duration), dayStart, dayEnd);
+    const freeSlots = findFreeTimeSlots(
+      start, end, allMemberBusyTimes, parseInt(duration), dayStart, dayEnd,
+      memberTokens.map(m => m.email) // ✅ Skicka med ALLA deltagare — även de utan events
+    );
 
     console.log(`✅ Generated ${freeSlots.length} free slots for group ${req.params.groupId}`);
 
