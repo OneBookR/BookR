@@ -816,9 +816,9 @@ if (IS_PRODUCTION) {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        connectSrc: ["'self'", "https://accounts.google.com", "https://www.googleapis.com", "https://login.microsoftonline.com", "https://graph.microsoft.com", "wss:", "ws:"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com", "https://apis.google.com", "https://www.onebookr.se"],
-        scriptSrcElem: ["'self'", "'unsafe-inline'", "https://accounts.google.com", "https://apis.google.com", "https://www.onebookr.se"],
+        connectSrc: ["'self'", "https://accounts.google.com", "https://www.googleapis.com", "https://login.microsoftonline.com", "https://graph.microsoft.com", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://www.googletagmanager.com", "wss:", "ws:"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com", "https://apis.google.com", "https://www.googletagmanager.com", "https://www.onebookr.se"],
+        scriptSrcElem: ["'self'", "'unsafe-inline'", "https://accounts.google.com", "https://apis.google.com", "https://www.googletagmanager.com", "https://www.onebookr.se"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "https:", "http:"],
@@ -1036,6 +1036,24 @@ app.post('/api/contact-request', (req, res) => {
 app.post('/api/invitation/:id/respond', (req, res) => {
   console.log('Invitation response:', req.params.id, req.body);
   res.json({ success: true });
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+  }
+  const isValidToken = await validateUserToken(req.user);
+  if (!isValidToken) {
+    req.logout((err) => {
+      if (err) console.error('❌ Logout error:', err);
+      req.session.destroy(() => {
+        res.clearCookie(CONFIG.session.name);
+        res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED', requiresReauth: true });
+      });
+    });
+    return;
+  }
+  res.json(req.user);
 });
 
 app.get('/api/user', async (req, res) => {
