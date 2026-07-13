@@ -1530,6 +1530,25 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
       throw new BookRError(`Invalid email addresses: ${invalidEmails.join(', ')}`, 400, 'INVALID_EMAILS');
     }
 
+    // ✅ VALIDATION: GROUPNAME LENGTH
+    if (rawGroupName && typeof rawGroupName !== 'string') {
+      throw new BookRError('Group name must be a string', 400, 'INVALID_GROUP_NAME');
+    }
+    if (rawGroupName && rawGroupName.length > 100) {
+      throw new BookRError('Group name must be 100 characters or fewer', 400, 'GROUP_NAME_TOO_LONG');
+    }
+
+    // ✅ VALIDATION: DIRECT ACCESS EMAILS
+    if (directAccessEmails !== undefined) {
+      if (!Array.isArray(directAccessEmails)) {
+        throw new BookRError('directAccessEmails must be an array', 400, 'INVALID_DIRECT_ACCESS_EMAILS');
+      }
+      const invalidDirect = directAccessEmails.filter(e => typeof e !== 'string' || !validateEmail(e));
+      if (invalidDirect.length > 0) {
+        throw new BookRError('Invalid email in directAccessEmails', 400, 'INVALID_DIRECT_ACCESS_EMAILS');
+      }
+    }
+
     // ✅ GROUP SETUP
     // ✅ SÄKERHET: Kryptografiskt säkert ID — groupId är den enda spärren
     // som skyddar gruppens kalenderdata, så det får inte vara gissbart.
@@ -1780,6 +1799,28 @@ app.get('/api/group/:groupId/status', pollingLimiter, validateGroup, (req, res) 
 app.post('/api/availability', async (req, res) => {
   try {
     const { tokens, timeMin, timeMax, duration = 60, dayStart = '09:00', dayEnd = '17:00' } = req.body;
+
+    // ✅ VALIDATION: REQUIRED FIELDS
+    if (!Array.isArray(tokens) || tokens.length === 0) {
+      return res.status(400).json({ error: 'tokens must be a non-empty array', code: 'INVALID_TOKENS' });
+    }
+    if (tokens.length > 20) {
+      return res.status(400).json({ error: 'Maximum 20 tokens allowed', code: 'TOO_MANY_TOKENS' });
+    }
+    if (!timeMin || !timeMax) {
+      return res.status(400).json({ error: 'timeMin and timeMax are required', code: 'MISSING_DATE_RANGE' });
+    }
+    if (isNaN(new Date(timeMin).getTime()) || isNaN(new Date(timeMax).getTime())) {
+      return res.status(400).json({ error: 'Invalid date format for timeMin or timeMax', code: 'INVALID_DATE' });
+    }
+    const parsedDuration = parseInt(duration, 10);
+    if (isNaN(parsedDuration) || parsedDuration < 15 || parsedDuration > 480) {
+      return res.status(400).json({ error: 'duration must be between 15 and 480 minutes', code: 'INVALID_DURATION' });
+    }
+    const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!timePattern.test(dayStart) || !timePattern.test(dayEnd)) {
+      return res.status(400).json({ error: 'dayStart and dayEnd must be HH:MM format', code: 'INVALID_TIME_FORMAT' });
+    }
 
     console.log('📅 Calendar comparison request:', {
       tokenCount: tokens?.length || 0,
