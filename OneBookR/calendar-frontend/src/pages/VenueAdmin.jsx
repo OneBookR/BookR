@@ -58,10 +58,10 @@ const VenueAdmin = () => {
       const response = await fetch('/api/venues/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           ...venueData,
-          googleEmail: user.email,
-          googleToken: user.accessToken
+          googleEmail: user.email
         })
       });
       

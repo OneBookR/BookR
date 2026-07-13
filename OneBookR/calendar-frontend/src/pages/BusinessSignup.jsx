@@ -81,8 +81,7 @@ const BusinessSignup = () => {
         body: JSON.stringify({
           ...formData,
           googleEmail: googleUser.email || googleUser.emails?.[0]?.value,
-          googleId: googleUser.id,
-          googleToken: googleUser.accessToken
+          googleId: googleUser.id
         })
       });
 

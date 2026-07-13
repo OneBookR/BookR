@@ -3,7 +3,7 @@ import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListI
 import SendIcon from '@mui/icons-material/Send';
 import { API_BASE_URL } from '../config';
 
-const InviteFriend = ({ fromUser, fromToken, theme }) => {
+const InviteFriend = ({ fromUser, theme, embedded = false }) => {
   // ✅ STABLE USER DATA EXTRACTION
   const userData = useMemo(() => {
     let email = fromUser;
@@ -207,7 +207,6 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
       const requestBody = {
         emails: cleanEmails,
         fromUser: userData.email,
-        fromToken,
         groupName: groupName.trim() || 'Namnlös grupp',
         directAccessEmails,
       };
@@ -280,10 +279,9 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
   }, [
     isLoading, 
     emails, 
-    userData.isValid, 
-    userData.email, 
-    fromToken, 
-    groupName, 
+    userData.isValid,
+    userData.email,
+    groupName,
     teamContacts
   ]);
 
@@ -319,8 +317,11 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
         maxHeight: 200,
         overflow: 'auto',
         mt: 1,
-        borderRadius: 2,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+        borderRadius: 3,
+        border: '1px solid var(--border)',
+        bgcolor: 'rgba(255,255,255,0.96)',
+        boxShadow: '0 18px 40px rgba(15, 23, 42, 0.12)',
+        backdropFilter: 'blur(18px)'
       }}>
         <List sx={{ py: 0 }}>
           {filteredContacts.map((contact) => {
@@ -334,11 +335,11 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
                 onClick={() => selectContact(contact)}
                 sx={{
                   py: 1.5,
-                  '&:hover': { bgcolor: '#f5f5f5' },
-                  bgcolor: hasDirectAccess ? '#e8f5e8' : 'transparent'
+                  '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' },
+                  bgcolor: hasDirectAccess ? 'rgba(31,122,77,0.08)' : 'transparent'
                 }}
               >
-                <Avatar sx={{ width: 32, height: 32, mr: 2, bgcolor: '#1976d2', fontSize: 14 }}>
+                <Avatar sx={{ width: 32, height: 32, mr: 2, bgcolor: 'rgba(17,24,39,0.08)', color: 'var(--text)', fontSize: 14 }}>
                   {contact.name.charAt(0).toUpperCase()}
                 </Avatar>
                 <ListItemText
@@ -349,8 +350,7 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
                         <Chip 
                           label="Direktåtkomst" 
                           size="small" 
-                          color="success"
-                          sx={{ fontSize: 10, height: 20 }}
+                          sx={{ fontSize: 10, height: 20, bgcolor: 'rgba(31,122,77,0.12)', color: 'var(--success)', border: '1px solid rgba(31,122,77,0.14)' }}
                         />
                       )}
                     </Box>
@@ -368,30 +368,64 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
     );
   }, [showSuggestions, filteredContacts, selectContact]);
 
-  return (
-    <Box sx={{ 
-      p: 2, 
-      bgcolor: currentTheme.colors.surface, 
-      borderRadius: 2, 
-      boxShadow: 1,
-      border: `1px solid ${currentTheme.colors.border}`,
-      color: currentTheme.colors.text
-    }}>
-      <Typography variant="h6" gutterBottom>Bjud in vänner</Typography>
-      
-      <TextField
-        label="Gruppnamn"
-        value={groupName}
-        onChange={e => setGroupName(e.target.value)}
-        fullWidth
-        placeholder="Ex: Projektgruppen, Lunchgänget..."
-        sx={{ mb: 2 }}
-        variant="outlined"
+  const inviteForm = (
+    <>
+      <Chip
+        label="Invite Flow"
+        sx={{
+          mb: 2,
+          bgcolor: 'rgba(17,24,39,0.04)',
+          border: '1px solid rgba(17,24,39,0.06)',
+          color: 'var(--text)',
+          fontWeight: 800,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase'
+        }}
       />
-      
-      {renderEmailChips}
-      
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, position: 'relative' }}>
+
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: {
+            xs: '100%',
+            sm: 460
+          }
+        }}
+      >
+        <TextField
+          label="Gruppnamn"
+          value={groupName}
+          onChange={e => setGroupName(e.target.value)}
+          placeholder="Ex: Projektgruppen, Lunchgänget..."
+          sx={{ mb: 2.5 }}
+          fullWidth
+          variant="outlined"
+        />
+      </Box>
+
+      {emails.length > 0 && (
+        <Box sx={{ mb: 2.5 }}>
+          <Typography variant="caption" sx={{ display: 'block', mb: 1, color: 'var(--text-secondary)', fontWeight: 700 }}>
+            Deltagare som kommer få inbjudan
+          </Typography>
+          {renderEmailChips}
+        </Box>
+      )}
+
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: 1.5,
+          mb: 1,
+          position: 'relative',
+          width: '100%',
+          maxWidth: {
+            xs: '100%',
+            sm: 460
+          }
+        }}
+      >
         <Box sx={{ position: 'relative', flex: 1 }}>
           <TextField
             label="E-postadress"
@@ -417,46 +451,114 @@ const InviteFriend = ({ fromUser, fromToken, theme }) => {
             placeholder="Skriv e-post och tryck Enter eller ,"
             variant="outlined"
           />
-          
+
           {renderSuggestions}
         </Box>
-        
+
         <IconButton
           onClick={sendInvites}
           disabled={emails.length === 0 || isLoading}
           sx={{
-            ml: 2,
-            background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-            color: '#fff',
-            width: 44,
-            height: 44,
+            alignSelf: 'stretch',
+            minWidth: 56,
+            borderRadius: 3,
+            backgroundColor: 'var(--text)',
+            color: 'var(--surface-strong)',
             '&:hover': {
-              background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)'
+              backgroundColor: '#000000'
+            },
+            '&.Mui-disabled': {
+              backgroundColor: 'rgba(17,24,39,0.12)',
+              color: 'rgba(255,255,255,0.8)'
             }
           }}
         >
           <SendIcon />
         </IconButton>
       </Box>
-      
+
+      <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+        Tips: tryck Enter, kommatecken eller välj en kontakt från listan för att lägga till flera deltagare.
+      </Typography>
+
       {message && (
-        <Typography sx={{ mt: 2 }} color={message.includes('fel') ? 'error.main' : 'success.main'}>
-          {message}
-        </Typography>
+        <Box sx={{ mt: 2, p: 2, borderRadius: 3, bgcolor: message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'rgba(180,35,24,0.08)' : 'rgba(31,122,77,0.08)', border: `1px solid ${message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'rgba(180,35,24,0.14)' : 'rgba(31,122,77,0.14)'}` }}>
+          <Typography sx={{ color: message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'var(--error)' : 'var(--success)', fontWeight: 700 }}>
+            {message}
+          </Typography>
+        </Box>
       )}
-      
+
       {groupLink && (
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="body2">
+        <Box sx={{ mt: 2, p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'var(--text)', mb: 1 }}>
+            Skapade länkar
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
             {groupLink.split('\n').map((link, i) => (
-              <div key={i}>
+              <Box key={i}>
                 <a href={link} target="_blank" rel="noopener noreferrer">{link}</a>
-              </div>
+              </Box>
             ))}
           </Typography>
         </Box>
       )}
-    </Box>
+    </>
+  );
+
+  if (embedded) {
+    return <Box sx={{ mb: 3 }}>{inviteForm}</Box>;
+  }
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{ 
+        p: { xs: 3, md: 4 }, 
+        bgcolor: 'rgba(255,255,255,0.78)', 
+        borderRadius: 4,
+        boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)',
+        border: '1px solid var(--border)',
+        color: currentTheme.colors.text,
+        backdropFilter: 'blur(18px)'
+      }}
+    >
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1.1fr 0.9fr' }, gap: 3, alignItems: 'start' }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)', mb: 1.25 }}>
+            Bjud in vänner utan att det känns som ett formulärblock.
+          </Typography>
+          <Typography sx={{ color: 'var(--text-secondary)', lineHeight: 1.7, maxWidth: 620, mb: 3 }}>
+            Skapa en grupp, lägg till deltagare och skicka iväg en ren inbjudan direkt. Kontakter med direktåtkomst kan bokas snabbare härifrån.
+          </Typography>
+
+          {inviteForm}
+        </Box>
+
+        <Box sx={{ display: 'grid', gap: 1.5 }}>
+          <Box sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.75 }}>
+              Så fungerar det
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+              1. Namnge gruppen. 2. Lägg till deltagare. 3. Skicka inbjudan och gå vidare till jämförelsen direkt när gruppen skapats.
+            </Typography>
+          </Box>
+
+          <Box sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.75 }}>
+              Snabbstatus
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+              {emails.length > 0 ? `${emails.length} deltagare redo att bjudas in.` : 'Inga deltagare tillagda ännu.'}
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+              {groupName.trim() ? `Gruppnamn: ${groupName.trim()}` : 'Du kan ange gruppnamn eller låta BookR skapa en namnlös grupp.'}
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+    </Paper>
   );
 };
 

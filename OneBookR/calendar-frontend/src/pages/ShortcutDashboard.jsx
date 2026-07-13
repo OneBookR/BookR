@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, Box, Button, Card, CardContent, Grid, Chip, IconButton, Badge, Paper, Snackbar, Alert } from '@mui/material';
+import { Container, Typography, Box, Button, Card, CardContent, Grid, Chip, IconButton, Badge, Paper, Snackbar, Alert, Switch, FormControlLabel } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import GroupIcon from '@mui/icons-material/Group';
 import CheckIcon from '@mui/icons-material/Check';
@@ -40,11 +40,44 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [teams, setTeams] = useState([]);
   const [hasDirectAccessTeam, setHasDirectAccessTeam] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' eller 'team'
+  const [showMeetingTitles, setShowMeetingTitles] = useState(false);
+  const [joiningMeetingId, setJoiningMeetingId] = useState(null);
+
+  const currentUserEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || '';
+  const meetingPrivacySettingKey = currentUserEmail ? `bookr_show_meeting_titles_${currentUserEmail}` : 'bookr_show_meeting_titles';
+
+  useEffect(() => {
+    if (!currentUserEmail) return;
+
+    const savedPreference = localStorage.getItem(meetingPrivacySettingKey);
+    setShowMeetingTitles(savedPreference === 'true');
+  }, [currentUserEmail, meetingPrivacySettingKey]);
+
+  useEffect(() => {
+    if (!currentUserEmail) return;
+
+    localStorage.setItem(meetingPrivacySettingKey, String(showMeetingTitles));
+  }, [currentUserEmail, meetingPrivacySettingKey, showMeetingTitles]);
 
 
   useEffect(() => {
     const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
     if (!userEmail) return;
+
+    const fetchUpcomingMeetings = async () => {
+      try {
+        const response = await apiRequest(`/api/calendar/upcoming?includeDetails=${showMeetingTitles}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Calendar fetch failed');
+        }
+
+        setUpcomingMeetings(data.events || []);
+      } catch (err) {
+        console.log('Failed to fetch calendar events:', err);
+      }
+    };
     
     // Hämta invites från samma endpoint som InvitationSidebar
     apiRequest(`/api/invitations/${encodeURIComponent(userEmail)}`)
@@ -68,22 +101,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     
     setInvites(prev => [...prev, ...formattedRequests]);
 
-    // Hämta upcoming meetings från Google Calendar (endast möten med Google Meet länk)
-    if (user.accessToken) {
-      fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${new Date().toISOString()}&maxResults=10&singleEvents=true&orderBy=startTime`, {
-        headers: { 'Authorization': `Bearer ${user.accessToken}` }
-      })
-      .then(res => res.json())
-      .then(data => {
-        const meetings = (data.items || []).filter(event => 
-          event.hangoutLink || 
-          (event.conferenceData && event.conferenceData.entryPoints) ||
-          (event.location && event.location.includes('meet.google.com'))
-        );
-        setUpcomingMeetings(meetings);
-      })
-      .catch(err => console.log('Failed to fetch calendar events:', err));
-    }
+    // Hämta upcoming meetings via backend-proxy — accessToken hanteras server-side
+    fetchUpcomingMeetings();
 
     // Hämta tidsförslag (samma logik som CompareCalendar)
     if (userEmail) {
@@ -132,13 +151,36 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [user?.email]);
+  }, [user?.email, showMeetingTitles]);
+
+  const handleJoinUpcomingMeeting = async (meetingId) => {
+    if (!meetingId) return;
+
+    setJoiningMeetingId(meetingId);
+
+    try {
+      const response = await apiRequest(`/api/calendar/upcoming/${encodeURIComponent(meetingId)}/join`);
+      const data = await response.json();
+
+      if (!response.ok || !data.joinUrl) {
+        throw new Error(data.error || 'Kunde inte hämta möteslänk');
+      }
+
+      window.open(data.joinUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      setToast({ open: true, message: `Kunde inte öppna mötet: ${error.message}`, severity: 'error' });
+    } finally {
+      setJoiningMeetingId(null);
+    }
+  };
 
   const handleNavigateToMeeting = (type) => {
     if (type === 'team') {
       setCurrentView('team');
+    } else if (type === 'task') {
+      window.location.href = '/?view=task';
     } else {
-      // Befintlig logik för 1v1, group, task
+      // Befintlig logik för 1v1 och group
       window.location.href = `/?meetingType=${type}`;
     }
   };
@@ -264,7 +306,6 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           method: 'POST',
           body: JSON.stringify({
             groupId,
-            token: user.accessToken,
             invitee: inviteeId,
             email: userEmail
           })
@@ -497,6 +538,64 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     }
   };
 
+  const quickStats = [
+    {
+      label: 'Inbjudningar',
+      value: invites.length,
+      detail: invites.length > 0 ? 'Väntar på svar från dig' : 'Ingen ny aktivitet',
+      icon: <NotificationsIcon sx={{ fontSize: 18 }} />
+    },
+    {
+      label: 'Tidsförslag',
+      value: timeProposals.length,
+      detail: timeProposals.length > 0 ? 'Förslag att ta ställning till' : 'Allt är uppdaterat',
+      icon: <AccessTimeIcon sx={{ fontSize: 18 }} />
+    },
+    {
+      label: 'Kommande möten',
+      value: upcomingMeetings.length,
+      detail: upcomingMeetings.length > 0 ? 'Synkade från kalendern' : 'Inget bokat ännu',
+      icon: <EventIcon sx={{ fontSize: 18 }} />
+    },
+    {
+      label: 'Öppna möten',
+      value: leftMeetings.length,
+      detail: leftMeetings.length > 0 ? 'Kan återupptas direkt' : 'Tomt just nu',
+      icon: <CheckIcon sx={{ fontSize: 18 }} />
+    }
+  ];
+
+  const actionCards = [
+    {
+      title: '1:1-möte',
+      description: 'Jämför två kalendrar och hitta en ren, tydlig mötestid.',
+      accent: 'Snabbast väg till ett beslut',
+      icon: <PersonIcon sx={{ fontSize: 22 }} />,
+      onClick: () => handleNavigateToMeeting('1v1')
+    },
+    {
+      title: 'Gruppmöte',
+      description: 'Bjud in flera deltagare och hitta gemensamma luckor utan brus.',
+      accent: 'Bra för team och workshops',
+      icon: <GroupIcon sx={{ fontSize: 22 }} />,
+      onClick: () => handleNavigateToMeeting('group')
+    },
+    {
+      title: 'Uppgiftstid',
+      description: 'Blockera fokustid för uppgifter och planerade arbetsblock.',
+      accent: 'För egen planering',
+      icon: <TaskIcon sx={{ fontSize: 22 }} />,
+      onClick: () => handleNavigateToMeeting('task')
+    },
+    {
+      title: 'Team',
+      description: 'Hantera kontakter, direktåtkomst och återkommande gruppflöden.',
+      accent: hasDirectAccessTeam ? 'Direktåtkomst aktiv' : 'Bygg ett återanvändbart teamflöde',
+      icon: <GroupsIcon sx={{ fontSize: 22 }} />,
+      onClick: () => handleNavigateToMeeting('team')
+    }
+  ];
+
 
 
   if (currentView === 'team') {
@@ -505,567 +604,476 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
   return (
     <>
-
-
-      <Container maxWidth="xl" sx={{ mt: 12, mb: 4, px: { xs: 2, sm: 3 } }}>
-      {/* Clean Banner */}
-      <Box sx={{
-        background: 'rgba(255,255,255,0.98)',
-        borderRadius: 3,
-        p: 4,
-        mb: 6,
-        textAlign: 'center',
-        boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-        border: '1.5px solid #e3e8ee'
-      }}>
-        <Box sx={{ position: 'relative', zIndex: 1 }}>
-          <Typography variant="h3" sx={{ 
-            fontWeight: 700,
-            letterSpacing: -1.5,
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-            color: '#0a2540',
-            mb: 1,
-            fontSize: { xs: 28, md: 36 },
-            lineHeight: 1.08
-          }}>
-            BookR Dashboard
-          </Typography>
-          <Typography variant="h6" sx={{ 
-            color: '#425466',
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-            fontWeight: 400,
-            fontSize: { xs: 16, md: 18 },
-            lineHeight: 1.4,
-            letterSpacing: -0.5
-          }}>
-            Välj vad du vill göra - hitta lediga tider eller skapa uppgifter
-          </Typography>
-        </Box>
-      </Box>
-
-      {/* Moderna action cards med bredare layout */}
-      <Box sx={{ mb: 8, px: { xs: 2, sm: 3 } }}>
-        <Grid container spacing={{ xs: 3, md: 3 }} sx={{ justifyContent: 'flex-start' }}>
-          <Grid item xs={12} sm={6} lg={4}>
-            <Card sx={{ 
-              height: 85, 
-              width: 300,
-              cursor: 'pointer', 
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 4,
-              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
-              border: '1.5px solid #e3e8ee',
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              '&:hover': { 
-                transform: 'translateY(-8px) scale(1.02)',
-                boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
-              }
-            }} 
-                  onClick={() => handleNavigateToMeeting('1v1')}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
-                  <PersonIcon sx={{ fontSize: 36, color: '#635bff' }} />
-                </Box>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>1v1 Meeting</Typography>
-                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Jämför kalendrar och hitta ledig tid</Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} sm={6} lg={4}>
-            <Card sx={{ 
-              height: 85, 
-              width: 300,
-              cursor: 'pointer', 
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 4,
-              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
-              border: '1.5px solid #e3e8ee',
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              '&:hover': { 
-                transform: 'translateY(-8px) scale(1.02)',
-                boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
-              }
-            }} 
-                  onClick={() => handleNavigateToMeeting('group')}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
-                  <GroupIcon sx={{ fontSize: 36, color: '#635bff' }} />
-                </Box>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>Group Meeting</Typography>
-                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Bjud in flera och hitta gemensam tid</Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} sm={6} lg={4}>
-            <Card sx={{ 
-              height: 85, 
-              width: 300,
-              cursor: 'pointer', 
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 4,
-              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
-              border: '1.5px solid #e3e8ee',
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              '&:hover': { 
-                transform: 'translateY(-8px) scale(1.02)',
-                boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
-              }
-            }} 
-                  onClick={() => handleNavigateToMeeting('task')}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
-                  <TaskIcon sx={{ fontSize: 36, color: '#635bff' }} />
-                </Box>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>Create Task</Typography>
-                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Schemalägg tid för uppgifter</Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} sm={6} lg={4}>
-            <Card sx={{ 
-              height: 85, 
-              width: 300,
-              cursor: 'pointer', 
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 4,
-              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
-              border: '1.5px solid #e3e8ee',
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              '&:hover': { 
-                transform: 'translateY(-8px) scale(1.02)',
-                boxShadow: '0 20px 60px 0 rgba(99,91,255,0.18), 0 4px 16px 0 rgba(60,64,67,.12)'
-              }
-            }} 
-                  onClick={() => handleNavigateToMeeting('team')}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: '100%', gap: 2, p: 0, pl: 2, pr: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: '100%' }}>
-                  <Badge
-                    variant="dot"
-                    color="success"
-                    invisible={!hasDirectAccessTeam}
+      <Container maxWidth="xl" sx={{ mt: { xs: 11, md: 13 }, mb: 6, px: { xs: 2, sm: 3, lg: 4 } }}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', xl: '1.2fr 0.8fr' },
+            gap: 3,
+            mb: 5
+          }}
+        >
+          <Paper
+            elevation={0}
+            sx={{
+              position: 'relative',
+              overflow: 'hidden',
+              p: { xs: 3, md: 4.5 },
+              borderRadius: { xs: 4, md: 6 },
+              border: '1px solid var(--border)',
+              bgcolor: 'rgba(255,255,255,0.76)',
+              backdropFilter: 'blur(20px)',
+              boxShadow: 'var(--shadow-soft)'
+            }}
+          >
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                background: 'radial-gradient(circle at top left, rgba(17,24,39,0.08), transparent 36%), radial-gradient(circle at bottom right, rgba(17,24,39,0.06), transparent 28%)',
+                pointerEvents: 'none'
+              }}
+            />
+            <Box sx={{ position: 'relative', zIndex: 1 }}>
+              <Chip
+                label="BookR Workspace"
+                sx={{
+                  mb: 2.5,
+                  bgcolor: 'rgba(255,255,255,0.64)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase'
+                }}
+              />
+              <Typography
+                variant="h2"
+                sx={{
+                  maxWidth: 720,
+                  fontSize: { xs: '2.2rem', md: '3.9rem' },
+                  lineHeight: 0.98,
+                  letterSpacing: '-0.06em',
+                  fontWeight: 800,
+                  color: 'var(--text)'
+                }}
+              >
+                Samma lugna flöde, nu även efter inloggning.
+              </Typography>
+              <Typography
+                variant="h6"
+                sx={{
+                  mt: 2.5,
+                  maxWidth: 620,
+                  color: 'var(--text-secondary)',
+                  fontWeight: 500,
+                  lineHeight: 1.65,
+                  fontSize: { xs: '1rem', md: '1.1rem' }
+                }}
+              >
+                Välj hur du vill boka, håll koll på aktivitet och återuppta möten utan att lämna det rena uttrycket från landningssidan.
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.25, mt: 3.5 }}>
+                {quickStats.map((stat) => (
+                  <Box
+                    key={stat.label}
                     sx={{
-                      '& .MuiBadge-dot': {
-                        boxShadow: '0 0 0 2px #fff',
-                        width: 10,
-                        height: 10,
-                        borderRadius: '50%',
-                      }
+                      minWidth: { xs: 'calc(50% - 8px)', md: 180 },
+                      px: 1.75,
+                      py: 1.5,
+                      borderRadius: 3,
+                      border: '1px solid var(--border)',
+                      bgcolor: 'rgba(255,255,255,0.58)'
                     }}
                   >
-                    <GroupsIcon sx={{ fontSize: 36, color: '#635bff' }} />
-                  </Badge>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'var(--text-secondary)', mb: 0.75 }}>
+                      {stat.icon}
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        {stat.label}
+                      </Typography>
+                    </Box>
+                    <Typography sx={{ fontSize: 28, lineHeight: 1, fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)' }}>
+                      {stat.value}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                      {stat.detail}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          </Paper>
+
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 3, md: 4 },
+              borderRadius: { xs: 4, md: 6 },
+              border: '1px solid var(--border)',
+              bgcolor: 'var(--surface)',
+              backdropFilter: 'blur(18px)',
+              boxShadow: 'var(--shadow-soft)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2
+            }}
+          >
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)' }}>
+                Aktivt arbetsläge
+              </Typography>
+              <Typography sx={{ mt: 1, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                Inloggad som {currentUserEmail || 'okänd användare'}. Härifrån går du direkt till möten, uppgifter och teamflöden.
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'grid', gap: 1.25 }}>
+              {quickStats.map((stat) => (
+                <Box
+                  key={stat.label}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 2,
+                    px: 2,
+                    py: 1.5,
+                    borderRadius: 3,
+                    bgcolor: 'rgba(17,24,39,0.03)',
+                    border: '1px solid rgba(17,24,39,0.05)'
+                  }}
+                >
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 700, color: 'var(--text)' }}>
+                      {stat.label}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                      {stat.detail}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontWeight: 800, fontSize: 20, letterSpacing: '-0.04em', color: 'var(--text)' }}>
+                    {stat.value}
+                  </Typography>
                 </Box>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 0.3, fontSize: 16, lineHeight: 1.2 }}>TEAM</Typography>
-                  <Typography variant="body2" sx={{ color: '#425466', fontSize: 12, lineHeight: 1.3 }}>Hantera teamkontakter</Typography>
-                </Box>
-              </CardContent>
-            </Card>
+              ))}
+            </Box>
+
+            <Box sx={{ pt: 1, borderTop: '1px solid var(--border)' }}>
+              <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                Nästa steg: välj mötestyp nedan eller öppna notispanelen till höger för att svara direkt.
+              </Typography>
+            </Box>
+          </Paper>
+        </Box>
+
+        <Box sx={{ mb: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2.5, flexWrap: 'wrap' }}>
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)' }}>
+                Starta något nytt
+              </Typography>
+              <Typography sx={{ color: 'var(--text-secondary)', mt: 0.75 }}>
+                Fyra tydliga vägar in i BookR, utan den gamla dashboard-känslan.
+              </Typography>
+            </Box>
+          </Box>
+
+          <Grid container spacing={2.5}>
+            {actionCards.map((action) => (
+              <Grid item xs={12} sm={6} xl={3} key={action.title}>
+                <Paper
+                  elevation={0}
+                  onClick={action.onClick}
+                  sx={{
+                    height: '100%',
+                    p: 2.5,
+                    borderRadius: 4,
+                    border: '1px solid var(--border)',
+                    bgcolor: 'rgba(255,255,255,0.76)',
+                    boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)',
+                    backdropFilter: 'blur(18px)',
+                    cursor: 'pointer',
+                    transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: '0 24px 54px rgba(15, 23, 42, 0.09)',
+                      borderColor: 'rgba(17,24,39,0.18)'
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 2.5 }}>
+                    <Box
+                      sx={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 3,
+                        display: 'grid',
+                        placeItems: 'center',
+                        bgcolor: 'rgba(17,24,39,0.06)',
+                        color: 'var(--text)'
+                      }}
+                    >
+                      {action.title === 'Team' ? (
+                        <Badge
+                          variant="dot"
+                          color="success"
+                          invisible={!hasDirectAccessTeam}
+                          sx={{ '& .MuiBadge-dot': { boxShadow: '0 0 0 2px #fff' } }}
+                        >
+                          {action.icon}
+                        </Badge>
+                      ) : (
+                        action.icon
+                      )}
+                    </Box>
+                    <Chip
+                      label={action.accent}
+                      size="small"
+                      sx={{
+                        maxWidth: 180,
+                        height: 'auto',
+                        '& .MuiChip-label': {
+                          display: 'block',
+                          whiteSpace: 'normal',
+                          px: 1.25,
+                          py: 0.75,
+                          fontWeight: 700,
+                          color: 'var(--text-secondary)'
+                        },
+                        bgcolor: 'rgba(17,24,39,0.03)',
+                        border: '1px solid rgba(17,24,39,0.05)'
+                      }}
+                    />
+                  </Box>
+                  <Typography sx={{ fontSize: 24, lineHeight: 1.05, fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)', mb: 1.25 }}>
+                    {action.title}
+                  </Typography>
+                  <Typography sx={{ color: 'var(--text-secondary)', lineHeight: 1.65 }}>
+                    {action.description}
+                  </Typography>
+                </Paper>
+              </Grid>
+            ))}
           </Grid>
+        </Box>
 
-        </Grid>
-      </Box>
-
-      {/* Översikt sektion */}
-      <Box sx={{ mb: 4, px: { xs: 2, sm: 3 } }}>
-        <Typography variant="h4" sx={{ 
-          fontWeight: 600,
-          color: '#0a2540',
-          fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-          mb: 4,
-          textAlign: 'left'
-        }}>Översikt</Typography>
-        
-        <Grid container spacing={{ xs: 3, md: 3 }} sx={{ justifyContent: 'flex-start' }}>
-          {/* Invites sektion */}
-          <Grid item xs={12} sm={12} md={4}>
-            <Card sx={{ 
-              height: 480,
-              width: 400,
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 4,
-              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
-              border: '1.5px solid #e3e8ee',
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: '0 16px 56px 0 rgba(99,91,255,0.15), 0 4px 16px 0 rgba(60,64,67,.1)'
-              }
-            }}>
-            <Box sx={{ p: 3, borderBottom: '1px solid #e3e8ee' }}>
-              <Typography variant="h5" sx={{ 
-                fontWeight: 600,
-                color: '#0a2540',
-                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
-              }}>Inbjudningar</Typography>
-            </Box>
-            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-              {invites.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga inbjudningar just nu</Typography>
-                </Box>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {invites.map((invite, index) => (
-                    <Card key={index} sx={{ 
-                      p: 2, 
-                      borderRadius: 2,
-                      background: '#f8f9fa',
-                      boxShadow: 'none',
-                      border: '1px solid #dee2e6',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-                      }
-                    }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                        {invite.groupName || 'Kalenderjämförelse'}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', mb: 1, fontWeight: 600 }}>
-                        Från: {invite.fromName || invite.fromEmail}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
-                        {new Date(invite.createdAt).toLocaleDateString() + ' ' + new Date(invite.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                        {invite.type === 'contact_request' ? (
-                          <>
-                            <Button 
-                              size="small" 
-                              variant="outlined" 
-                              onClick={() => handleInviteResponse(invite.id, null, 'decline')}
-                              sx={{ fontSize: 10, py: 0.5, px: 1 }}
-                            >
-                              Neka
-                            </Button>
-                            <Button 
-                              size="small" 
-                              variant="contained" 
-                              onClick={() => handleInviteResponse(invite.id, null, 'accept')}
-                              sx={{ fontSize: 10, py: 0.5, px: 1 }}
-                            >
-                              Acceptera
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button 
-                              size="small" 
-                              variant="outlined" 
-                              onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')}
-                              sx={{ fontSize: 10, py: 0.5, px: 1 }}
-                            >
-                              Neka
-                            </Button>
-                            <Button 
-                              size="small" 
-                              variant="outlined" 
-                              onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept_passive')}
-                              sx={{ fontSize: 10, py: 0.5, px: 1, bgcolor: 'rgba(25,118,210,0.1)' }}
-                            >
-                              Ge tillgång
-                            </Button>
-                            <Button 
-                              size="small" 
-                              variant="contained" 
-                              onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')}
-                              sx={{ fontSize: 10, py: 0.5, px: 1 }}
-                            >
-                              Gå med
-                            </Button>
-                          </>
-                        )}
-                      </Box>
-                    </Card>
-                  ))}
-                </Box>
-              )}
-            </Box>
-          </Card>
-        </Grid>
-
-        {/* Time Proposals sektion */}
-        <Grid item xs={12} sm={6} md={4}>
-            <Card sx={{ 
-              height: 480,
-              width: 400,
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 4,
-              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
-              border: '1.5px solid #e3e8ee',
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: '0 16px 56px 0 rgba(99,91,255,0.15), 0 4px 16px 0 rgba(60,64,67,.1)'
-              }
-            }}>
-            <Box sx={{ p: 3, borderBottom: '1px solid #e3e8ee' }}>
-              <Typography variant="h5" sx={{ 
-                fontWeight: 600,
-                color: '#0a2540',
-                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
-              }}>Tidsförslag</Typography>
-            </Box>
-            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-              {timeProposals.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga tidsförslag just nu</Typography>
-                </Box>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {timeProposals.map((proposal, index) => (
-                    <Card key={index} sx={{ 
-                      p: 2, 
-                      borderRadius: 2,
-                      background: '#f8f9fa',
-                      boxShadow: 'none',
-                      border: '1px solid #dee2e6',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-                      }
-                    }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2, fontSize: 16 }}>
-                        {proposal.title || 'Tidsförslag'}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: '#1976d2', display: 'block', mb: 1, fontWeight: 600, fontSize: 14 }}>
-                        📅 {formatProposalDateTime(proposal)}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2, fontSize: 12 }}>
-                        Från: {proposal.fromEmail}
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1, mt: 'auto' }}>
-                        <Button 
-                          size="small" 
-                          variant="outlined" 
-                          onClick={() => handleProposalResponse(proposal.id, 'decline')}
-                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
-                        >
-                          Neka
-                        </Button>
-                        <Button 
-                          size="small" 
-                          variant="contained" 
-                          onClick={() => handleProposalResponse(proposal.id, 'accept')}
-                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
-                        >
-                          Acceptera
-                        </Button>
-                      </Box>
-                    </Card>
-                  ))}
-                </Box>
-              )}
-            </Box>
-          </Card>
-        </Grid>
-
-        {/* Upcoming Meetings sektion */}
-        <Grid item xs={12} sm={6} md={4}>
-            <Card sx={{ 
-              height: 480,
-              width: 400,
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 4,
-              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
-              border: '1.5px solid #e3e8ee',
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: '0 16px 56px 0 rgba(99,91,255,0.15), 0 4px 16px 0 rgba(60,64,67,.1)'
-              }
-            }}>
-            <Box sx={{ p: 3, borderBottom: '1px solid #e3e8ee' }}>
-              <Typography variant="h5" sx={{ 
-                fontWeight: 600,
-                color: '#0a2540',
-                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
-              }}>Kommande möten</Typography>
-            </Box>
-            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-              {upcomingMeetings.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography sx={{ color: '#425466', fontWeight: 400 }}>Inga kommande möten</Typography>
-                </Box>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {upcomingMeetings.slice(0, 5).map((meeting) => {
-                    const timeUntil = getTimeUntilMeeting(meeting.start);
-                    const isUrgent = timeUntil === 'Nu' || timeUntil.includes('min');
-                    
-                    return (
-                      <Card key={meeting.id} sx={{ 
-                        p: 2, 
-                        borderRadius: 2,
-                        background: '#f8f9fa',
-                        boxShadow: 'none',
-                        border: '1px solid #dee2e6',
-                        transition: 'all 0.3s ease',
-                        '&:hover': {
-                          transform: 'translateY(-1px)',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-                        }
-                      }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                          {meeting.summary || 'Untitled Meeting'}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: '#1976d2', display: 'block', mb: 1, fontWeight: 600 }}>
-                          📅 {formatDateTime(meeting.start)}
-                        </Typography>
-                        <Typography variant="caption" sx={{ 
-                          color: isUrgent ? '#d32f2f' : '#4caf50', 
-                          display: 'block', 
-                          mb: 1, 
-                          fontWeight: 600,
-                          fontSize: 12
-                        }}>
-                          ⏰ {timeUntil}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2, fontSize: 11 }}>
-                          {meeting.organizer?.displayName || meeting.organizer?.email || 'Unknown organizer'}
-                        </Typography>
-                        {(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri) && (
-                          <Button 
-                            size="small" 
-                            variant="contained" 
-                            onClick={() => window.open(meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri, '_blank')}
-                            sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
-                          >
-                            Gå med i mötet
-                          </Button>
-                        )}
-                      </Card>
-                    );
-                  })}
-                </Box>
-              )}
-            </Box>
-          </Card>
-        </Grid>
-        
-        {/* Öppna möten sektion - under de andra tre */}
-        <Grid container spacing={{ xs: 3, md: 3 }} sx={{ justifyContent: 'flex-start', mt: 4 }}>
-          <Grid item xs={12} sm={12} md={4}>
-            <Card sx={{ 
-              height: 480,
-              width: 400,
-              background: 'rgba(255,255,255,0.98)',
-              borderRadius: 4,
-              boxShadow: '0 12px 48px 0 rgba(99,91,255,0.12), 0 2px 12px 0 rgba(60,64,67,.08)',
-              border: '1.5px solid #e3e8ee',
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: '0 16px 56px 0 rgba(99,91,255,0.15), 0 4px 16px 0 rgba(60,64,67,.1)'
-              }
-            }}>
-            <Box sx={{ p: 3, borderBottom: '1px solid #e3e8ee' }}>
-              <Typography variant="h5" sx={{ 
-                fontWeight: 600,
-                color: '#0a2540',
-                fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif"
-              }}>Öppna möten</Typography>
-            </Box>
-            <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-              {leftMeetings.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography sx={{ color: '#425466', fontWeight: 400, mb: 2 }}>Inga öppna möten just nu</Typography>
-                  <Typography variant="caption" sx={{ color: '#666' }}>När du lämnar ett möte kommer det att visas här</Typography>
-                </Box>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {leftMeetings.map((meeting) => (
-                    <Card key={meeting.id} sx={{ 
-                      p: 2, 
-                      borderRadius: 2,
-                      background: '#f8f9fa',
-                      boxShadow: 'none',
-                      border: '1px solid #dee2e6',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-                      }
-                    }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                        {meeting.groupName || 'Kalenderjämförelse'}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
-                        Medlemmar: {meeting.members.join(', ')}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 2, fontSize: 11 }}>
-                        Lämnade: {new Date(meeting.leftAt).toLocaleString()}
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button 
-                          size="small" 
-                          variant="contained" 
-                          onClick={() => window.location.href = `/?group=${meeting.id}`}
-                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
-                        >
-                          Gå in i mötet
-                        </Button>
-                        <Button 
-                          size="small" 
-                          variant="outlined" 
-                          onClick={() => {
-                            const updatedMeetings = leftMeetings.filter(m => m.id !== meeting.id);
-                            setLeftMeetings(updatedMeetings);
-                            localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
-                          }}
-                          sx={{ fontSize: 11, py: 0.5, px: 1.5 }}
-                        >
-                          Stäng möte
-                        </Button>
-                      </Box>
-                    </Card>
-                  ))}
-                </Box>
-              )}
-            </Box>
-          </Card>
-          </Grid>
-        </Grid>
-      </Grid>
-      </Box>
-      </Container>
-
-      {/* Footer */}
-      <Box
-        component="footer"
-        sx={{
-          width: '100%',
-          bgcolor: '#f8fafc',
-          borderTop: '1px solid #e2e8f0',
-          mt: 8,
-          py: 4
-        }}
-      >
-        <Container maxWidth="lg">
-          <Typography variant="body2" sx={{ 
-            textAlign: 'center',
-            color: '#64748b' 
-          }}>
-            © 2024 BookR. Alla rättigheter förbehållna.
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)', mb: 0.75 }}>
+            Översikt
           </Typography>
-        </Container>
-      </Box>
+          <Typography sx={{ color: 'var(--text-secondary)', mb: 3 }}>
+            All aktivitet samlad i lugna paneler som känns som samma produkt som landningssidan.
+          </Typography>
+
+          <Grid container spacing={2.5}>
+            <Grid item xs={12} md={6} xl={3}>
+              <Paper elevation={0} sx={{ minHeight: 380, p: 2.5, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2.5 }}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: 'var(--text)' }}>Inbjudningar</Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>Nya förfrågningar och mötesinbjudningar.</Typography>
+                  </Box>
+                  <Chip label={invites.length} sx={{ bgcolor: 'rgba(17,24,39,0.05)', fontWeight: 800, color: 'var(--text)' }} />
+                </Box>
+                <Box sx={{ display: 'grid', gap: 1.5 }}>
+                  {invites.length === 0 ? (
+                    <Box sx={{ py: 6, px: 2, textAlign: 'center', borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px dashed rgba(17,24,39,0.08)' }}>
+                      <Typography sx={{ color: 'var(--text-secondary)' }}>Inga inbjudningar just nu</Typography>
+                    </Box>
+                  ) : (
+                    invites.map((invite, index) => (
+                      <Box key={index} sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px solid rgba(17,24,39,0.05)' }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.75 }}>
+                          {invite.groupName || 'Kalenderjämförelse'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 0.75 }}>
+                          Från: {invite.fromName || invite.fromEmail}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mb: 1.5 }}>
+                          {new Date(invite.createdAt).toLocaleDateString()} {new Date(invite.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                          {invite.type === 'contact_request' ? (
+                            <>
+                              <Button size="small" variant="outlined" onClick={() => handleInviteResponse(invite.id, null, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                                Neka
+                              </Button>
+                              <Button size="small" variant="contained" onClick={() => handleInviteResponse(invite.id, null, 'accept')} sx={{ bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}>
+                                Acceptera
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button size="small" variant="outlined" onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                                Neka
+                              </Button>
+                              <Button size="small" variant="outlined" onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept_passive')} sx={{ borderColor: 'var(--border)', color: 'var(--text)', bgcolor: 'rgba(17,24,39,0.02)' }}>
+                                Ge tillgång
+                              </Button>
+                              <Button size="small" variant="contained" onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')} sx={{ bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}>
+                                Gå med
+                              </Button>
+                            </>
+                          )}
+                        </Box>
+                      </Box>
+                    ))
+                  )}
+                </Box>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={12} md={6} xl={3}>
+              <Paper elevation={0} sx={{ minHeight: 380, p: 2.5, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2.5 }}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: 'var(--text)' }}>Tidsförslag</Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>Förslag du kan godkänna eller neka.</Typography>
+                  </Box>
+                  <Chip label={timeProposals.length} sx={{ bgcolor: 'rgba(17,24,39,0.05)', fontWeight: 800, color: 'var(--text)' }} />
+                </Box>
+                <Box sx={{ display: 'grid', gap: 1.5 }}>
+                  {timeProposals.length === 0 ? (
+                    <Box sx={{ py: 6, px: 2, textAlign: 'center', borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px dashed rgba(17,24,39,0.08)' }}>
+                      <Typography sx={{ color: 'var(--text-secondary)' }}>Inga tidsförslag just nu</Typography>
+                    </Box>
+                  ) : (
+                    timeProposals.map((proposal, index) => (
+                      <Box key={index} sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px solid rgba(17,24,39,0.05)' }}>
+                        <Typography sx={{ fontWeight: 800, color: 'var(--text)', mb: 1 }}>
+                          {proposal.title || 'Tidsförslag'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 0.75 }}>
+                          {formatProposalDateTime(proposal)}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mb: 1.5 }}>
+                          Från: {proposal.fromEmail}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button size="small" variant="outlined" onClick={() => handleProposalResponse(proposal.id, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                            Neka
+                          </Button>
+                          <Button size="small" variant="contained" onClick={() => handleProposalResponse(proposal.id, 'accept')} sx={{ bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}>
+                            Acceptera
+                          </Button>
+                        </Box>
+                      </Box>
+                    ))
+                  )}
+                </Box>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={12} md={6} xl={3}>
+              <Paper elevation={0} sx={{ minHeight: 380, p: 2.5, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2.5 }}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: 'var(--text)' }}>Kommande möten</Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>Nästa steg från din synkade kalender.</Typography>
+                  </Box>
+                  <Chip label={upcomingMeetings.length} sx={{ bgcolor: 'rgba(17,24,39,0.05)', fontWeight: 800, color: 'var(--text)' }} />
+                </Box>
+                <Box sx={{ mb: 2, p: 1.5, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
+                  <FormControlLabel
+                    control={<Switch checked={showMeetingTitles} onChange={(event) => setShowMeetingTitles(event.target.checked)} />}
+                    label="Visa mötestitlar"
+                    sx={{ alignItems: 'flex-start', m: 0 }}
+                  />
+                  <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-secondary)', mt: 0.5, lineHeight: 1.6 }}>
+                    När detta är aktiverat hämtar BookR privata kalenderdetaljer till dashboarden för att visa riktiga mötestitlar.
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'grid', gap: 1.5 }}>
+                  {upcomingMeetings.length === 0 ? (
+                    <Box sx={{ py: 6, px: 2, textAlign: 'center', borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px dashed rgba(17,24,39,0.08)' }}>
+                      <Typography sx={{ color: 'var(--text-secondary)' }}>Inga kommande möten</Typography>
+                    </Box>
+                  ) : (
+                    upcomingMeetings.slice(0, 5).map((meeting) => {
+                      const timeUntil = getTimeUntilMeeting(meeting.start);
+                      const meetingLabel = showMeetingTitles && meeting.title
+                        ? meeting.title
+                        : 'Digitalt möte';
+
+                      return (
+                        <Box key={meeting.id} sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px solid rgba(17,24,39,0.05)' }}>
+                          <Typography sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.75 }}>
+                            {meetingLabel}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 0.5 }}>
+                            {formatDateTime(meeting.start)}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mb: 1.5 }}>
+                            Startar om {timeUntil}
+                          </Typography>
+                          {meeting.joinable && (
+                            <Button size="small" variant="contained" disabled={joiningMeetingId === meeting.id} onClick={() => handleJoinUpcomingMeeting(meeting.id)} sx={{ bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}>
+                              Gå med i mötet
+                            </Button>
+                          )}
+                        </Box>
+                      );
+                    })
+                  )}
+                </Box>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={12} md={6} xl={3}>
+              <Paper elevation={0} sx={{ minHeight: 380, p: 2.5, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2.5 }}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: 'var(--text)' }}>Öppna möten</Typography>
+                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>Möten du kan gå tillbaka till direkt.</Typography>
+                  </Box>
+                  <Chip label={leftMeetings.length} sx={{ bgcolor: 'rgba(17,24,39,0.05)', fontWeight: 800, color: 'var(--text)' }} />
+                </Box>
+                <Box sx={{ display: 'grid', gap: 1.5 }}>
+                  {leftMeetings.length === 0 ? (
+                    <Box sx={{ py: 6, px: 2, textAlign: 'center', borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px dashed rgba(17,24,39,0.08)' }}>
+                      <Typography sx={{ color: 'var(--text-secondary)', mb: 1 }}>Inga öppna möten just nu</Typography>
+                      <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                        När du lämnar ett möte kommer det att synas här.
+                      </Typography>
+                    </Box>
+                  ) : (
+                    leftMeetings.map((meeting) => (
+                      <Box key={meeting.id} sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px solid rgba(17,24,39,0.05)' }}>
+                        <Typography sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.75 }}>
+                          {meeting.groupName || 'Kalenderjämförelse'}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 0.5 }}>
+                          Medlemmar: {meeting.members.join(', ')}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mb: 1.5 }}>
+                          Lämnade: {new Date(meeting.leftAt).toLocaleString()}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                          <Button size="small" variant="contained" onClick={() => window.location.href = `/?group=${meeting.id}`} sx={{ bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}>
+                            Gå in i mötet
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => {
+                              const updatedMeetings = leftMeetings.filter(m => m.id !== meeting.id);
+                              setLeftMeetings(updatedMeetings);
+                              localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
+                            }}
+                            sx={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+                          >
+                            Stäng möte
+                          </Button>
+                        </Box>
+                      </Box>
+                    ))
+                  )}
+                </Box>
+              </Paper>
+            </Grid>
+          </Grid>
+        </Box>
+      </Container>
 
       {/* Floating Notification Icon */}
       <IconButton
@@ -1077,13 +1085,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           transform: 'translateY(-50%)',
           width: 60,
           height: 60,
-          backgroundColor: '#635bff',
-          color: 'white',
-          boxShadow: '0 4px 20px rgba(99, 91, 255, 0.3)',
+          backgroundColor: 'var(--text)',
+          color: 'var(--surface-strong)',
+          boxShadow: '0 14px 30px rgba(15, 23, 42, 0.18)',
           zIndex: 1200,
           '&:hover': {
-            backgroundColor: '#7a5af8',
-            boxShadow: '0 6px 25px rgba(99, 91, 255, 0.4)',
+            backgroundColor: '#000000',
+            boxShadow: '0 18px 36px rgba(15, 23, 42, 0.24)',
             transform: 'translateY(-50%) scale(1.1)'
           },
           transition: 'all 0.3s ease'
@@ -1127,9 +1135,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             sx={{
               width: 400,
               maxHeight: '80vh',
-              backgroundColor: '#fff',
-              borderRadius: 3,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              backgroundColor: 'rgba(255,255,255,0.88)',
+              borderRadius: 4,
+              border: '1px solid var(--border)',
+              boxShadow: '0 24px 60px rgba(15, 23, 42, 0.18)',
+              backdropFilter: 'blur(20px)',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden'
@@ -1137,26 +1147,26 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <Box sx={{ p: 3, borderBottom: '1px solid #e0e3e7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6" sx={{ fontWeight: 600, color: '#1976d2' }}>
+            <Box sx={{ p: 3, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6" sx={{ fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
                 Notifikationer
               </Typography>
-              <IconButton onClick={() => setSidebarOpen(false)} size="small">
+              <IconButton onClick={() => setSidebarOpen(false)} size="small" sx={{ color: 'var(--text)' }}>
                 <CloseIcon />
               </IconButton>
             </Box>
 
             {/* Tabs */}
-            <Box sx={{ display: 'flex', borderBottom: '1px solid #e0e3e7' }}>
+            <Box sx={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
               <Button
                 onClick={() => setSidebarTab('invitations')}
                 sx={{
                   flex: 1,
                   py: 2,
                   borderRadius: 0,
-                  borderBottom: sidebarTab === 'invitations' ? '2px solid #1976d2' : 'none',
-                  color: sidebarTab === 'invitations' ? '#1976d2' : '#666',
-                  fontWeight: sidebarTab === 'invitations' ? 600 : 400,
+                  borderBottom: sidebarTab === 'invitations' ? '2px solid var(--text)' : 'none',
+                  color: sidebarTab === 'invitations' ? 'var(--text)' : 'var(--text-secondary)',
+                  fontWeight: sidebarTab === 'invitations' ? 700 : 500,
                   fontSize: 12
                 }}
                 startIcon={<GroupIcon />}
@@ -1169,9 +1179,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                   flex: 1,
                   py: 2,
                   borderRadius: 0,
-                  borderBottom: sidebarTab === 'proposals' ? '2px solid #1976d2' : 'none',
-                  color: sidebarTab === 'proposals' ? '#1976d2' : '#666',
-                  fontWeight: sidebarTab === 'proposals' ? 600 : 400,
+                  borderBottom: sidebarTab === 'proposals' ? '2px solid var(--text)' : 'none',
+                  color: sidebarTab === 'proposals' ? 'var(--text)' : 'var(--text-secondary)',
+                  fontWeight: sidebarTab === 'proposals' ? 700 : 500,
                   fontSize: 12
                 }}
                 startIcon={<EventIcon />}
@@ -1184,11 +1194,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
               {sidebarTab === 'invitations' ? (
                 <Box>
-                  <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
+                  <Typography variant="subtitle2" sx={{ mb: 2, color: 'var(--text-secondary)' }}>
                     Inbjudningar till kalenderjämförelse
                   </Typography>
                   {invites.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: '#999', textAlign: 'center', mt: 4 }}>
+                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)', textAlign: 'center', mt: 4 }}>
                       Inga inbjudningar just nu
                     </Typography>
                   ) : (
@@ -1198,18 +1208,20 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         sx={{
                           p: 2,
                           mb: 2,
-                          borderRadius: 2,
-                          border: '1px solid #e0e3e7',
-                          '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }
+                          borderRadius: 3,
+                          border: '1px solid rgba(17,24,39,0.06)',
+                          bgcolor: 'rgba(17,24,39,0.025)',
+                          boxShadow: 'none',
+                          '&:hover': { boxShadow: '0 12px 30px rgba(15,23,42,0.06)' }
                         }}
                       >
-                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700, mb: 1, color: 'var(--text)' }}>
                           {invitation.fromName || invitation.fromEmail}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 1 }}>
+                        <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mb: 1 }}>
                           {invitation.type === 'contact_request' ? 'Vill lägga till dig som kontakt' : 'Vill jämföra kalendrar med dig'}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#999', fontSize: 11 }}>
+                        <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontSize: 11 }}>
                           {new Date(invitation.createdAt).toLocaleDateString() + ' ' + new Date(invitation.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Typography>
                         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
@@ -1218,7 +1230,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                               <Button 
                                 size="small" 
                                 variant="contained" 
-                                sx={{ fontSize: 12 }}
+                                sx={{ fontSize: 12, bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}
                                 onClick={() => handleInviteResponse(invitation.id, null, 'accept')}
                               >
                                 Acceptera
@@ -1226,7 +1238,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                               <Button 
                                 size="small" 
                                 variant="outlined" 
-                                sx={{ fontSize: 12 }}
+                                sx={{ fontSize: 12, borderColor: 'var(--border)', color: 'var(--text)' }}
                                 onClick={() => handleInviteResponse(invitation.id, null, 'decline')}
                               >
                                 Neka
@@ -1237,7 +1249,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                               <Button 
                                 size="small" 
                                 variant="contained" 
-                                sx={{ fontSize: 12 }}
+                                sx={{ fontSize: 12, bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}
                                 onClick={() => window.location.href = `/?group=${invitation.groupId}&invitee=${invitation.inviteeId}`}
                               >
                                 Gå med
@@ -1245,7 +1257,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                               <Button 
                                 size="small" 
                                 variant="outlined" 
-                                sx={{ fontSize: 12 }}
+                                sx={{ fontSize: 12, borderColor: 'var(--border)', color: 'var(--text)' }}
                                 onClick={() => handleInviteResponse(invitation.groupId, invitation.inviteeId, 'decline')}
                               >
                                 Neka
@@ -1259,11 +1271,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                 </Box>
               ) : (
                 <Box>
-                  <Typography variant="subtitle2" sx={{ mb: 2, color: '#666' }}>
+                  <Typography variant="subtitle2" sx={{ mb: 2, color: 'var(--text-secondary)' }}>
                     Tidsförslag du har fått
                   </Typography>
                   {timeProposals.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: '#999', textAlign: 'center', mt: 4 }}>
+                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)', textAlign: 'center', mt: 4 }}>
                       Inga tidsförslag just nu
                     </Typography>
                   ) : (
@@ -1273,25 +1285,27 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                         sx={{
                           p: 2,
                           mb: 2,
-                          borderRadius: 2,
-                          border: '1px solid #e0e3e7',
-                          '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }
+                          borderRadius: 3,
+                          border: '1px solid rgba(17,24,39,0.06)',
+                          bgcolor: 'rgba(17,24,39,0.025)',
+                          boxShadow: 'none',
+                          '&:hover': { boxShadow: '0 12px 30px rgba(15,23,42,0.06)' }
                         }}
                       >
-                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700, mb: 1, color: 'var(--text)' }}>
                           {proposal.title || 'Mötesförslag'}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#1976d2', display: 'block', fontWeight: 600, mb: 1 }}>
-                          📅 {formatProposalDateTime(proposal)}
+                        <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', fontWeight: 600, mb: 1 }}>
+                          {formatProposalDateTime(proposal)}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#666', display: 'block' }}>
+                        <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block' }}>
                           Från: {proposal.fromEmail}
                         </Typography>
                         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                           <Button 
                             size="small" 
                             variant="contained" 
-                            sx={{ fontSize: 12 }}
+                            sx={{ fontSize: 12, bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}
                             onClick={() => handleProposalResponse(proposal.id, 'accept')}
                           >
                             Acceptera
@@ -1299,7 +1313,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                           <Button 
                             size="small" 
                             variant="outlined" 
-                            sx={{ fontSize: 12 }}
+                            sx={{ fontSize: 12, borderColor: 'var(--border)', color: 'var(--text)' }}
                             onClick={() => handleProposalResponse(proposal.id, 'decline')}
                           >
                             Neka

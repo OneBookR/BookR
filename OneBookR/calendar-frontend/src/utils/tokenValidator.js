@@ -77,7 +77,7 @@ export class TokenValidator {
         if (errorData.requiresReauth || errorData.code === 'TOKEN_EXPIRED') {
           console.log('🔄 Session expired, redirecting to login');
           this.clearCache();
-          localStorage.removeItem('bookr_user');
+          // bookr_user tas inte längre emot i localStorage
           window.location.href = '/auth/logout';
           return false;
         }
@@ -94,7 +94,7 @@ export class TokenValidator {
   static handleTokenExpiration() {
     console.log('🔄 Token expired - cleaning up and redirecting');
     this.clearCache();
-    localStorage.removeItem('bookr_user');
+    // bookr_user tas inte längre emot i localStorage
     sessionStorage.clear();
     
     setTimeout(() => {

@@ -15,6 +15,7 @@ import CheckBox from '@mui/icons-material/CheckBox';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
+import { apiRequest } from '../utils/apiConfig.js';
 
 const icon = <CheckBoxOutlineBlank fontSize="small" />;
 const checkedIcon = <CheckBox fontSize="small" />;
@@ -157,6 +158,12 @@ export default function Team({ user, onNavigateBack }) {
 
   const handleStartComparison = async (team) => {
     const memberEmails = team.members.map(m => m.email);
+    const directAccessEmails = team.members
+      .filter(member => {
+        const contact = contacts.find(c => c.email === member.email);
+        return contact && contact.directAccess;
+      })
+      .map(member => member.email);
     const allHaveDirectAccess = team.members.every(member => {
         const contact = contacts.find(c => c.email === member.email);
         return contact && contact.directAccess;
@@ -165,42 +172,25 @@ export default function Team({ user, onNavigateBack }) {
     setToast({ open: true, message: 'Startar kalenderjämförelse...', severity: 'info' });
 
     try {
-      // Skapa grupp och skicka inbjudningar
-      const response = await fetch('https://www.onebookr.se/api/invite', {
+      // Skapa grupp via samma API-konfiguration som resten av BookR använder.
+      const response = await apiRequest('/api/invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           emails: memberEmails,
           fromUser: userEmail,
-          fromToken: user.accessToken || 'mock_token',
           groupName: `${team.name} - Kalenderjämförelse`,
-          isTeamMeeting: true,
-          teamName: team.name,
-          hasDirectAccessTeam: allHaveDirectAccess
+          directAccessEmails
         })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
 
       const data = await response.json();
       
       if (data.groupId) {
-        // Skicka e-postinbjudningar till alla teammedlemmar
-        const invitationPromises = memberEmails.map(email => 
-          fetch('https://www.onebookr.se/api/send-team-invitation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              toEmail: email,
-              fromEmail: userEmail,
-              fromName: user.displayName || userEmail,
-              teamName: team.name,
-              groupId: data.groupId,
-              hasDirectAccess: allHaveDirectAccess
-            })
-          })
-        );
-
-        await Promise.all(invitationPromises);
-        
         setToast({ 
           open: true, 
           message: `Kalenderjämförelse startad! Inbjudningar skickade till ${memberEmails.length} medlemmar.`, 
@@ -253,56 +243,118 @@ export default function Team({ user, onNavigateBack }) {
     setContactRequests(updatedRequests);
   };
 
+  const pageCardSx = {
+    borderRadius: 4,
+    border: '1px solid var(--border)',
+    bgcolor: 'rgba(255,255,255,0.78)',
+    boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)',
+    backdropFilter: 'blur(18px)'
+  };
+
+  const subduedPanelSx = {
+    p: 2,
+    borderRadius: 3,
+    bgcolor: 'rgba(17,24,39,0.03)',
+    border: '1px solid rgba(17,24,39,0.05)'
+  };
+
+  const primaryButtonSx = {
+    borderRadius: 3,
+    bgcolor: 'var(--text)',
+    color: 'var(--surface-strong)',
+    fontWeight: 700,
+    textTransform: 'none',
+    boxShadow: 'none',
+    '&:hover': {
+      bgcolor: '#000000',
+      boxShadow: 'none'
+    }
+  };
+
+  const secondaryButtonSx = {
+    borderRadius: 3,
+    borderColor: 'rgba(17,24,39,0.08)',
+    color: 'var(--text)',
+    textTransform: 'none',
+    '&:hover': {
+      borderColor: 'rgba(17,24,39,0.16)',
+      bgcolor: 'rgba(17,24,39,0.03)'
+    }
+  };
+
   return (
     <>
       <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
         {/* Header Banner */}
         <Box sx={{
-          background: 'rgba(255,255,255,0.98)',
-          borderRadius: 3,
-          p: 4,
+          ...pageCardSx,
+          p: { xs: 3, md: 4 },
           mb: 6,
-          textAlign: 'center',
-          boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-          border: '1.5px solid #e3e8ee'
+          position: 'relative'
         }}>
           <Button
             startIcon={<ArrowBackIcon />}
             onClick={onNavigateBack}
-            sx={{ position: 'absolute', top: 20, left: 20 }}
+            sx={{ ...secondaryButtonSx, mb: 3 }}
           >
             Tillbaka
           </Button>
+
+          <Chip
+            label="Team Space"
+            sx={{
+              mb: 2,
+              bgcolor: 'rgba(17,24,39,0.04)',
+              border: '1px solid rgba(17,24,39,0.06)',
+              color: 'var(--text)',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase'
+            }}
+          />
           
           <Typography variant="h3" sx={{ 
-            fontWeight: 700,
-            letterSpacing: -1.5,
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-            color: '#0a2540',
+            fontWeight: 800,
+            letterSpacing: '-0.05em',
+            color: 'var(--text)',
             mb: 1,
-            fontSize: { xs: 28, md: 36 },
-            lineHeight: 1.08
+            fontSize: { xs: '2rem', md: '3rem' },
+            lineHeight: 0.98,
+            maxWidth: 760
           }}>
-            Team Management
+            Hantera kontakter och grupper i samma lugna BookR-flöde.
           </Typography>
           <Typography variant="h6" sx={{ 
-            color: '#425466',
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
+            color: 'var(--text-secondary)',
             fontWeight: 400,
             fontSize: { xs: 16, md: 18 },
             lineHeight: 1.4,
-            letterSpacing: -0.5
+            maxWidth: 760
           }}>
-            Hantera dina team och kontakter för smidigare mötesbokning
+            Samla dina kontakter, bygg återkommande grupper och starta kalenderjämförelser utan att lämna samma visuella språk som resten av BookR.
           </Typography>
         </Box>
 
         {/* Tabs */}
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 4 }}>
-          <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)}>
-            <Tab label={`Kontakter (${contacts.length})`} icon={<PersonIcon />} />
-            <Tab label={`Team (${teams.length})`} icon={<GroupsIcon />} />
-            <Tab label={`Förfrågningar (${contactRequests.length})`} icon={<NotificationsIcon />} />
+        <Box sx={{ ...pageCardSx, p: 1, mb: 4 }}>
+          <Tabs
+            value={currentTab}
+            onChange={(e, newValue) => setCurrentTab(newValue)}
+            variant="scrollable"
+            allowScrollButtonsMobile
+            sx={{
+              minHeight: 56,
+              '& .MuiTabs-indicator': {
+                height: '100%',
+                borderRadius: 3,
+                bgcolor: 'rgba(17,24,39,0.06)',
+                zIndex: 0
+              }
+            }}
+          >
+            <Tab label={`Kontakter (${contacts.length})`} icon={<PersonIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
+            <Tab label={`Team (${teams.length})`} icon={<GroupsIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
+            <Tab label={`Förfrågningar (${contactRequests.length})`} icon={<NotificationsIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
           </Tabs>
         </Box>
 
@@ -313,7 +365,7 @@ export default function Team({ user, onNavigateBack }) {
               variant="contained"
               startIcon={<AddIcon />}
               onClick={() => setAddContactOpen(true)}
-              sx={{ mb: 3 }}
+              sx={{ ...primaryButtonSx, mb: 3 }}
             >
               Lägg till kontakt
             </Button>
@@ -321,10 +373,10 @@ export default function Team({ user, onNavigateBack }) {
             {loading ? (
               <Typography>Laddar kontakter...</Typography>
             ) : contacts.length === 0 ? (
-              <Card sx={{ p: 4, textAlign: 'center', bgcolor: '#f8f9fa' }}>
-                <PersonIcon sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
-                <Typography variant="h6" sx={{ color: '#666' }}>Inga kontakter än</Typography>
-                <Typography variant="body2" sx={{ color: '#999', mb: 2 }}>Lägg till teammedlemmar för att enkelt kunna bjuda in dem till möten.</Typography>
+              <Card sx={{ ...pageCardSx, p: 4, textAlign: 'center' }}>
+                <PersonIcon sx={{ fontSize: 48, color: 'rgba(17,24,39,0.18)', mb: 2 }} />
+                <Typography variant="h6" sx={{ color: 'var(--text)', fontWeight: 700 }}>Inga kontakter än</Typography>
+                <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 2 }}>Lägg till teammedlemmar för att enkelt kunna bjuda in dem till möten.</Typography>
               </Card>
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -332,22 +384,29 @@ export default function Team({ user, onNavigateBack }) {
                   <Paper
                     key={contact.id}
                     sx={{
+                      ...pageCardSx,
                       p: 3,
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      border: '1px solid #e0e3e7'
+                      gap: 2,
+                      flexWrap: 'wrap'
                     }}
                   >
-                    <Box>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        {contact.name}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: '#666' }}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(17,24,39,0.08)', color: 'var(--text)' }}>
+                          {contact.name?.charAt(0)?.toUpperCase() || '?'}
+                        </Avatar>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'var(--text)' }}>
+                          {contact.name}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
                         {contact.email}
                       </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                       <FormControlLabel
                         control={
                           <Switch
@@ -357,12 +416,23 @@ export default function Team({ user, onNavigateBack }) {
                         }
                         label="Direktåtkomst"
                         labelPlacement="start"
+                        sx={{ m: 0, color: 'var(--text-secondary)' }}
+                      />
+                      <Chip
+                        label={contact.directAccess ? 'Aktiv åtkomst' : 'Ingen åtkomst'}
+                        size="small"
+                        sx={{
+                          bgcolor: contact.directAccess ? 'rgba(31,122,77,0.1)' : 'rgba(17,24,39,0.04)',
+                          color: contact.directAccess ? 'var(--success)' : 'var(--text-secondary)',
+                          border: `1px solid ${contact.directAccess ? 'rgba(31,122,77,0.14)' : 'rgba(17,24,39,0.06)'}`
+                        }}
                       />
                       <Button
                         variant="outlined"
                         color="error"
                         size="small"
                         onClick={() => handleDeleteContact(contact.id)}
+                        sx={{ ...secondaryButtonSx, color: 'var(--error)', borderColor: 'rgba(180,35,24,0.18)' }}
                       >
                         Ta bort
                       </Button>
@@ -381,7 +451,7 @@ export default function Team({ user, onNavigateBack }) {
               variant="contained"
               startIcon={<AddIcon />}
               onClick={() => setCreateTeamOpen(true)}
-              sx={{ mb: 3 }}
+              sx={{ ...primaryButtonSx, mb: 3 }}
             >
               Skapa team
             </Button>
@@ -389,11 +459,11 @@ export default function Team({ user, onNavigateBack }) {
             {loading ? (
               <Typography>Laddar team...</Typography>
             ) : teams.length === 0 ? (
-              <Card sx={{ p: 4, textAlign: 'center', bgcolor: '#f8f9fa' }}>
-                <GroupsIcon sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
-                <Typography variant="h6" sx={{ color: '#666' }}>Inga team än</Typography>
-                <Typography variant="body2" sx={{ color: '#999', mb: 2 }}>Skapa ett team för att enkelt bjuda in flera personer.</Typography>
-                <Button variant="contained" onClick={() => setCreateTeamOpen(true)}>Skapa ditt första team</Button>
+              <Card sx={{ ...pageCardSx, p: 4, textAlign: 'center' }}>
+                <GroupsIcon sx={{ fontSize: 48, color: 'rgba(17,24,39,0.18)', mb: 2 }} />
+                <Typography variant="h6" sx={{ color: 'var(--text)', fontWeight: 700 }}>Inga team än</Typography>
+                <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 2 }}>Skapa ett team för att enkelt bjuda in flera personer.</Typography>
+                <Button variant="contained" onClick={() => setCreateTeamOpen(true)} sx={primaryButtonSx}>Skapa ditt första team</Button>
               </Card>
             ) : (
               <Grid container spacing={3}>
@@ -404,21 +474,21 @@ export default function Team({ user, onNavigateBack }) {
                   });
                   return (
                     <Grid item xs={12} sm={6} md={4} key={team.id}>
-                      <Card sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <Card sx={{ ...pageCardSx, p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
                         <CardContent sx={{ flexGrow: 1 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                             <Typography variant="h6" sx={{ fontWeight: 600, mr: 1 }}>{team.name}</Typography>
+                             <Typography variant="h6" sx={{ fontWeight: 700, mr: 1, color: 'var(--text)' }}>{team.name}</Typography>
                              {allHaveDirectAccess && <CheckCircleIcon color="success" fontSize="small" />}
                           </Box>
-                          <Chip label={team.area || 'Inget område'} size="small" sx={{ mb: 2 }} />
+                          <Chip label={team.area || 'Inget område'} size="small" sx={{ mb: 2, bgcolor: 'rgba(17,24,39,0.04)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }} />
                           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {team.members.map(m => <Chip key={m.email} label={m.name} size="small" variant="outlined" />)}
+                            {team.members.map(m => <Chip key={m.email} label={m.name} size="small" variant="outlined" sx={{ borderColor: 'rgba(17,24,39,0.08)', color: 'var(--text-secondary)' }} />)}
                           </Box>
                         </CardContent>
-                        <Box sx={{ p: 2, pt: 0, display: 'flex', gap: 1 }}>
-                          <Button variant="contained" size="small" onClick={() => handleStartComparison(team)}>Starta jämföring</Button>
-                          <Button variant="outlined" size="small" onClick={() => handleOpenEditDialog(team)}>Redigera</Button>
-                          <Button variant="outlined" color="error" size="small" onClick={() => handleDeleteTeam(team.id)}>Ta bort</Button>
+                        <Box sx={{ p: 2, pt: 0, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                          <Button variant="contained" size="small" onClick={() => handleStartComparison(team)} sx={primaryButtonSx}>Starta jämföring</Button>
+                          <Button variant="outlined" size="small" onClick={() => handleOpenEditDialog(team)} sx={secondaryButtonSx}>Redigera</Button>
+                          <Button variant="outlined" color="error" size="small" onClick={() => handleDeleteTeam(team.id)} sx={{ ...secondaryButtonSx, color: 'var(--error)', borderColor: 'rgba(180,35,24,0.18)' }}>Ta bort</Button>
                         </Box>
                       </Card>
                     </Grid>
@@ -435,10 +505,10 @@ export default function Team({ user, onNavigateBack }) {
             {loading ? (
               <Typography>Laddar förfrågningar...</Typography>
             ) : contactRequests.length === 0 ? (
-              <Card sx={{ p: 4, textAlign: 'center', bgcolor: '#f8f9fa' }}>
-                <NotificationsIcon sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
-                <Typography variant="h6" sx={{ color: '#666' }}>Inga förfrågningar</Typography>
-                <Typography variant="body2" sx={{ color: '#999' }}>Du har inga väntande kontaktförfrågningar.</Typography>
+              <Card sx={{ ...pageCardSx, p: 4, textAlign: 'center' }}>
+                <NotificationsIcon sx={{ fontSize: 48, color: 'rgba(17,24,39,0.18)', mb: 2 }} />
+                <Typography variant="h6" sx={{ color: 'var(--text)', fontWeight: 700 }}>Inga förfrågningar</Typography>
+                <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>Du har inga väntande kontaktförfrågningar.</Typography>
               </Card>
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -446,21 +516,23 @@ export default function Team({ user, onNavigateBack }) {
                   <Paper
                     key={request.id}
                     sx={{
+                      ...pageCardSx,
                       p: 3,
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      border: '1px solid #e0e3e7'
+                      gap: 2,
+                      flexWrap: 'wrap'
                     }}
                   >
                     <Box>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'var(--text)' }}>
                         {request.fromName}
                       </Typography>
-                      <Typography variant="body2" sx={{ color: '#666' }}>
+                      <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
                         {request.fromEmail}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: '#999' }}>
+                      <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
                         {new Date(request.timestamp).toLocaleDateString()}
                       </Typography>
                     </Box>
@@ -471,6 +543,7 @@ export default function Team({ user, onNavigateBack }) {
                         size="small"
                         startIcon={<CheckIcon />}
                         onClick={() => handleContactRequest(request.id, 'accept')}
+                        sx={primaryButtonSx}
                       >
                         Acceptera
                       </Button>
@@ -480,6 +553,7 @@ export default function Team({ user, onNavigateBack }) {
                         size="small"
                         startIcon={<CloseIcon />}
                         onClick={() => handleContactRequest(request.id, 'decline')}
+                        sx={{ ...secondaryButtonSx, color: 'var(--error)', borderColor: 'rgba(180,35,24,0.18)' }}
                       >
                         Neka
                       </Button>
@@ -493,7 +567,7 @@ export default function Team({ user, onNavigateBack }) {
       </Container>
 
       {/* Add Contact Dialog */}
-      <Dialog open={addContactOpen} onClose={() => setAddContactOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={addContactOpen} onClose={() => setAddContactOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { ...pageCardSx, bgcolor: 'rgba(255,255,255,0.94)' } }}>
         <DialogTitle>Lägg till ny teamkontakt</DialogTitle>
         <DialogContent>
           <TextField
@@ -517,13 +591,13 @@ export default function Team({ user, onNavigateBack }) {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAddContactOpen(false)}>Avbryt</Button>
-          <Button onClick={handleAddContact} variant="contained">Lägg till</Button>
+          <Button onClick={() => setAddContactOpen(false)} sx={secondaryButtonSx}>Avbryt</Button>
+          <Button onClick={handleAddContact} variant="contained" sx={primaryButtonSx}>Lägg till</Button>
         </DialogActions>
       </Dialog>
 
       {/* Create/Edit Team Dialog */}
-      <Dialog open={createTeamOpen} onClose={handleCloseTeamDialog} maxWidth="sm" fullWidth>
+      <Dialog open={createTeamOpen} onClose={handleCloseTeamDialog} maxWidth="sm" fullWidth PaperProps={{ sx: { ...pageCardSx, bgcolor: 'rgba(255,255,255,0.94)' } }}>
         <DialogTitle>{editingTeam ? 'Redigera team' : 'Skapa nytt team'}</DialogTitle>
         <DialogContent>
           <TextField
@@ -576,8 +650,8 @@ export default function Team({ user, onNavigateBack }) {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseTeamDialog}>Avbryt</Button>
-          <Button onClick={handleSaveTeam} variant="contained">
+          <Button onClick={handleCloseTeamDialog} sx={secondaryButtonSx}>Avbryt</Button>
+          <Button onClick={handleSaveTeam} variant="contained" sx={primaryButtonSx}>
             {editingTeam ? 'Uppdatera' : 'Skapa team'}
           </Button>
         </DialogActions>

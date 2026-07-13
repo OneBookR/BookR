@@ -13,6 +13,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
+import InviteFriend from './InviteFriend';
 
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
@@ -54,8 +55,7 @@ export default function CompareCalendar({
   const userData = useMemo(() => ({
     email: user?.email || user?.emails?.[0]?.value || user?.emails?.[0],
     provider: user?.provider || (user?.mail ? 'microsoft' : 'google'),
-    accessToken: user?.accessToken,
-    isLoggedIn: Boolean(user && user.accessToken)
+    isLoggedIn: Boolean(user?.email)
   }), [user]);
 
   // ✅ FÖRENKLA STATE - Ta bort onödig state
@@ -168,7 +168,9 @@ export default function CompareCalendar({
 
   // ✅ ROBUST TOKEN VALIDATION USING EXISTING VALIDATOR (FLYTTA FÖRE ANVÄNDNING)
   const validateToken = useCallback(async () => {
-    if (!myToken) return false;
+    if (!myToken) {
+      return Boolean(propGroupId && userData.isLoggedIn);
+    }
     
     try {
       const isValid = await TokenValidator.validateToken(myToken);
@@ -183,11 +185,11 @@ export default function CompareCalendar({
       console.error('❌ Token validation error:', error);
       return false;
     }
-  }, [myToken]);
+  }, [myToken, propGroupId, userData.isLoggedIn]);
 
   // ✅ JOIN GROUP AUTOMATICALLY - FIXA API URL (FLYTTA FÖRE fetchGroupAvailability)
   const joinGroup = useCallback(async () => {
-    if (!propGroupId || !user || !myToken) return;
+    if (!propGroupId || !user) return false;
     
     // ✅ VALIDERA TOKEN FÖRST
     const isTokenValid = await validateToken();
@@ -701,26 +703,55 @@ export default function CompareCalendar({
 
   // ✅ ROBUST RENDERING FUNCTIONS - FLYTTA FÖRE MAIN RETURN
   const renderComparisonForm = useCallback(() => (
-    <Paper sx={{ p: 3, mb: 3, borderRadius: 2, border: `1px solid ${theme.colors.border}` }}>
-      <Typography variant="h5" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
-        📅 Kalenderjämförelse
+    <Paper
+      elevation={0}
+      sx={{
+        p: { xs: 3, md: 4 },
+        mb: 3,
+        borderRadius: 4,
+        border: '1px solid var(--border)',
+        bgcolor: 'rgba(255,255,255,0.76)',
+        backdropFilter: 'blur(18px)',
+        boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)'
+      }}
+    >
+      <Chip
+        label="Compare Calendar"
+        sx={{
+          mb: 2,
+          bgcolor: 'rgba(17,24,39,0.04)',
+          border: '1px solid rgba(17,24,39,0.06)',
+          color: 'var(--text)',
+          fontWeight: 800,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase'
+        }}
+      />
+      <Typography variant="h3" sx={{ mb: 1.25, fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)', fontSize: { xs: '2rem', md: '3rem' }, lineHeight: 0.98 }}>
+        Hitta en gemensam tid utan att lämna flödet.
         {propGroupId && (
           <Chip 
             label={`Grupp: ${groupInfo?.name || 'Laddar...'}`} 
-            color="primary" 
             size="small"
-            sx={{ ml: 2 }}
+            sx={{ ml: 2, bgcolor: 'rgba(17,24,39,0.05)', color: 'var(--text)', fontWeight: 700, border: '1px solid rgba(17,24,39,0.06)' }}
           />
         )}
       </Typography>
+      <Typography sx={{ color: 'var(--text-secondary)', maxWidth: 760, mb: 3, lineHeight: 1.7 }}>
+        Jämför tillgänglighet, se vilka som redan är inne och skicka ett mötesförslag i samma lugna gränssnitt som resten av BookR.
+      </Typography>
+
+      {!propGroupId && (
+        <InviteFriend fromUser={user} embedded />
+      )}
       
       {/* ✅ AUTO-REFRESH STATUS */}
       {propGroupId && groupInfo && groupInfo.pendingMembers?.length === 0 && groupInfo.memberCount >= 2 && (
-        <Box sx={{ mb: 3, p: 2, bgcolor: '#e8f5e8', borderRadius: 1, border: '1px solid #4caf50' }}>
-          <Typography variant="subtitle2" sx={{ mb: 1, color: '#2e7d32', fontWeight: 600 }}>
-            ✅ Alla medlemmar anslutna!
+        <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(31,122,77,0.08)', borderRadius: 3, border: '1px solid rgba(31,122,77,0.16)' }}>
+          <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--success)', fontWeight: 700 }}>
+            Alla medlemmar är anslutna
           </Typography>
-          <Typography variant="body2" sx={{ color: '#1b5e20' }}>
+          <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
             Nu kan du jämföra alla kalendrar för att hitta gemensamma lediga tider.
           </Typography>
         </Box>
@@ -728,30 +759,29 @@ export default function CompareCalendar({
       
       {/* ✅ GRUPPINFORMATION */}
       {groupInfo && (
-        <Box sx={{ mb: 3, p: 2, bgcolor: '#f0f8ff', borderRadius: 1, border: '1px solid #e3f2fd' }}>
-          <Typography variant="subtitle2" sx={{ mb: 1, color: '#1976d2', fontWeight: 600 }}>
-            👥 Gruppinformation
+        <Box sx={{ mb: 3, p: 2.25, bgcolor: 'rgba(17,24,39,0.03)', borderRadius: 3, border: '1px solid rgba(17,24,39,0.05)' }}>
+          <Typography variant="subtitle2" sx={{ mb: 1.5, color: 'var(--text)', fontWeight: 700 }}>
+            Gruppinformation
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1 }}>
+          <Typography variant="body2" sx={{ mb: 1, color: 'var(--text-secondary)' }}>
             <strong>Namn:</strong> {groupInfo.name}
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1 }}>
+          <Typography variant="body2" sx={{ mb: 1.5, color: 'var(--text-secondary)' }}>
             <strong>Anslutna medlemmar:</strong> {groupInfo.memberCount}
           </Typography>
           
           {/* ✅ VISA ANSLUTNA MEDLEMMAR MED EMAILS */}
           <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 600, display: 'block', mb: 1 }}>
-              ✅ Anslutna ({groupInfo.members?.length || 0}):
+            <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontWeight: 700, display: 'block', mb: 1 }}>
+              Anslutna ({groupInfo.members?.length || 0})
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               {groupInfo.members?.map((member, index) => (
                 <Chip
                   key={index}
-                  label={`${member.isCreator ? '👑 ' : ''}${member.email}`}
+                  label={`${member.isCreator ? 'Skapare • ' : ''}${member.email}`}
                   size="small"
-                  color={member.isCreator ? 'primary' : 'success'}
-                  sx={{ fontSize: '0.75rem' }}
+                  sx={{ fontSize: '0.75rem', bgcolor: member.isCreator ? 'rgba(17,24,39,0.08)' : 'rgba(17,24,39,0.04)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }}
                 />
               ))}
             </Box>
@@ -760,22 +790,21 @@ export default function CompareCalendar({
           {/* ✅ VISA VÄNTANDE MEDLEMMAR MED EMAILS */}
           {groupInfo.pendingMembers && groupInfo.pendingMembers.length > 0 && (
             <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" sx={{ color: '#ed6c02', fontWeight: 600, display: 'block', mb: 1 }}>
-                ⏳ Väntar på ({groupInfo.pendingMembers.length}):
+              <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontWeight: 700, display: 'block', mb: 1 }}>
+                Väntar på ({groupInfo.pendingMembers.length})
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                 {groupInfo.pendingMembers.map((email, index) => (
                   <Chip
                     key={index}
-                    label={`⏳ ${email}`}
+                    label={email}
                     size="small"
-                    color="warning"
                     variant="outlined"
-                    sx={{ fontSize: '0.75rem' }}
+                    sx={{ fontSize: '0.75rem', borderColor: 'rgba(17,24,39,0.08)', color: 'var(--text-secondary)' }}
                   />
                 ))}
               </Box>
-              <Typography variant="caption" sx={{ color: '#ed6c02', display: 'block', mt: 1, fontStyle: 'italic' }}>
+              <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mt: 1, fontStyle: 'italic' }}>
                 Dessa personer har fått inbjudningar men har inte anslutit än.
               </Typography>
             </Box>
@@ -792,16 +821,16 @@ export default function CompareCalendar({
       )}
       
       {/* ✅ VISA STATUS FÖR KALENDRAR - ANVÄND userData KORREKT */}
-      <Box sx={{ mb: 3, p: 2, bgcolor: '#f8f9fa', borderRadius: 1 }}>
-        <Typography variant="subtitle2" sx={{ mb: 1, color: '#666' }}>
-          📅 Kalendrar som jämförs:
+      <Box sx={{ mb: 3, p: 2.25, bgcolor: 'rgba(17,24,39,0.025)', borderRadius: 3, border: '1px solid rgba(17,24,39,0.05)' }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--text)', fontWeight: 700 }}>
+          Kalendrar som jämförs
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           {myToken && (
             <Chip 
               label={`Din kalender (${userData.email || 'okänd'})`} 
-              color="primary" 
               size="small" 
+              sx={{ bgcolor: 'rgba(17,24,39,0.08)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }}
             />
           )}
           {propGroupId && groupInfo?.members && groupInfo.members
@@ -810,15 +839,15 @@ export default function CompareCalendar({
               <Chip 
                 key={index}
                 label={`${member.email} ${member.isCreator ? '(skapare)' : ''}`}
-                color="secondary" 
                 size="small" 
+                sx={{ bgcolor: 'rgba(17,24,39,0.04)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }}
               />
             ))}
           {contactEmail && (
             <Chip 
               label={contactEmail} 
-              color="info" 
               size="small" 
+              sx={{ bgcolor: 'rgba(17,24,39,0.04)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }}
             />
           )}
         </Box>
@@ -845,9 +874,9 @@ export default function CompareCalendar({
       </Box>
       
       {/* ✅ NYA AVANCERADE ALTERNATIV */}
-      <Box sx={{ mb: 3, p: 2, bgcolor: '#f0f8ff', borderRadius: 1, border: '1px solid #e3f2fd' }}>
-        <Typography variant="subtitle2" sx={{ mb: 2, color: '#1976d2', fontWeight: 600 }}>
-          🔧 Avancerade alternativ
+      <Box sx={{ mb: 3, p: 2.25, bgcolor: 'rgba(17,24,39,0.025)', borderRadius: 3, border: '1px solid rgba(17,24,39,0.05)' }}>
+        <Typography variant="subtitle2" sx={{ mb: 2, color: 'var(--text)', fontWeight: 700 }}>
+          Avancerade alternativ
         </Typography>
         
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -870,15 +899,15 @@ export default function CompareCalendar({
               variant="outlined"
               size="small"
               onClick={fetchDebugEvents}
-              sx={{ alignSelf: 'flex-start' }}
+              sx={{ alignSelf: 'flex-start', borderColor: 'var(--border)', color: 'var(--text)' }}
             >
-              🔍 Debug Events
+              Debug Events
             </Button>
           )}
         </Box>
         
-        <Typography variant="caption" sx={{ display: 'block', color: '#666', mt: 1 }}>
-          💡 Om du inte ser alla dina kalenderevent, aktivera "Inkludera alla events"
+        <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-secondary)', mt: 1 }}>
+          Om du inte ser alla kalenderevent kan du aktivera "Inkludera alla events".
         </Typography>
       </Box>
       
@@ -940,7 +969,7 @@ export default function CompareCalendar({
           isLoading || 
           (propGroupId ? (!groupInfo || groupInfo.memberCount < 2) : [myToken, ...invitedTokens].filter(Boolean).length < 2)
         }
-        sx={{ px: 4, py: 1.2, fontWeight: 600 }}
+        sx={{ px: 4, py: 1.35, fontWeight: 700, borderRadius: 3, bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}
         size="large"
       >
         {isLoading ? (
@@ -950,22 +979,23 @@ export default function CompareCalendar({
           </>
         ) : (
           <>
-            {propGroupId ? '🔍 Jämför gruppkalendrar' : '🔍 Jämför kalendrar'}
+            {propGroupId ? 'Jämför gruppkalendrar' : 'Jämför kalendrar'}
             {includeAllEvents && ' (Alla events)'}
           </>
         )}
       </Button>
       
       {includeAllEvents && (
-        <Typography variant="caption" sx={{ display: 'block', color: '#f57c00', mt: 1 }}>
-          ⚠️ "Inkludera alla events" är aktiverat - även tentativa och transparenta events räknas som upptagna
+        <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-secondary)', mt: 1 }}>
+          "Inkludera alla events" är aktivt. Även tentativa och transparenta events räknas som upptagna.
         </Typography>
       )}
     </Paper>
   ), [
-    theme, 
+    theme,
     propGroupId, 
     groupInfo, 
+    user,
     userData,
     myToken, 
     invitedTokens, 
@@ -986,7 +1016,7 @@ export default function CompareCalendar({
     
     if (isLoading) {
       return (
-        <Paper sx={{ p: 3, mb: 3, borderRadius: 2, textAlign: 'center' }}>
+        <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, textAlign: 'center', border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
           <CircularProgress sx={{ mb: 2 }} />
           <Typography>Jämför kalendrar...</Typography>
           <Typography variant="caption" color="text.secondary">
@@ -1001,15 +1031,15 @@ export default function CompareCalendar({
     
     if (safeFutureSlots.length === 0) {
       return (
-        <Paper sx={{ p: 3, mb: 3, borderRadius: 2, textAlign: 'center', bgcolor: '#fff3e0' }}>
-          <Typography variant="h6" sx={{ mb: 2, color: '#f57c00' }}>
+        <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, textAlign: 'center', bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.06)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+          <Typography variant="h6" sx={{ mb: 2, color: 'var(--text)' }}>
             Inga gemensamma lediga tider
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Vi hittade inga tider där alla deltagare är lediga samtidigt.
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            💡 Försök utöka tidsintervallet eller justera arbetstider
+            Försök utöka tidsintervallet eller justera arbetstider.
           </Typography>
         </Paper>
       );
@@ -1030,12 +1060,12 @@ export default function CompareCalendar({
     }, {});
     
     return (
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#2e7d32' }}>
-          🎉 Gemensamma lediga tider ({safeFutureSlots.length})
+      <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+        <Typography variant="h5" sx={{ mb: 1.5, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
+          Gemensamma lediga tider ({safeFutureSlots.length})
         </Typography>
         
-        <Typography variant="body2" sx={{ mb: 3, color: '#666' }}>
+        <Typography variant="body2" sx={{ mb: 3, color: 'var(--text-secondary)' }}>
           Dessa tider passar alla deltagare ({meetingDuration} min möten):
         </Typography>
         
@@ -1048,13 +1078,13 @@ export default function CompareCalendar({
             return (
               <Box key={dateString}>
                 <Typography variant="subtitle1" sx={{ 
-                  fontWeight: 600, 
-                  color: '#1565c0', 
+                  fontWeight: 700, 
+                  color: 'var(--text)', 
                   mb: 2,
-                  borderBottom: '2px solid #e3f2fd',
+                  borderBottom: '1px solid var(--border)',
                   pb: 1
                 }}>
-                  {isToday ? '🔥 Idag' : isTomorrow ? '📅 Imorgon' : date.toLocaleDateString('sv-SE', { 
+                  {isToday ? 'Idag' : isTomorrow ? 'Imorgon' : date.toLocaleDateString('sv-SE', { 
                     weekday: 'long', 
                     month: 'long', 
                     day: 'numeric' 
@@ -1079,18 +1109,20 @@ export default function CompareCalendar({
                             minWidth: 200,
                             cursor: propGroupId ? 'pointer' : 'default',
                             '&:hover': propGroupId ? { 
-                              bgcolor: '#f0f7ff', 
+                              bgcolor: 'rgba(17,24,39,0.04)', 
                               transform: 'translateY(-2px)',
-                              boxShadow: '0 6px 20px rgba(0,0,0,0.1)'
+                              boxShadow: '0 16px 32px rgba(15,23,42,0.08)'
                             } : {},
-                            border: '1px solid #e3f2fd',
-                            borderLeft: '4px solid #2196f3',
+                            border: '1px solid rgba(17,24,39,0.06)',
+                            borderLeft: '3px solid rgba(17,24,39,0.18)',
                             transition: 'all 0.3s ease',
-                            bgcolor: '#fafbff'
+                            bgcolor: 'rgba(17,24,39,0.025)',
+                            boxShadow: 'none',
+                            borderRadius: 3
                           }}
                           onClick={propGroupId ? () => handleSuggest(slot) : undefined}
                         >
-                          <Typography variant="body1" sx={{ fontWeight: 600, color: '#1565c0', mb: 1 }}>
+                          <Typography variant="body1" sx={{ fontWeight: 800, color: 'var(--text)', mb: 1 }}>
                             {start.toLocaleTimeString('sv-SE', { 
                               hour: '2-digit', 
                               minute: '2-digit' 
@@ -1100,17 +1132,17 @@ export default function CompareCalendar({
                             })}
                           </Typography>
                           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                            ⏱️ {duration} minuter
+                            {duration} minuter
                           </Typography>
-                          <Typography variant="caption" color="success.main" sx={{ fontWeight: 500 }}>
-                            ✅ Alla lediga
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)' }}>
+                            Alla lediga
                           </Typography>
                           
                           {propGroupId && (
                             <Typography variant="caption" sx={{ 
                               display: 'block',
-                              color: '#1976d2', 
-                              fontWeight: 500,
+                              color: 'var(--text-secondary)', 
+                              fontWeight: 600,
                               mt: 1,
                               opacity: 0.8
                             }}>
@@ -1148,9 +1180,9 @@ export default function CompareCalendar({
     }
 
     return (
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
-          📋 Mötesförslag ({suggestions.length})
+      <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+        <Typography variant="h5" sx={{ mb: 2, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
+          Mötesförslag ({suggestions.length})
         </Typography>
         
         {suggestions.map(suggestion => {
@@ -1163,10 +1195,10 @@ export default function CompareCalendar({
           };
 
           return (
-            <Card key={suggestion.id} sx={{ p: 3, mb: 2, border: '2px solid #e3f2fd', borderRadius: 2 }}>
+            <Card key={suggestion.id} sx={{ p: 3, mb: 2, border: '1px solid rgba(17,24,39,0.06)', borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', boxShadow: 'none' }}>
               {/* ✅ TITEL OCH FÖRSLAGS INFO */}
               <Box sx={{ mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, color: '#1565c0', mb: 0.5 }}>
+                <Typography variant="h6" sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.5 }}>
                   {suggestion.title}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
@@ -1175,9 +1207,9 @@ export default function CompareCalendar({
               </Box>
 
               {/* ✅ TID OCH PLATS */}
-              <Box sx={{ mb: 2, p: 2, bgcolor: '#f8f9fa', borderRadius: 1 }}>
+              <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(255,255,255,0.56)', borderRadius: 2, border: '1px solid rgba(17,24,39,0.05)' }}>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  <strong>📅 Tid:</strong> {new Date(suggestion.start).toLocaleString('sv-SE', {
+                  <strong>Tid:</strong> {new Date(suggestion.start).toLocaleString('sv-SE', {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
@@ -1190,18 +1222,18 @@ export default function CompareCalendar({
                 </Typography>
                 {suggestion.withMeet ? (
                   <Typography variant="body2">
-                    <strong>📹 Möte:</strong> Google Meet kommer att skapas
+                    <strong>Möte:</strong> Google Meet kommer att skapas
                   </Typography>
                 ) : suggestion.location && (
                   <Typography variant="body2">
-                    <strong>📍 Plats:</strong> {suggestion.location}
+                    <strong>Plats:</strong> {suggestion.location}
                   </Typography>
                 )}
               </Box>
 
               {/* ✅ RÖSTRESULTAT */}
-              <Box sx={{ mb: 2, p: 2, bgcolor: '#f0f8ff', borderRadius: 1 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+              <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(255,255,255,0.56)', borderRadius: 2, border: '1px solid rgba(17,24,39,0.05)' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, color: 'var(--text)' }}>
                   Röstningsresultat:
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -1228,19 +1260,17 @@ export default function CompareCalendar({
                 <Box sx={{ display: 'flex', gap: 2 }}>
                   <Button
                     variant="contained"
-                    color="success"
                     onClick={() => voteSuggestion(suggestion.id, 'accepted')}
-                    sx={{ flex: 1 }}
+                    sx={{ flex: 1, bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}
                   >
-                    ✅ Acceptera
+                    Acceptera
                   </Button>
                   <Button
                     variant="outlined"
-                    color="error"
                     onClick={() => voteSuggestion(suggestion.id, 'rejected')}
-                    sx={{ flex: 1 }}
+                    sx={{ flex: 1, borderColor: 'var(--border)', color: 'var(--text)' }}
                   >
-                    ❌ Neka
+                    Neka
                   </Button>
                 </Box>
               )}
@@ -1280,7 +1310,7 @@ export default function CompareCalendar({
 
   // ✅ MAIN RETURN STATEMENT
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, sm: 3 } }}>
+    <Box sx={{ maxWidth: 1280, mx: 'auto', p: { xs: 2, sm: 3, lg: 4 } }}>
       {/* ✅ RENDER MOBILE OR DESKTOP VERSION */}
       {isMobile ? renderMobileComparisonForm() : renderComparisonForm()}
 
@@ -1302,9 +1332,9 @@ export default function CompareCalendar({
 
       {/* ✅ CALENDAR VIEW - HIDDEN ON MOBILE */}
       {hasSearched && futureSlots.length > 0 && !isMobile && (
-        <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1976d2' }}>
-            📅 Kalendervy
+        <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+          <Typography variant="h5" sx={{ mb: 2, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
+            Kalendervy
           </Typography>
           <Box sx={styles.calendar}>
             <Calendar
@@ -1336,8 +1366,17 @@ export default function CompareCalendar({
         maxWidth="sm"
         fullWidth
         fullScreen={isMobile} // Fullscreen on mobile
+        PaperProps={{
+          sx: {
+            borderRadius: isMobile ? 0 : 4,
+            border: '1px solid var(--border)',
+            boxShadow: '0 24px 60px rgba(15, 23, 42, 0.18)',
+            backdropFilter: 'blur(18px)',
+            background: 'rgba(255,255,255,0.94)'
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--text)' }}>
           Föreslå mötestid
           {isMobile && (
             <IconButton
@@ -1353,8 +1392,8 @@ export default function CompareCalendar({
         
         <Box sx={{ p: { xs: 2, sm: 3 } }}>
           {suggestDialog.slot && (
-            <Typography variant="body2" sx={{ mb: 2, p: 2, bgcolor: '#f0f8ff', borderRadius: 1 }}>
-              <strong>📅 Vald tid:</strong><br/>
+            <Typography variant="body2" sx={{ mb: 2, p: 2, bgcolor: 'rgba(17,24,39,0.03)', borderRadius: 2, border: '1px solid rgba(17,24,39,0.05)' }}>
+              <strong>Vald tid:</strong><br/>
               {new Date(suggestDialog.slot.start).toLocaleString('sv-SE')} - {new Date(suggestDialog.slot.end).toLocaleString('sv-SE')}
             </Typography>
           )}
@@ -1375,8 +1414,9 @@ export default function CompareCalendar({
               variant={withMeet ? 'contained' : 'outlined'}
               onClick={() => setWithMeet(!withMeet)}
               fullWidth
+              sx={withMeet ? { bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } } : { borderColor: 'var(--border)', color: 'var(--text)' }}
             >
-              {withMeet ? '📹 Google Meet' : '📍 Plats'}
+              {withMeet ? 'Google Meet' : 'Plats'}
             </Button>
           </Box>
           
@@ -1398,7 +1438,7 @@ export default function CompareCalendar({
             <Button onClick={() => setSuggestDialog({ open: false, slot: null })}>
               Avbryt
             </Button>
-            <Button onClick={confirmSuggest} variant="contained" color="primary">
+            <Button onClick={confirmSuggest} variant="contained" sx={{ bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}>
               Skicka förslag
             </Button>
           </DialogActions>
@@ -1410,7 +1450,7 @@ export default function CompareCalendar({
               onClick={confirmSuggest} 
               variant="contained" 
               fullWidth
-              sx={{ mb: 1 }}
+              sx={{ mb: 1, bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}
             >
               Skicka förslag
             </Button>

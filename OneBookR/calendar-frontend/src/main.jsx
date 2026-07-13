@@ -23,15 +23,31 @@ window.addEventListener('storage', (e) => {
   }
 });
 
-// Initialisera version-check för cache-busting
-versionCheck.init();
+if (import.meta.env.PROD) {
+  // Version checks and service workers are production-only.
+  // In development they can cache stale Vite assets and break optimized deps.
+  versionCheck.init();
 
-// Registrera Service Worker för offline-support och cache-kontroll
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(err => {
-      console.warn('Service Worker registration failed:', err);
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(err => {
+        console.warn('Service Worker registration failed:', err);
+      });
     });
+  }
+} else if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+      }
+    } catch (error) {
+      console.warn('Development cache cleanup failed:', error);
+    }
   });
 }
 

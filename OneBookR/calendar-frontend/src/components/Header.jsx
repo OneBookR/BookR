@@ -9,7 +9,8 @@ import {
   Menu, 
   MenuItem, 
   Avatar,
-  Chip
+  Chip,
+  Container
 } from '@mui/material';
 import { 
   AccountCircle, 
@@ -39,7 +40,10 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
   };
 
   const handleLogout = () => {
-    localStorage.clear();
+    // Rensa bara inställningar som inte är känsliga — session rensas av servern
+    localStorage.removeItem('bookr_contact_settings');
+    localStorage.removeItem('bookr_contacts');
+    localStorage.removeItem('leftMeetings');
     window.location.href = LOGOUT_URL;
   };
 
@@ -95,158 +99,183 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
       sx={{ 
         top: 0,
         zIndex: 1100,
-        background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-        boxShadow: '0 2px 12px rgba(99, 91, 255, 0.15)'
+        background: 'rgba(247, 247, 243, 0.82)',
+        color: 'var(--text)',
+        boxShadow: 'none',
+        borderBottom: '1px solid var(--border)',
+        backdropFilter: 'blur(22px)'
       }}
     >
-      <Toolbar sx={{ justifyContent: 'space-between', minHeight: 64 }}>
-        {/* ✅ LOGO OCH TITEL */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography 
-            variant="h6" 
-            sx={{ 
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontSize: 24,
-              letterSpacing: -0.5
-            }}
-            onClick={handleGoHome}
-          >
-            📅 BookR
-          </Typography>
-          
-          {isInGroup && (
-            <Chip
-              label="I grupp"
-              size="small"
-              sx={{
-                bgcolor: 'rgba(255,255,255,0.2)',
-                color: 'white',
-                fontWeight: 600,
-                fontSize: 11
-              }}
-            />
-          )}
-        </Box>
-
-        {/* ✅ MITT OMRÅDE - DESKTOP NAVIGATION + LÄMNA GRUPP KNAPP */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* ✅ LÄMNA GRUPP KNAPP - DESKTOP */}
-          {isInGroup && (
-            <Button
-              color="inherit"
-              onClick={handleLeaveGroup}
-              startIcon={<ExitToApp />}
+      <Container maxWidth="lg">
+        <Toolbar sx={{ justifyContent: 'space-between', minHeight: 72, px: '0 !important' }}>
+          {/* ✅ LOGO OCH TITEL */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography 
+              variant="h6" 
               sx={{ 
-                fontWeight: 500,
-                bgcolor: 'rgba(255,255,255,0.1)',
-                '&:hover': {
-                  bgcolor: 'rgba(255,255,255,0.2)'
-                },
-                display: { xs: 'none', md: 'flex' }
+                fontWeight: 800,
+                cursor: 'pointer',
+                fontSize: 24,
+                letterSpacing: '-0.06em'
+              }}
+              onClick={handleGoHome}
+            >
+              BookR
+            </Typography>
+            
+            {isInGroup && (
+              <Chip
+                label="I grupp"
+                size="small"
+                sx={{
+                  bgcolor: 'rgba(17,24,39,0.05)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
+                  fontWeight: 700,
+                  fontSize: 11
+                }}
+              />
+            )}
+          </Box>
+
+          {/* ✅ MITT OMRÅDE - DESKTOP NAVIGATION + LÄMNA GRUPP KNAPP */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* ✅ LÄMNA GRUPP KNAPP - DESKTOP */}
+            {isInGroup && (
+              <Button
+                color="inherit"
+                onClick={handleLeaveGroup}
+                startIcon={<ExitToApp />}
+                sx={{ 
+                  fontWeight: 700,
+                  borderRadius: 999,
+                  border: '1px solid var(--border)',
+                  bgcolor: 'rgba(255,255,255,0.62)',
+                  '&:hover': {
+                    bgcolor: 'rgba(17,24,39,0.04)'
+                  },
+                  display: { xs: 'none', md: 'flex' }
+                }}
+              >
+                Lämna grupp
+              </Button>
+            )}
+
+            {/* ✅ NAVIGATION KNAPPAR (DESKTOP) - ENDAST OM INTE I GRUPP */}
+            {!isInGroup && (
+              <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
+                <Button 
+                  color="inherit" 
+                  onClick={() => onNavigate?.('1v1')}
+                  startIcon={<Group />}
+                  sx={{
+                    fontWeight: 700,
+                    borderRadius: 999,
+                    px: 1.75,
+                    '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' }
+                  }}
+                >
+                  1v1 Möte
+                </Button>
+                <Button 
+                  color="inherit" 
+                  onClick={() => onNavigate?.('group')}
+                  startIcon={<Group />}
+                  sx={{
+                    fontWeight: 700,
+                    borderRadius: 999,
+                    px: 1.75,
+                    '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' }
+                  }}
+                >
+                  Gruppmöte
+                </Button>
+                <Button 
+                  color="inherit" 
+                  onClick={() => onNavigate?.('task')}
+                  startIcon={<Task />}
+                  sx={{
+                    fontWeight: 700,
+                    borderRadius: 999,
+                    px: 1.75,
+                    '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' }
+                  }}
+                >
+                  Uppgift
+                </Button>
+              </Box>
+            )}
+          </Box>
+
+          {/* ✅ USER MENU */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                display: { xs: 'none', sm: 'block' },
+                fontWeight: 700,
+                color: 'var(--text-secondary)'
               }}
             >
-              Lämna grupp
-            </Button>
-          )}
-
-          {/* ✅ NAVIGATION KNAPPAR (DESKTOP) - ENDAST OM INTE I GRUPP */}
-          {!isInGroup && (
-            <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
-              <Button 
-                color="inherit" 
-                onClick={() => onNavigate?.('1v1')}
-                startIcon={<Group />}
-                sx={{ fontWeight: 500 }}
-              >
-                1v1 Möte
-              </Button>
-              <Button 
-                color="inherit" 
-                onClick={() => onNavigate?.('group')}
-                startIcon={<Group />}
-                sx={{ fontWeight: 500 }}
-              >
-                Gruppmöte
-              </Button>
-              <Button 
-                color="inherit" 
-                onClick={() => onNavigate?.('task')}
-                startIcon={<Task />}
-                sx={{ fontWeight: 500 }}
-              >
-                Uppgift
-              </Button>
-            </Box>
-          )}
-        </Box>
-
-        {/* ✅ USER MENU */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography 
-            variant="body2" 
-            sx={{ 
-              display: { xs: 'none', sm: 'block' },
-              fontWeight: 500,
-              opacity: 0.9
-            }}
-          >
-            {getUserDisplayName()}
-          </Typography>
-          
-          <IconButton
-            onClick={handleMenuOpen}
-            sx={{ 
-              color: 'white',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
-            }}
-          >
-            <Avatar sx={{ width: 32, height: 32, bgcolor: 'rgba(255,255,255,0.2)' }}>
-              <AccountCircle />
-            </Avatar>
-          </IconButton>
-
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleMenuClose}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-            sx={{ mt: 1 }}
-          >
-            <MenuItem disabled sx={{ opacity: 0.7 }}>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {getUserDisplayName()}
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#666' }}>
-                  {getUserEmail()}
-                </Typography>
-              </Box>
-            </MenuItem>
+              {getUserDisplayName()}
+            </Typography>
             
-            {!isInGroup && (
-              <MenuItem onClick={handleGoHome}>
-                <Home sx={{ mr: 1 }} />
-                Hem
+            <IconButton
+              onClick={handleMenuOpen}
+              sx={{ 
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
+                bgcolor: 'rgba(255,255,255,0.56)',
+                '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' }
+              }}
+            >
+              <Avatar sx={{ width: 32, height: 32, bgcolor: 'rgba(17,24,39,0.08)', color: 'var(--text)' }}>
+                <AccountCircle />
+              </Avatar>
+            </IconButton>
+
+            <Menu
+              anchorEl={anchorEl}
+              open={Boolean(anchorEl)}
+              onClose={handleMenuClose}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              sx={{ mt: 1 }}
+            >
+              <MenuItem disabled sx={{ opacity: 0.8 }}>
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {getUserDisplayName()}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                    {getUserEmail()}
+                  </Typography>
+                </Box>
               </MenuItem>
-            )}
-            
-            {/* ✅ LÄMNA GRUPP I MOBIL MENU */}
-            {isInGroup && (
-              <MenuItem onClick={handleLeaveGroup}>
-                <ExitToApp sx={{ mr: 1 }} />
-                Lämna grupp
+              
+              {!isInGroup && (
+                <MenuItem onClick={handleGoHome}>
+                  <Home sx={{ mr: 1 }} />
+                  Hem
+                </MenuItem>
+              )}
+              
+              {/* ✅ LÄMNA GRUPP I MOBIL MENU */}
+              {isInGroup && (
+                <MenuItem onClick={handleLeaveGroup}>
+                  <ExitToApp sx={{ mr: 1 }} />
+                  Lämna grupp
+                </MenuItem>
+              )}
+              
+              <MenuItem onClick={handleLogout}>
+                <Logout sx={{ mr: 1 }} />
+                Logga ut
               </MenuItem>
-            )}
-            
-            <MenuItem onClick={handleLogout}>
-              <Logout sx={{ mr: 1 }} />
-              Logga ut
-            </MenuItem>
-          </Menu>
-        </Box>
-      </Toolbar>
+            </Menu>
+          </Box>
+        </Toolbar>
+      </Container>
     </AppBar>
   );
 }

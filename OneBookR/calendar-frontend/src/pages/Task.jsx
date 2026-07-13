@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, TextField, Button, Paper, Grid, Alert, Container } from '@mui/material';
+import { Box, Typography, TextField, Button, Paper, Alert, Container, Chip } from '@mui/material';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
-
-import LogoutIcon from '@mui/icons-material/Logout';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { apiRequest } from '../utils/apiConfig.js';
 
 const localizer = momentLocalizer(moment);
 
@@ -23,57 +21,28 @@ const Task = ({ user, onBack }) => {
   const [taskSlots, setTaskSlots] = useState([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [tokenValidated, setTokenValidated] = useState(false);
-  const [isValidatingToken, setIsValidatingToken] = useState(true);
-
-  // Validera token vid start
-  useEffect(() => {
-    // NYTT: Provider-medveten tokenvalidering (Google/Microsoft)
-    setIsValidatingToken(true);
-    const token = user?.accessToken;
-    if (!token) {
-      setTokenValidated(false);
-      setIsValidatingToken(false);
-      return;
-    }
-    const provider = user?.provider || ((user?.mail || user?.userPrincipalName) ? 'microsoft' : 'google');
-    const testUrl = provider === 'microsoft'
-      ? 'https://graph.microsoft.com/v1.0/me'
-      : 'https://www.googleapis.com/calendar/v3/users/me/settings/timezone';
-
-    fetch(testUrl, { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => setTokenValidated(res.ok))
-      .catch(() => setTokenValidated(false))
-      .finally(() => setIsValidatingToken(false));
-  }, [user?.accessToken]);
 
   useEffect(() => {
-    if (user && user.accessToken && tokenValidated) {
+    if (user?.email) {
       loadCalendarEvents();
     }
-  }, [user, tokenValidated]);
+  }, [user?.email]);
 
   const loadCalendarEvents = async () => {
     try {
       const now = new Date();
       const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-      
-      const response = await fetch('https://www.onebookr.se/api/calendar/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: user.accessToken,
-          timeMin: now.toISOString(),
-          timeMax: twoWeeksFromNow.toISOString()
-        })
-      });
-      
+
+      const response = await apiRequest(
+        `/api/calendar/events?start=${encodeURIComponent(now.toISOString())}&end=${encodeURIComponent(twoWeeksFromNow.toISOString())}`
+      );
+
       const data = await response.json();
       if (response.ok) {
-        const events = data.events.map(event => ({
-          title: event.title || 'Upptagen',
-          start: new Date(event.start),
-          end: new Date(event.end),
+        const events = (data.events || []).map(event => ({
+          title: 'Upptagen',
+          start: new Date(event.start?.dateTime || event.start),
+          end: new Date(event.end?.dateTime || event.end),
           resource: 'busy'
         }));
         setCalendarEvents(events);
@@ -93,11 +62,9 @@ const Task = ({ user, onBack }) => {
     setMessage('');
 
     try {
-      const response = await fetch('https://www.onebookr.se/api/task/schedule', {
+      const response = await apiRequest('/api/task/schedule', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token: user.accessToken,
           taskName: taskData.name,
           estimatedHours: parseFloat(taskData.estimatedHours),
           workStartHour: parseInt(taskData.workStartHour),
@@ -111,19 +78,30 @@ const Task = ({ user, onBack }) => {
       const data = await response.json();
       
       if (response.ok) {
-        const slots = data.taskSlots.map(slot => ({
+        const slots = (data.taskSlots || []).map(slot => ({
           title: `${taskData.name} (${slot.duration}h)`,
           start: new Date(slot.start),
           end: new Date(slot.end),
-          resource: 'task'
+          resource: 'task',
+          duration: slot.duration
         }));
+        const scheduledHours = slots.reduce((total, slot) => total + (Number(slot.duration) || 0), 0);
         
         setTaskSlots(slots);
-        setMessage(`Uppgiften kan slutföras ${moment(slots[slots.length - 1].end).format('DD/MM YYYY HH:mm')}`);
+
+        if (slots.length === 0) {
+          setMessage('Inga lediga arbetspass hittades i det valda intervallet. Justera arbetstider eller sessionslängd.');
+        } else if (data.scheduled === false && data.remainingHours > 0) {
+          setMessage(`BookR planerade ${scheduledHours.toFixed(2)} av ${Number(taskData.estimatedHours).toFixed(2)} timmar. ${data.remainingHours.toFixed(2)} timmar återstår att placera.`);
+        } else {
+          setMessage(`Uppgiften kan slutföras ${moment(slots[slots.length - 1].end).format('DD/MM YYYY HH:mm')}`);
+        }
       } else {
+        setTaskSlots([]);
         setMessage('Fel: ' + data.error);
       }
     } catch (error) {
+      setTaskSlots([]);
       setMessage('Fel vid schemaläggning');
     } finally {
       setLoading(false);
@@ -132,35 +110,23 @@ const Task = ({ user, onBack }) => {
 
   const addToGoogleCalendar = async () => {
     if (taskSlots.length === 0) return;
-    
+
     setLoading(true);
     try {
       for (const slot of taskSlots) {
-        const event = {
-          summary: slot.title,
-          description: taskData.description || `Arbete med uppgift: ${taskData.name}`,
-          start: {
-            dateTime: slot.start.toISOString(),
-            timeZone: 'Europe/Stockholm'
-          },
-          end: {
-            dateTime: slot.end.toISOString(),
-            timeZone: 'Europe/Stockholm'
-          }
-        };
-
-        await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events`, {
+        await apiRequest('/api/calendar/events', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${user.accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(event)
+          body: JSON.stringify({
+            title: slot.title,
+            description: taskData.description || `Arbete med uppgift: ${taskData.name}`,
+            start: slot.start.toISOString(),
+            end: slot.end.toISOString()
+          })
         });
       }
-      
-      setMessage(`${taskSlots.length} händelser har lagts till i din Google Kalender!`);
-      loadCalendarEvents(); // Uppdatera kalendern
+
+      setMessage(`${taskSlots.length} händelser har lagts till i din kalender!`);
+      loadCalendarEvents();
     } catch (error) {
       setMessage('Fel vid tillägg i kalender: ' + error.message);
     } finally {
@@ -170,126 +136,126 @@ const Task = ({ user, onBack }) => {
 
   const allEvents = [...calendarEvents, ...taskSlots];
 
-  // Visa laddningsskärm under token-validering
-  if (isValidatingToken) {
-    return (
-      <>
-        <Box sx={{
-          background: 'rgba(255,255,255,0.98)',
-          borderRadius: { xs: 2, sm: 3 },
-          p: { xs: 3, sm: 4 },
-          mb: { xs: 4, sm: 6 },
-          mt: { xs: 8, sm: 12 },
-          mx: 'auto',
-          width: { xs: '100%', sm: '95vw', md: 1500 },
-          maxWidth: '95vw',
-          textAlign: 'center',
-          boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-          border: '1.5px solid #e3e8ee'
-        }}>
-          <Typography variant="h5" gutterBottom sx={{ color: '#0a2540', mb: 2 }}>
-            Validerar din inloggning...
-          </Typography>
-          <Typography variant="body1" sx={{ color: '#666' }}>
-            Detta tar bara några sekunder
-          </Typography>
-        </Box>
-      </>
-    );
-  }
+  const glassCardSx = {
+    borderRadius: 4,
+    border: '1px solid var(--border)',
+    bgcolor: 'rgba(255,255,255,0.78)',
+    boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)',
+    backdropFilter: 'blur(18px)'
+  };
 
-  // Visa meddelande om token är ogiltig
-  if (!tokenValidated) {
-    return (
-      <>
-        <Box sx={{ 
-          background: 'rgba(255,255,255,0.98)',
-          borderRadius: { xs: 2, sm: 3 },
-          p: { xs: 3, sm: 4 },
-          mb: { xs: 4, sm: 6 },
-          mt: { xs: 8, sm: 12 },
-          mx: 'auto',
-          width: { xs: '100%', sm: '95vw', md: 1500 },
-          maxWidth: '95vw',
-          textAlign: 'center',
-          bgcolor: '#fff3e0',
-          border: '2px solid #ff9800'
-        }}>
-          <Typography variant="h5" gutterBottom sx={{ color: '#bf360c', mb: 2 }}>
-            ⚠️ Din session har gått ut
-          </Typography>
-          <Typography variant="body1" sx={{ color: '#666', mb: 3 }}>
-            För att använda Task Scheduler behöver du logga in igen.
-            Du omdirigeras automatiskt...
-          </Typography>
-          <Typography variant="caption" sx={{ color: '#999' }}>
-            {/* ✅ DYNAMIC LOGOUT LINK */}
-            Om inget händer inom några sekunder, klicka <a 
-              href={process.env.NODE_ENV === 'development' ? '/auth/logout' : 'https://www.onebookr.se/auth/logout'} 
-              style={{ color: '#1976d2' }}
-            >här</a>
-          </Typography>
-        </Box>
-      </>
-    );
-  }
+  const sectionCardSx = {
+    p: { xs: 3, md: 4 },
+    ...glassCardSx
+  };
+
+  const fieldSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 3,
+      bgcolor: 'rgba(255,255,255,0.72)',
+      '& fieldset': {
+        borderColor: 'rgba(17,24,39,0.08)'
+      },
+      '&:hover fieldset': {
+        borderColor: 'rgba(17,24,39,0.16)'
+      },
+      '&.Mui-focused fieldset': {
+        borderColor: 'var(--text)'
+      }
+    },
+    '& .MuiInputLabel-root.Mui-focused': {
+      color: 'var(--text)'
+    }
+  };
+
+  const primaryButtonSx = {
+    py: 1.5,
+    borderRadius: 3,
+    bgcolor: 'var(--text)',
+    color: 'var(--surface-strong)',
+    fontWeight: 700,
+    boxShadow: 'none',
+    textTransform: 'none',
+    '&:hover': {
+      bgcolor: '#000000',
+      boxShadow: 'none'
+    }
+  };
+
+  const secondaryButtonSx = {
+    py: 1.5,
+    borderRadius: 3,
+    borderColor: 'rgba(17,24,39,0.08)',
+    color: 'var(--text)',
+    fontWeight: 700,
+    textTransform: 'none',
+    '&:hover': {
+      borderColor: 'rgba(17,24,39,0.16)',
+      bgcolor: 'rgba(17,24,39,0.03)'
+    }
+  };
 
   return (
-    <>
-      {/* Clean Banner */}
-      <Box sx={{
-        background: 'rgba(255,255,255,0.98)',
-        borderRadius: { xs: 2, sm: 3 },
-        p: { xs: 3, sm: 4 },
-        mb: { xs: 4, sm: 6 },
-        mt: { xs: 8, sm: 12 },
-        mx: 'auto',
-        width: { xs: '100%', sm: '95vw', md: 1500 },
-        maxWidth: '95vw',
-        textAlign: 'center',
-        boxShadow: '0 8px 40px 0 rgba(99,91,255,0.10), 0 1.5px 6px 0 rgba(60,64,67,.06)',
-        border: '1.5px solid #e3e8ee'
-      }}>
+    <Container maxWidth="xl" sx={{ mt: { xs: 11, md: 13 }, mb: 6, px: { xs: 2, sm: 3, lg: 4 } }}>
+      <Paper elevation={0} sx={{ ...sectionCardSx, position: 'relative', overflow: 'hidden', mb: 4 }}>
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            background: 'radial-gradient(circle at top left, rgba(17,24,39,0.08), transparent 34%), radial-gradient(circle at bottom right, rgba(17,24,39,0.06), transparent 26%)',
+            pointerEvents: 'none'
+          }}
+        />
         <Box sx={{ position: 'relative', zIndex: 1 }}>
-          <Typography variant="h3" sx={{ 
-            fontWeight: 700,
-            letterSpacing: -1.5,
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-            color: '#0a2540',
-            mb: 1,
-            fontSize: { xs: 24, sm: 28, md: 36 },
-            lineHeight: 1.08
-          }}>
-            Task Scheduler
+          <Chip
+            label="Task Flow"
+            sx={{
+              mb: 2,
+              bgcolor: 'rgba(17,24,39,0.04)',
+              border: '1px solid rgba(17,24,39,0.06)',
+              color: 'var(--text)',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase'
+            }}
+          />
+          <Typography
+            variant="h2"
+            sx={{
+              fontSize: { xs: '2.2rem', md: '3.8rem' },
+              lineHeight: 0.98,
+              letterSpacing: '-0.06em',
+              fontWeight: 800,
+              color: 'var(--text)',
+              maxWidth: 760
+            }}
+          >
+            Planera uppgifter runt kalendern utan att lämna BookR-flödet.
           </Typography>
-          <Typography variant="h6" sx={{ 
-            color: '#425466',
-            fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif",
-            fontWeight: 400,
-            fontSize: { xs: 14, sm: 16, md: 18 },
-            lineHeight: 1.4,
-            letterSpacing: -0.5
-          }}>
-            Schemalägg uppgifter automatiskt baserat på din kalender
+          <Typography
+            variant="h6"
+            sx={{
+              mt: 3,
+              maxWidth: 720,
+              color: 'var(--text-secondary)',
+              fontWeight: 500,
+              lineHeight: 1.6,
+              fontSize: { xs: '1rem', md: '1.15rem' }
+            }}
+          >
+            Ange omfattning, arbetstider och sessionslängd så lägger BookR fram realistiska arbetsblock direkt ovanpå din befintliga kalender.
           </Typography>
         </Box>
-      </Box>
-      
-      <Box sx={{ display: { xs: 'block', md: 'flex' }, height: { xs: 'auto', md: 'calc(100vh - 200px)' }, mt: 0 }}>
-        {/* Left sidebar for inputs */}
-        <Box sx={{ 
-          width: { xs: '100%', md: 380 }, 
-          flexShrink: 0, 
-          bgcolor: '#fafbfc', 
-          borderRight: { xs: 'none', md: '1px solid #e8eaed' },
-          borderBottom: { xs: '1px solid #e8eaed', md: 'none' },
-          overflow: 'auto',
-          boxShadow: { xs: '0 2px 8px rgba(60,64,67,.08)', md: '2px 0 8px rgba(60,64,67,.08)' }
-        }}>
-          <Box sx={{ p: { xs: 2, sm: 3 }, overflow: 'auto' }}>
-            <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: '#1a73e8', fontSize: { xs: 18, sm: 20 } }}>
-              📅 Skapa uppgift
-            </Typography>
+      </Paper>
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '380px minmax(0, 1fr)' }, gap: 3, alignItems: 'start' }}>
+        <Paper elevation={0} sx={{ ...sectionCardSx, position: { xl: 'sticky' }, top: { xl: 112 } }}>
+          <Typography variant="h5" sx={{ mb: 1, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--text)' }}>
+            Skapa uppgift
+          </Typography>
+          <Typography sx={{ mb: 3, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+            Fyll i ramen för uppgiften så räknar BookR ut fokuserade arbetspass som går att genomföra i din verkliga vecka.
+          </Typography>
 
             <TextField
               fullWidth
@@ -297,15 +263,7 @@ const Task = ({ user, onBack }) => {
               value={taskData.name}
               onChange={(e) => setTaskData({...taskData, name: e.target.value})}
               required
-              sx={{
-                mb: 2,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  bgcolor: 'white',
-                  '&:hover fieldset': { borderColor: '#635bff' },
-                  '&.Mui-focused fieldset': { borderColor: '#635bff' }
-                }
-              }}
+              sx={{ mb: 2, ...fieldSx }}
             />
             
             <TextField
@@ -315,15 +273,7 @@ const Task = ({ user, onBack }) => {
               onChange={(e) => setTaskData({...taskData, description: e.target.value})}
               multiline
               rows={2}
-              sx={{
-                mb: 2,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  bgcolor: 'white',
-                  '&:hover fieldset': { borderColor: '#635bff' },
-                  '&.Mui-focused fieldset': { borderColor: '#635bff' }
-                }
-              }}
+              sx={{ mb: 2, ...fieldSx }}
             />
             
             <TextField
@@ -334,18 +284,11 @@ const Task = ({ user, onBack }) => {
               onChange={(e) => setTaskData({...taskData, estimatedHours: e.target.value})}
               required
               inputProps={{ min: 0.5, step: 0.5 }}
-              sx={{
-                mb: 2,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  bgcolor: 'white',
-                  '&:hover fieldset': { borderColor: '#635bff' },
-                  '&.Mui-focused fieldset': { borderColor: '#635bff' }
-                }
-              }}
+              sx={{ mb: 2, ...fieldSx }}
             />
             
-            <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
+            <Box sx={{ p: 2, mb: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--text)', fontWeight: 800 }}>
               Arbetstider
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
@@ -355,15 +298,7 @@ const Task = ({ user, onBack }) => {
                 value={taskData.workStartHour}
                 onChange={(e) => setTaskData({...taskData, workStartHour: e.target.value})}
                 inputProps={{ min: 0, max: 23 }}
-                sx={{ 
-                  flex: 1,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 2,
-                    bgcolor: 'white',
-                    '&:hover fieldset': { borderColor: '#635bff' },
-                    '&.Mui-focused fieldset': { borderColor: '#635bff' }
-                  }
-                }}
+                sx={{ flex: 1, ...fieldSx }}
               />
               <TextField
                 label="Till"
@@ -371,19 +306,11 @@ const Task = ({ user, onBack }) => {
                 value={taskData.workEndHour}
                 onChange={(e) => setTaskData({...taskData, workEndHour: e.target.value})}
                 inputProps={{ min: 0, max: 23 }}
-                sx={{ 
-                  flex: 1,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 2,
-                    bgcolor: 'white',
-                    '&:hover fieldset': { borderColor: '#635bff' },
-                    '&.Mui-focused fieldset': { borderColor: '#635bff' }
-                  }
-                }}
+                sx={{ flex: 1, ...fieldSx }}
               />
             </Box>
             
-            <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--text)', fontWeight: 800 }}>
               Sessionslängd
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
@@ -393,15 +320,7 @@ const Task = ({ user, onBack }) => {
                 value={taskData.minSessionHours}
                 onChange={(e) => setTaskData({...taskData, minSessionHours: e.target.value})}
                 inputProps={{ min: 0.5, step: 0.5 }}
-                sx={{ 
-                  flex: 1,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 2,
-                    bgcolor: 'white',
-                    '&:hover fieldset': { borderColor: '#635bff' },
-                    '&.Mui-focused fieldset': { borderColor: '#635bff' }
-                  }
-                }}
+                sx={{ flex: 1, ...fieldSx }}
               />
               <TextField
                 label="Max (h)"
@@ -409,16 +328,9 @@ const Task = ({ user, onBack }) => {
                 value={taskData.maxSessionHours}
                 onChange={(e) => setTaskData({...taskData, maxSessionHours: e.target.value})}
                 inputProps={{ min: 0.5, step: 0.5 }}
-                sx={{ 
-                  flex: 1,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 2,
-                    bgcolor: 'white',
-                    '&:hover fieldset': { borderColor: '#635bff' },
-                    '&.Mui-focused fieldset': { borderColor: '#635bff' }
-                  }
-                }}
+                sx={{ flex: 1, ...fieldSx }}
               />
+            </Box>
             </Box>
             
             <TextField
@@ -429,15 +341,7 @@ const Task = ({ user, onBack }) => {
               onChange={(e) => setTaskData({...taskData, breakMinutes: e.target.value})}
               inputProps={{ min: 0, step: 5 }}
               helperText="Minuter vila mellan arbetspassen"
-              sx={{
-                mb: 3,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  bgcolor: 'white',
-                  '&:hover fieldset': { borderColor: '#635bff' },
-                  '&.Mui-focused fieldset': { borderColor: '#635bff' }
-                }
-              }}
+              sx={{ mb: 3, ...fieldSx }}
             />
             
             <Button
@@ -445,16 +349,7 @@ const Task = ({ user, onBack }) => {
               fullWidth
               onClick={findTaskTime}
               disabled={loading}
-              sx={{ 
-                py: 1.5,
-                borderRadius: 2,
-                background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%)',
-                fontWeight: 600,
-                mb: taskSlots.length > 0 ? 2 : 0,
-                '&:hover': {
-                  background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%)',
-                }
-              }}
+              sx={{ ...primaryButtonSx, mb: taskSlots.length > 0 ? 2 : 0 }}
             >
               {loading ? 'Söker tid...' : 'Hitta tid'}
             </Button>
@@ -465,76 +360,73 @@ const Task = ({ user, onBack }) => {
                 fullWidth
                 onClick={addToGoogleCalendar}
                 disabled={loading}
-                sx={{ 
-                  py: 1.5,
-                  borderRadius: 2,
-                  borderColor: '#4caf50',
-                  color: '#4caf50',
-                  fontWeight: 600,
-                  mb: 2,
-                  '&:hover': {
-                    borderColor: '#45a049',
-                    color: '#45a049',
-                    bgcolor: 'rgba(76, 175, 80, 0.05)'
-                  }
-                }}
+                sx={{ ...secondaryButtonSx, mb: 2 }}
               >
-                📅 Lägg till i Kalender
+                Lägg till i kalender
               </Button>
             )}
             
             {message && (
               <Alert 
                 severity={message.includes('Fel') ? 'error' : 'success'} 
-                sx={{ 
-                  borderRadius: 2
-                }}
+                sx={{ borderRadius: 3 }}
               >
                 {message}
               </Alert>
             )}
-            
 
-            
-          </Box>
-        </Box>
-        
-        {/* Full-width calendar */}
-        <Box sx={{ flex: 1, bgcolor: '#f8f9fa', display: 'flex', flexDirection: 'column', minHeight: { xs: '400px', md: 'auto' } }}>
-          <Box sx={{ p: { xs: 2, sm: 3 }, bgcolor: 'white', borderBottom: '1px solid #e8eaed' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, color: '#202124', fontSize: { xs: 16, sm: 18 } }}>
-              📅 Din kalender med föreslagna tider
+          {taskSlots.length > 0 && (
+            <Box sx={{ mt: 3, p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.75 }}>
+                Snabbstatus
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                {taskSlots.length} arbetspass föreslagna för {taskData.name || 'uppgiften'}.
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                Sista blocket avslutas {taskSlots.length > 0 ? moment(taskSlots[taskSlots.length - 1].end).format('DD/MM YYYY HH:mm') : '-'}.
+              </Typography>
+            </Box>
+          )}
+        </Paper>
+
+        <Paper elevation={0} sx={{ ...sectionCardSx, minHeight: { xs: 520, lg: 760 }, display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em', mb: 1 }}>
+              Din kalender med föreslagna tider
+            </Typography>
+            <Typography sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+              Röda block visar upptagna tider. Gröna block visar var uppgiften kan genomföras utan att krocka med övriga åtaganden.
             </Typography>
           </Box>
           
           <Box sx={{ 
             flex: 1,
-            p: { xs: 2, sm: 3 },
             '& .rbc-calendar, .rbc-time-view, .rbc-agenda-view, .rbc-month-view': {
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
-              background: '#f7f9fb',
-              borderRadius: '10px',
-              border: '1px solid #e0e3e7',
-              boxShadow: '0 2px 8px 0 rgba(60,64,67,.06)',
-              color: '#000'
+              background: 'rgba(255,255,255,0.82)',
+              borderRadius: '18px',
+              border: '1px solid var(--border)',
+              boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)',
+              color: 'var(--text)'
             },
             '& .rbc-toolbar': {
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
-              background: '#f1f3f6',
-              borderBottom: '1px solid #e0e3e7',
-              borderRadius: '10px 10px 0 0',
+              background: 'rgba(17,24,39,0.03)',
+              borderBottom: '1px solid rgba(17,24,39,0.06)',
+              borderRadius: '18px 18px 0 0',
               padding: '10px 16px',
               display: 'flex',
               flexWrap: 'wrap',
               gap: '8px',
               alignItems: 'center',
-              color: '#000'
+              color: 'var(--text)'
             },
             '& .rbc-toolbar .rbc-toolbar-label': {
               marginRight: '16px',
               fontSize: '1.05rem',
-              fontWeight: 400,
-              color: '#1976d2',
+              fontWeight: 700,
+              color: 'var(--text)',
               letterSpacing: '-0.5px',
               padding: '0 8px'
             },
@@ -542,78 +434,83 @@ const Task = ({ user, onBack }) => {
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
               fontSize: '1.01rem',
               borderRadius: '999px !important',
-              border: 'none !important',
-              background: 'linear-gradient(90deg, #635bff 0%, #6c47ff 100%) !important',
-              color: '#fff !important',
+              border: '1px solid rgba(17,24,39,0.08) !important',
+              background: 'rgba(255,255,255,0.86) !important',
+              color: 'var(--text) !important',
               marginRight: '8px !important',
               marginBottom: '2px !important',
               padding: '7px 18px !important',
-              fontWeight: '600 !important',
-              boxShadow: '0 2px 8px 0 rgba(99,91,255,0.13) !important',
+              fontWeight: '700 !important',
+              boxShadow: 'none !important',
               transition: 'background 0.2s, box-shadow 0.2s, transform 0.1s !important',
               outline: 'none !important',
-              borderWidth: '0 !important'
+              borderWidth: '1px !important'
             },
             '& .rbc-btn-group button:hover': {
-              background: 'linear-gradient(90deg, #7a5af8 0%, #635bff 100%) !important',
-              color: '#fff !important',
-              boxShadow: '0 0 0 4px #e9e5ff, 0 8px 24px 0 rgba(99,91,255,0.18) !important',
-              transform: 'scale(1.03) !important'
+              background: 'rgba(17,24,39,0.05) !important',
+              color: 'var(--text) !important',
+              boxShadow: 'none !important',
+              transform: 'scale(1.01) !important'
+            },
+            '& .rbc-btn-group button.rbc-active': {
+              background: 'var(--text) !important',
+              color: 'var(--surface-strong) !important',
+              borderColor: 'var(--text) !important'
             },
             '& .rbc-header': {
-              background: '#f1f3f6',
-              color: '#000',
-              fontWeight: 400,
+              background: 'rgba(17,24,39,0.03)',
+              color: 'var(--text)',
+              fontWeight: 700,
               fontSize: '0.98rem',
-              borderBottom: '1px solid #e0e3e7',
+              borderBottom: '1px solid rgba(17,24,39,0.06)',
               padding: '7px 0'
             },
             '& .rbc-today': {
-              background: '#fffde7 !important',
-              borderBottom: '2px solid #1976d2'
+              background: 'rgba(17,24,39,0.025) !important',
+              borderBottom: '2px solid rgba(17,24,39,0.14)'
             },
             '& .rbc-event': {
-              backgroundColor: '#e3f2fd !important',
-              color: '#1976d2 !important',
-              border: '1px solid #1976d2 !important',
+              backgroundColor: 'rgba(180,35,24,0.12) !important',
+              color: '#8f2018 !important',
+              border: '1px solid rgba(180,35,24,0.18) !important',
               borderRadius: '4px !important',
               fontSize: '12px !important',
-              fontWeight: '500 !important',
+              fontWeight: '600 !important',
               padding: '2px 4px !important'
             },
             '& .rbc-event:hover': {
-              backgroundColor: '#bbdefb !important'
+              backgroundColor: 'rgba(180,35,24,0.18) !important'
             },
             '& .task-event': {
-              backgroundColor: '#c8e6c9 !important',
-              color: '#2e7d32 !important',
-              border: '2px solid #4caf50 !important',
+              backgroundColor: 'rgba(31,122,77,0.14) !important',
+              color: '#1f7a4d !important',
+              border: '2px solid rgba(31,122,77,0.28) !important',
               fontWeight: '600 !important'
             },
             '& .task-event:hover': {
-              backgroundColor: '#a5d6a7 !important'
+              backgroundColor: 'rgba(31,122,77,0.2) !important'
             },
             '& .rbc-time-content': {
-              background: '#f7f9fb',
-              borderRadius: '0 0 10px 10px'
+              background: 'rgba(255,255,255,0.82)',
+              borderRadius: '0 0 18px 18px'
             },
             '& .rbc-time-header-content': {
-              background: '#f1f3f6'
+              background: 'rgba(17,24,39,0.03)'
             },
             '& .rbc-time-slot': {
               minHeight: '28px',
               position: 'relative',
-              borderColor: '#e0e3e7'
+              borderColor: 'rgba(17,24,39,0.06)'
             },
             '& .rbc-time-gutter, .rbc-time-header-gutter': {
-              background: '#f1f3f6',
-              color: '#000'
+              background: 'rgba(17,24,39,0.03)',
+              color: 'var(--text)'
             },
             '& .rbc-timeslot-group': {
-              borderBottom: '1px solid #e0e3e7'
+              borderBottom: '1px solid rgba(17,24,39,0.06)'
             },
             '& .rbc-day-slot .rbc-time-slot': {
-              borderTop: '1px solid #e0e3e7'
+              borderTop: '1px solid rgba(17,24,39,0.06)'
             }
           }}>
             <Calendar
@@ -627,9 +524,9 @@ const Task = ({ user, onBack }) => {
                   return {
                     className: 'task-event',
                     style: {
-                      backgroundColor: '#c8e6c9 !important',
-                      color: '#2e7d32 !important',
-                      border: '2px solid #4caf50 !important',
+                      backgroundColor: 'rgba(31,122,77,0.14) !important',
+                      color: '#1f7a4d !important',
+                      border: '2px solid rgba(31,122,77,0.28) !important',
                       borderRadius: '4px !important',
                       fontWeight: '600 !important',
                       fontSize: '12px !important',
@@ -639,9 +536,9 @@ const Task = ({ user, onBack }) => {
                 }
                 return {
                   style: {
-                    backgroundColor: '#ffcdd2 !important',
-                    color: '#d32f2f !important',
-                    border: '1px solid #f44336 !important',
+                    backgroundColor: 'rgba(180,35,24,0.12) !important',
+                    color: '#8f2018 !important',
+                    border: '1px solid rgba(180,35,24,0.18) !important',
                     borderRadius: '4px !important',
                     fontWeight: '500 !important',
                     fontSize: '12px !important',
@@ -653,9 +550,9 @@ const Task = ({ user, onBack }) => {
               defaultView="week"
             />
           </Box>
-        </Box>
+        </Paper>
       </Box>
-    </>
+    </Container>
   );
 };
 
