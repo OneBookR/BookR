@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar } from '@mui/material';
+import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar, Button } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import { API_BASE_URL } from '../config';
 
@@ -28,6 +28,7 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
   const [groupName, setGroupName] = useState('');
   const [message, setMessage] = useState('');
   const [groupLink, setGroupLink] = useState('');
+  const [requiresReauth, setRequiresReauth] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredContacts, setFilteredContacts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -221,6 +222,13 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
       // Handle rate limiting
       if (res.status === 429) {
         setMessage('För många förfrågningar. Vänta en minut och försök igen.');
+        return;
+      }
+
+      // Handle unauthenticated — show re-login button
+      if (res.status === 401) {
+        setRequiresReauth(true);
+        setMessage('');
         return;
       }
 
@@ -480,6 +488,22 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
       <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
         Tips: tryck Enter, kommatecken eller välj en kontakt från listan för att lägga till flera deltagare.
       </Typography>
+
+      {requiresReauth && (
+        <Box sx={{ mt: 2, p: 2, borderRadius: 3, bgcolor: 'rgba(180,35,24,0.06)', border: '1px solid rgba(180,35,24,0.14)' }}>
+          <Typography sx={{ color: 'var(--error)', fontWeight: 700, mb: 1 }}>
+            Din session har gått ut. Logga in igen för att fortsätta.
+          </Typography>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => { window.location.href = '/auth/logout'; }}
+            sx={{ bgcolor: 'var(--primary, #111827)', color: '#fff', borderRadius: 2, textTransform: 'none', fontWeight: 700, '&:hover': { bgcolor: 'var(--primary-hover, #374151)' } }}
+          >
+            Logga in igen
+          </Button>
+        </Box>
+      )}
 
       {message && (
         <Box sx={{ mt: 2, p: 2, borderRadius: 3, bgcolor: message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'rgba(180,35,24,0.08)' : 'rgba(31,122,77,0.08)', border: `1px solid ${message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'rgba(180,35,24,0.14)' : 'rgba(31,122,77,0.14)'}` }}>
