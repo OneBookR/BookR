@@ -6,6 +6,7 @@ import Contact from './pages/Contact.jsx';
 import About from './pages/About.jsx';
 import OmOss from './pages/OmOss.jsx';
 import Kontakt from './pages/Kontakt.jsx';
+import Integritetspolicy from './pages/Integritetspolicy.jsx';
 import Waitlist from './pages/Waitlist.jsx';
 import WaitlistAdmin from './pages/WaitlistAdmin.jsx';
 import BusinessSignup from './pages/BusinessSignup.jsx';
@@ -178,7 +179,7 @@ function App() {
 
   // ✅ SPECIAL ROUTES CHECK
   const path = window.location.pathname;
-  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin'].includes(path) || path.startsWith('/venue/');
+  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy'].includes(path) || path.startsWith('/venue/');
 
   // ✅ RENDER SPECIAL ROUTES
   if (isSpecialRoute) {
@@ -191,7 +192,8 @@ function App() {
       '/kontakt': Kontakt,
       '/waitlist': Waitlist,
       '/admin/waitlist': WaitlistAdmin,
-      '/venue-admin': VenueAdmin
+      '/venue-admin': VenueAdmin,
+      '/integritetspolicy': Integritetspolicy
     }[path] || (path.startsWith('/venue/') ? VenueBooking : null);
 
     if (RouteComponent) {

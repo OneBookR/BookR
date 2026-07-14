@@ -39,7 +39,7 @@ const Footer = () => {
               Policyer
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <a href="https://www.iubenda.com/privacy-policy/71871656" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '14px' }}>Integritetspolicy</a>
+              <a href="/integritetspolicy" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '14px' }}>Integritetspolicy</a>
               <a href="https://www.iubenda.com/privacy-policy/71871656/cookie-policy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '14px' }}>Cookiepolicy</a>
               <a href="https://www.iubenda.com/villkor-och-bestammelse/71871656" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '14px' }}>Villkor och bestämmelser</a>
             </Box>
