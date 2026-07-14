@@ -12,19 +12,21 @@ import {
   Chip,
   Container
 } from '@mui/material';
-import { 
-  AccountCircle, 
-  Logout, 
-  ExitToApp, 
-  Home, 
-  Task, 
-  Group 
+import {
+  AccountCircle,
+  Logout,
+  ExitToApp,
+  Home,
+  Task,
+  Group,
+  Shield
 } from '@mui/icons-material';
 import { LOGOUT_URL, HOME_URL } from '../config';
 import GDPRNotice from './GDPRNotice';
 
 export default function Header({ user, onNavigate, onLeaveGroup }) {
   const [anchorEl, setAnchorEl] = useState(null);
+  const [gdprOpen, setGdprOpen] = useState(false);
   
   // ✅ URL PARAMS
   const urlParams = new URLSearchParams(window.location.search);
@@ -94,6 +96,7 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
   if (!user) return null;
 
   return (
+    <>
     <AppBar 
       position="fixed" 
       sx={{ 
@@ -268,6 +271,11 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
                 </MenuItem>
               )}
               
+              <MenuItem onClick={() => { setGdprOpen(true); handleMenuClose(); }}>
+                <Shield sx={{ mr: 1 }} />
+                Integritet &amp; data
+              </MenuItem>
+
               <MenuItem onClick={handleLogout}>
                 <Logout sx={{ mr: 1 }} />
                 Logga ut
@@ -277,5 +285,8 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
         </Toolbar>
       </Container>
     </AppBar>
+
+    <GDPRNotice user={user} open={gdprOpen} onClose={() => setGdprOpen(false)} />
+  </>
   );
 }

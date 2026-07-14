@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  Box, Button, Dialog, DialogTitle, DialogContent, DialogActions, 
-  Typography, List, ListItem, ListItemText, Alert, Chip 
+import {
+  Box, Button, Dialog, DialogTitle, DialogContent, DialogActions,
+  Typography, List, ListItem, ListItemText, Alert, Chip, Divider
 } from '@mui/material';
 
-export default function GDPRNotice({ user }) {
-  const [dialogOpen, setDialogOpen] = useState(false);
+export default function GDPRNotice({ user, open, onClose }) {
   const [exportLoading, setExportLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -69,17 +68,8 @@ export default function GDPRNotice({ user }) {
 
   return (
     <>
-      <Button
-        variant="text"
-        size="small"
-        onClick={() => setDialogOpen(true)}
-        sx={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.75rem' }}
-      >
-        🔒 Integritet
-      </Button>
-
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>🔒 GDPR & Datasäkerhet</DialogTitle>
+      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, pb: 1 }}>Integritet &amp; data</DialogTitle>
         
         <DialogContent>
           <Alert severity="success" sx={{ mb: 3 }}>
@@ -127,11 +117,14 @@ export default function GDPRNotice({ user }) {
             <Typography variant="body2">
               📞 <strong>Kontakt:</strong> För frågor om databehandling, kontakta oss på support@onebookr.se
             </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              📄 <a href="/integritetspolicy" style={{ color: 'inherit' }}>Läs vår fullständiga integritetspolicy</a>
+            </Typography>
           </Alert>
         </DialogContent>
         
         <DialogActions sx={{ p: 3, flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}>
-          <Button onClick={() => setDialogOpen(false)}>
+          <Button onClick={onClose}>
             Stäng
           </Button>
           
