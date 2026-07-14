@@ -1,5 +1,6 @@
 // firestore.js
 import admin from 'firebase-admin';
+import { encryptToken, decryptToken } from './gdpr-utils.js';
 
 // ✅ ROBUST INITIALIZATION WITH ERROR HANDLING
 let db = null;
@@ -449,6 +450,68 @@ async function logDataAccess(action, userEmail, targetEmail, dataType) {
   }
 }
 
+// ===== ACTIVE GROUPS — persistent group state that survives restarts =====
+// Member OAuth tokens are encrypted with AES-256-GCM before storage.
+
+function encryptGroupMembers(members) {
+  return members.map(m => ({ ...m, token: encryptToken(m.token) }));
+}
+
+function decryptGroupMembers(members) {
+  return (members || []).map(m => ({ ...m, token: decryptToken(m.token) }));
+}
+
+async function saveActiveGroup(groupId, groupData) {
+  const expiresAt = new Date(new Date(groupData.createdAt).getTime() + 24 * 60 * 60 * 1000);
+  const doc = {
+    ...groupData,
+    members: encryptGroupMembers(groupData.members || []),
+    memberEmails: (groupData.members || []).map(m => m.email.toLowerCase()),
+    expiresAt,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  await getDb().collection('active_groups').doc(groupId).set(doc);
+}
+
+async function deleteActiveGroup(groupId) {
+  await getDb().collection('active_groups').doc(groupId).delete();
+}
+
+async function loadAllActiveGroups() {
+  const now = new Date();
+  const snapshot = await getDb()
+    .collection('active_groups')
+    .where('expiresAt', '>', now)
+    .get();
+
+  const groups = new Map();
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    groups.set(doc.id, {
+      ...data,
+      id: doc.id,
+      members: decryptGroupMembers(data.members),
+    });
+  }
+  return groups;
+}
+
+async function getActiveGroupsByEmail(email) {
+  const snapshot = await getDb()
+    .collection('active_groups')
+    .where('memberEmails', 'array-contains', email.toLowerCase())
+    .get();
+
+  return snapshot.docs.map(doc => {
+    const data = doc.data();
+    return {
+      ...data,
+      id: doc.id,
+      members: decryptGroupMembers(data.members),
+    };
+  });
+}
+
 // ✅ EXPORT ALL FUNCTIONS - ENDAST EN GÅNG!
 export {
   // Waitlist
@@ -494,5 +557,11 @@ export {
   
   // GDPR & Audit
   deleteUserData,
-  logDataAccess
+  logDataAccess,
+
+  // Active groups
+  saveActiveGroup,
+  deleteActiveGroup,
+  loadAllActiveGroups,
+  getActiveGroupsByEmail,
 };

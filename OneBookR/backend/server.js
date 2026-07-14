@@ -9,9 +9,10 @@ import rateLimit from 'express-rate-limit';
 import { Resend } from 'resend';
 import { randomUUID } from 'crypto';
 import { initializeFirebase } from './firestore.js';
-import { 
+import {
   addToWaitlist, createGroup, createInvitation, createUser, updateUserLastLogin,
-  logDataAccess, createBookingSession, updateBookingSession
+  logDataAccess, createBookingSession, updateBookingSession,
+  saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import 'dotenv/config';
@@ -33,7 +34,37 @@ try {
 }
 
 // ===== IN-MEMORY STORAGE =====
+// activeGroups is the primary read cache. It is hydrated from Firestore on
+// startup so groups survive Railway restarts. Every write also persists to
+// Firestore asynchronously (write-through).
 const activeGroups = new Map();
+
+// Hydrate from Firestore on startup — non-blocking
+if (db) {
+  loadAllActiveGroups()
+    .then(groups => {
+      for (const [id, group] of groups) {
+        activeGroups.set(id, group);
+      }
+      console.log(`✅ Hydrated ${groups.size} active groups from Firestore`);
+    })
+    .catch(err => console.warn('⚠️ Could not hydrate groups from Firestore:', err.message));
+}
+
+// Write-through helper — persists to Firestore without blocking the caller
+function persistGroup(groupId, group) {
+  if (!db) return;
+  saveActiveGroup(groupId, group).catch(err =>
+    console.warn(`⚠️ Firestore group write failed for ${groupId}:`, err.message)
+  );
+}
+
+function removePersistedGroup(groupId) {
+  if (!db) return;
+  deleteActiveGroup(groupId).catch(err =>
+    console.warn(`⚠️ Firestore group delete failed for ${groupId}:`, err.message)
+  );
+}
 
 // ===== ENVIRONMENT-SPECIFIC CONFIGURATION =====
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -1299,8 +1330,10 @@ app.delete('/api/gdpr/delete', (req, res) => {
       // Radera hela gruppen om skaparen lämnar eller gruppen är tom
       if (group.members.length === 0) {
         activeGroups.delete(groupId);
+        removePersistedGroup(groupId);
       } else {
         activeGroups.set(groupId, group);
+        persistGroup(groupId, group);
       }
     }
   }
@@ -1577,6 +1610,7 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
     };
 
     activeGroups.set(groupId, group);
+    persistGroup(groupId, group);
 
     // ✅ FÖRBÄTTRAD EMAIL DEBUGGING
     const emailResults = [];
@@ -1724,6 +1758,7 @@ app.post('/api/group/:groupId/join', validateGroup, async (req, res) => {
     }
 
     activeGroups.set(req.params.groupId, req.group);
+    persistGroup(req.params.groupId, req.group);
 
     console.log(`✅ User joined group ${req.params.groupId}. Total members: ${req.group.members.length}`);
 
