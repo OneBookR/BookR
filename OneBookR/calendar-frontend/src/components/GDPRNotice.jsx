@@ -115,7 +115,7 @@ export default function GDPRNotice({ user, open, onClose }) {
 
           <Alert severity="info" sx={{ mt: 3 }}>
             <Typography variant="body2">
-              📞 <strong>Kontakt:</strong> För frågor om databehandling, kontakta oss på support@onebookr.se
+              📞 <strong>Kontakt:</strong> För frågor om databehandling, kontakta oss på info@onebookr.se
             </Typography>
             <Typography variant="body2" sx={{ mt: 1 }}>
               📄 <a href="/integritetspolicy" style={{ color: 'inherit' }}>Läs vår fullständiga integritetspolicy</a>
