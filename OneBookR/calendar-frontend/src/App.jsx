@@ -44,19 +44,26 @@ function App() {
 
   const authReturnTo = useMemo(() => {
     const currentPath = window.location.pathname + window.location.search;
-    // Spara invitations-parametrar i sessionStorage för att bevara genom OAuth
     const params = new URLSearchParams(window.location.search);
     const groupId = params.get('group');
     const invitee = params.get('invitee');
     const directAccess = params.get('directAccess');
 
     if (groupId || invitee || directAccess) {
+      console.log(`📌 [Invitation Link Detected]`);
+      console.log(`   Group: ${groupId}`);
+      console.log(`   Invitee: ${invitee}`);
+      console.log(`   Saving to sessionStorage...`);
       sessionStorage.setItem('invitation_group', groupId || '');
       sessionStorage.setItem('invitation_invitee', invitee || '');
       sessionStorage.setItem('invitation_directAccess', directAccess || '');
     }
 
-    return encodeURIComponent(currentPath || '/');
+    const encoded = encodeURIComponent(currentPath || '/');
+    console.log(`📨 [Auth Return Path]`);
+    console.log(`   Current path: ${currentPath}`);
+    console.log(`   Encoded for URL: ${encoded}`);
+    return encoded;
   }, []);
 
   // USER DATA — accessToken exponeras aldrig i klient-state
@@ -129,18 +136,27 @@ function App() {
           const savedInvitee = sessionStorage.getItem('invitation_invitee');
           const savedDirectAccess = sessionStorage.getItem('invitation_directAccess');
 
+          console.log(`📌 [Post-Login Session Check]`);
+          console.log(`   Saved Group: ${savedGroup}`);
+          console.log(`   Saved Invitee: ${savedInvitee}`);
+          console.log(`   Restoration flag: ${sessionStorage.getItem('post_login_restored')}`);
+
           if ((savedGroup || savedInvitee) && !sessionStorage.getItem('post_login_restored')) {
+            console.log(`📍 Restoring invitation parameters...`);
             sessionStorage.setItem('post_login_restored', 'true');
             const url = new URL(window.location);
             if (savedGroup) url.searchParams.set('group', savedGroup);
             if (savedInvitee) url.searchParams.set('invitee', savedInvitee);
             if (savedDirectAccess) url.searchParams.set('directAccess', savedDirectAccess);
-            window.location.href = url.toString();
+            const finalUrl = url.toString();
+            console.log(`   Final URL: ${finalUrl}`);
+            window.location.href = finalUrl;
             return;
           }
 
           const urlParams = new URLSearchParams(window.location.search);
           if (urlParams.get('group') && !sessionStorage.getItem('post_login_reloaded')) {
+            console.log(`📍 URL has group param, reloading...`);
             sessionStorage.setItem('post_login_reloaded', 'true');
             window.location.reload();
             return;

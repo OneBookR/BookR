@@ -1169,13 +1169,25 @@ app.get('/api/user', async (req, res) => {
 app.get('/auth/google', authLimiter, (req, res, next) => {
   try {
     const state = randomUUID();
+    const returnTo = req.query.returnTo || '/';
+
+    console.log(`🔐 [OAuth Google Init]`);
+    console.log(`   Query returnTo: ${req.query.returnTo}`);
+    console.log(`   Storing in session: ${returnTo}`);
+
     req.session.oauthState = state;
     req.session.oauthProvider = 'google';
-    req.session.returnTo = req.query.returnTo; // ✅ Bevara return-to genom OAuth
-    passport.authenticate('google', {
-      scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
-      state,
-    })(req, res, next);
+    req.session.returnTo = returnTo;
+
+    // Force save session before redirect
+    req.session.save((err) => {
+      if (err) console.error('❌ Session save error:', err);
+
+      passport.authenticate('google', {
+        scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
+        state,
+      })(req, res, next);
+    });
   } catch (error) {
     console.error('❌ Google auth init error:', error);
     res.redirect(`${CONFIG.urls.frontend}?error=auth_init_failed`);
@@ -1195,6 +1207,11 @@ app.get('/auth/google/callback', (req, res, next) => {
   })(req, res, next);
 }, (req, res) => {
   const returnTo = req.session.returnTo || CONFIG.urls.frontend;
+
+  console.log(`🔐 [OAuth Google Callback]`);
+  console.log(`   Session returnTo: ${returnTo}`);
+  console.log(`   Redirecting to: ${returnTo}`);
+
   delete req.session.returnTo;
   res.redirect(returnTo);
 });
@@ -1202,13 +1219,25 @@ app.get('/auth/google/callback', (req, res, next) => {
 app.get('/auth/microsoft', authLimiter, (req, res, next) => {
   try {
     const state = randomUUID();
+    const returnTo = req.query.returnTo || '/';
+
+    console.log(`🔐 [OAuth Microsoft Init]`);
+    console.log(`   Query returnTo: ${req.query.returnTo}`);
+    console.log(`   Storing in session: ${returnTo}`);
+
     req.session.oauthState = state;
     req.session.oauthProvider = 'microsoft';
-    req.session.returnTo = req.query.returnTo; // ✅ Bevara return-to genom OAuth
-    passport.authenticate('microsoft', {
-      scope: ['user.read', 'calendars.read'],
-      state,
-    })(req, res, next);
+    req.session.returnTo = returnTo;
+
+    // Force save session before redirect
+    req.session.save((err) => {
+      if (err) console.error('❌ Session save error:', err);
+
+      passport.authenticate('microsoft', {
+        scope: ['user.read', 'calendars.read'],
+        state,
+      })(req, res, next);
+    });
   } catch (error) {
     console.error('❌ Microsoft auth init error:', error);
     res.redirect(`${CONFIG.urls.frontend}?error=auth_init_failed`);
@@ -1228,6 +1257,11 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
   })(req, res, next);
 }, (req, res) => {
   const returnTo = req.session.returnTo || CONFIG.urls.frontend;
+
+  console.log(`🔐 [OAuth Microsoft Callback]`);
+  console.log(`   Session returnTo: ${returnTo}`);
+  console.log(`   Redirecting to: ${returnTo}`);
+
   delete req.session.returnTo;
   res.redirect(returnTo);
 });
