@@ -589,6 +589,20 @@ export default function CompareCalendar({
     handleSuggest(proposal);
   }, [propGroupId, handleSuggest]);
 
+  // ✅ HANDLE EVENT CLICK - Click on available time slot events to propose
+  const handleSelectEvent = useCallback((event) => {
+    if (!propGroupId) return;
+
+    // Only allow clicking on "free slot" events (available times)
+    if (event.title?.includes('Ledig tid')) {
+      console.log('📅 [Available Slot Clicked]', event);
+      handleSuggest({
+        start: event.start,
+        end: event.end
+      });
+    }
+  }, [propGroupId, handleSuggest]);
+
   // ✅ CONFIRM SUGGEST FUNCTION - FÖRBÄTTRAD MED ERROR HANDLING
   const confirmSuggest = useCallback(async () => {
     if (!suggestDialog.slot || !propGroupId) return;
@@ -1387,6 +1401,7 @@ export default function CompareCalendar({
               defaultView="week"
               selectable={propGroupId ? true : false}
               onSelectSlot={propGroupId ? handleSelectSlot : undefined}
+              onSelectEvent={propGroupId ? handleSelectEvent : undefined}
               messages={{
                 next: 'Nästa',
                 previous: 'Föregående',
