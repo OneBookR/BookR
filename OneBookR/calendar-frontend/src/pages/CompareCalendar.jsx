@@ -6,14 +6,15 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 // ✅ CLEAN IMPORTS - Ta bort onödiga imports
 import '../styles/theme.css';
-import { 
-  Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, 
-  DialogActions, Paper, CircularProgress, Snackbar, Alert, IconButton, Chip 
+import {
+  Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle,
+  DialogActions, Paper, CircularProgress, Snackbar, Alert, IconButton, Chip
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
 import InviteFriend from './InviteFriend';
+import { useNotifications } from '../hooks/useNotifications.js';
 
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
@@ -86,7 +87,9 @@ export default function CompareCalendar({
     inProgress: false
   });
 
-  // ✅ LÄGG TILL VÄNTRUM STATE
+  // ✅ TRACK PREVIOUS SUGGESTIONS FOR DETECTING NEW PROPOSALS
+  const previousSuggestionsRef = useRef([]);
+  const { showNotification } = useNotifications();
   const [waitingRoom, setWaitingRoom] = useState({
     show: false,
     members: [],
@@ -531,18 +534,40 @@ export default function CompareCalendar({
   // ✅ FETCH SUGGESTIONS FUNCTION - FIXA API URL
   const fetchSuggestions = useCallback(async () => {
     if (!propGroupId) return;
-    
+
     try {
       const response = await apiRequest(`/api/group/${propGroupId}/suggestions`);
-      
+
       if (response.ok) {
         const data = await response.json();
-        setSuggestions(data.suggestions || []);
+        const newSuggestions = data.suggestions || [];
+
+        // ✅ DETECT NEW PROPOSALS
+        const previousIds = previousSuggestionsRef.current.map(s => s.id);
+        const newProposals = newSuggestions.filter(s => !previousIds.includes(s.id));
+
+        if (newProposals.length > 0) {
+          newProposals.forEach(proposal => {
+            const startTime = new Date(proposal.start).toLocaleTimeString('sv-SE', {
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+
+            showNotification('📋 Nytt tidsförslag!', {
+              body: `${proposal.title} - ${startTime}`,
+              requireInteraction: true
+            });
+          });
+        }
+
+        // ✅ UPDATE TRACKING
+        previousSuggestionsRef.current = newSuggestions;
+        setSuggestions(newSuggestions);
       }
     } catch (error) {
       console.error('❌ Failed to fetch suggestions:', error);
     }
-  }, [propGroupId]);
+  }, [propGroupId, showNotification]);
 
   // ✅ HANDLE SUGGEST FUNCTION
   const handleSuggest = useCallback((slot) => {
