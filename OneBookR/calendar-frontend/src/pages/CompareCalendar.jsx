@@ -292,15 +292,15 @@ export default function CompareCalendar({
     }
   }, [propGroupId, groupInfo, user]);
   
-  // ✅ POLLING: Enkel 3-sekunders polling
+  // ✅ POLLING: Snabb 1-sekunders polling för proposals
   useEffect(() => {
     if (!propGroupId || !hasJoinedGroup) return;
-    
+
     const timer = setInterval(() => {
       fetchGroupStatus();
-      fetchSuggestions(); // ✅ Uppdatera även förslag
-    }, 3000);
-    
+      fetchSuggestions(); // ✅ Snabbare uppdateringar av förslag
+    }, 1000); // Reducerad från 3000ms till 1000ms för omedelbar notification
+
     return () => clearInterval(timer);
   }, [propGroupId, hasJoinedGroup]);
 
