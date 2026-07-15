@@ -575,6 +575,20 @@ export default function CompareCalendar({
     setSuggestDialog({ open: true, slot });
   }, []);
 
+  // ✅ HANDLE CALENDAR SLOT SELECTION - Enable clicking time slots in calendar
+  const handleSelectSlot = useCallback((slotInfo) => {
+    if (!propGroupId) return;
+
+    // Convert calendar slot to proposal format
+    const proposal = {
+      start: slotInfo.start,
+      end: slotInfo.end
+    };
+
+    console.log('📅 [Calendar Slot Selected]', proposal);
+    handleSuggest(proposal);
+  }, [propGroupId, handleSuggest]);
+
   // ✅ CONFIRM SUGGEST FUNCTION - FÖRBÄTTRAD MED ERROR HANDLING
   const confirmSuggest = useCallback(async () => {
     if (!suggestDialog.slot || !propGroupId) return;
@@ -1371,6 +1385,8 @@ export default function CompareCalendar({
               eventPropGetter={eventPropGetter}
               views={['month', 'week', 'day']}
               defaultView="week"
+              selectable={propGroupId ? true : false}
+              onSelectSlot={propGroupId ? handleSelectSlot : undefined}
               messages={{
                 next: 'Nästa',
                 previous: 'Föregående',
