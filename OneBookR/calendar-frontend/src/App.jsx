@@ -43,7 +43,9 @@ function App() {
   }), [urlParams]);
 
   const authReturnTo = useMemo(() => {
+    // Spara original URL i sessionStorage för att bevara params genom OAuth
     const currentPath = window.location.pathname + window.location.search;
+    sessionStorage.setItem('auth_return_path', currentPath);
     return encodeURIComponent(currentPath || '/');
   }, []);
 
@@ -111,6 +113,14 @@ function App() {
           const data = await res.json();
           setUser(data);
           console.log('✅ User authenticated:', data.email);
+
+          // Om vi kommer från OAuth med returnTo sparad, använd den
+          const savedReturnPath = sessionStorage.getItem('auth_return_path');
+          if (savedReturnPath && !sessionStorage.getItem('post_login_restored')) {
+            sessionStorage.setItem('post_login_restored', 'true');
+            window.location.href = savedReturnPath;
+            return;
+          }
 
           const urlParams = new URLSearchParams(window.location.search);
           if (urlParams.get('group') && !sessionStorage.getItem('post_login_reloaded')) {

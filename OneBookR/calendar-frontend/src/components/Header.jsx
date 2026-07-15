@@ -50,24 +50,10 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
   };
 
   const handleLeaveGroup = () => {
-    // Ta bort group-parametrar från URL
-    const url = new URL(window.location);
-    url.searchParams.delete('group');
-    url.searchParams.delete('invitee');
-    url.searchParams.delete('directAccess');
-    url.searchParams.delete('contactEmail');
-    url.searchParams.delete('contactName');
-    
-    window.history.replaceState({}, '', url);
-    
     if (onLeaveGroup) {
       onLeaveGroup();
-    } else {
-      // Fallback: reload sidan
-      window.location.reload();
     }
-    
-    handleMenuClose();
+    window.location.href = HOME_URL;
   };
 
   const handleGoHome = () => {
