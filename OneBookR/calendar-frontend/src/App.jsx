@@ -53,10 +53,11 @@ function App() {
       console.log(`📌 [Invitation Link Detected]`);
       console.log(`   Group: ${groupId}`);
       console.log(`   Invitee: ${invitee}`);
-      console.log(`   Saving to sessionStorage...`);
-      sessionStorage.setItem('invitation_group', groupId || '');
-      sessionStorage.setItem('invitation_invitee', invitee || '');
-      sessionStorage.setItem('invitation_directAccess', directAccess || '');
+      console.log(`   Saving to localStorage (persistent)...`);
+      // ✅ Använd localStorage istället för sessionStorage - bevaras genom Gmail login
+      localStorage.setItem('invitation_group', groupId || '');
+      localStorage.setItem('invitation_invitee', invitee || '');
+      localStorage.setItem('invitation_directAccess', directAccess || '');
     }
 
     const encoded = encodeURIComponent(currentPath || '/');
@@ -131,19 +132,19 @@ function App() {
           setUser(data);
           console.log('✅ User authenticated:', data.email);
 
-          // Om vi har sparade invitations-parametrar, restora dem efter login
-          const savedGroup = sessionStorage.getItem('invitation_group');
-          const savedInvitee = sessionStorage.getItem('invitation_invitee');
-          const savedDirectAccess = sessionStorage.getItem('invitation_directAccess');
+          // ✅ Restora från localStorage (persistent genom Gmail login + OAuth)
+          const savedGroup = localStorage.getItem('invitation_group');
+          const savedInvitee = localStorage.getItem('invitation_invitee');
+          const savedDirectAccess = localStorage.getItem('invitation_directAccess');
 
-          console.log(`📌 [Post-Login Session Check]`);
-          console.log(`   Saved Group: ${savedGroup}`);
-          console.log(`   Saved Invitee: ${savedInvitee}`);
-          console.log(`   Restoration flag: ${sessionStorage.getItem('post_login_restored')}`);
+          console.log(`📌 [Post-Login Restoration Check]`);
+          console.log(`   Saved Group (localStorage): ${savedGroup}`);
+          console.log(`   Saved Invitee (localStorage): ${savedInvitee}`);
+          console.log(`   Restoration flag: ${localStorage.getItem('post_login_restored')}`);
 
-          if ((savedGroup || savedInvitee) && !sessionStorage.getItem('post_login_restored')) {
-            console.log(`📍 Restoring invitation parameters...`);
-            sessionStorage.setItem('post_login_restored', 'true');
+          if ((savedGroup || savedInvitee) && !localStorage.getItem('post_login_restored')) {
+            console.log(`📍 Restoring invitation parameters from localStorage...`);
+            localStorage.setItem('post_login_restored', 'true');
             const url = new URL(window.location);
             if (savedGroup) url.searchParams.set('group', savedGroup);
             if (savedInvitee) url.searchParams.set('invitee', savedInvitee);
@@ -155,9 +156,9 @@ function App() {
           }
 
           const urlParams = new URLSearchParams(window.location.search);
-          if (urlParams.get('group') && !sessionStorage.getItem('post_login_reloaded')) {
+          if (urlParams.get('group') && !localStorage.getItem('post_login_reloaded')) {
             console.log(`📍 URL has group param, reloading...`);
-            sessionStorage.setItem('post_login_reloaded', 'true');
+            localStorage.setItem('post_login_reloaded', 'true');
             window.location.reload();
             return;
           }
