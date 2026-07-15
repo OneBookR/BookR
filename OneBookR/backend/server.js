@@ -1171,6 +1171,7 @@ app.get('/auth/google', authLimiter, (req, res, next) => {
     const state = randomUUID();
     req.session.oauthState = state;
     req.session.oauthProvider = 'google';
+    req.session.returnTo = req.query.returnTo; // ✅ Bevara return-to genom OAuth
     passport.authenticate('google', {
       scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
       state,
@@ -1193,7 +1194,9 @@ app.get('/auth/google/callback', (req, res, next) => {
     failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed`,
   })(req, res, next);
 }, (req, res) => {
-  res.redirect(CONFIG.urls.frontend);
+  const returnTo = req.session.returnTo || CONFIG.urls.frontend;
+  delete req.session.returnTo;
+  res.redirect(returnTo);
 });
 
 app.get('/auth/microsoft', authLimiter, (req, res, next) => {
@@ -1201,6 +1204,7 @@ app.get('/auth/microsoft', authLimiter, (req, res, next) => {
     const state = randomUUID();
     req.session.oauthState = state;
     req.session.oauthProvider = 'microsoft';
+    req.session.returnTo = req.query.returnTo; // ✅ Bevara return-to genom OAuth
     passport.authenticate('microsoft', {
       scope: ['user.read', 'calendars.read'],
       state,
@@ -1223,7 +1227,9 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
     failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed`,
   })(req, res, next);
 }, (req, res) => {
-  res.redirect(CONFIG.urls.frontend);
+  const returnTo = req.session.returnTo || CONFIG.urls.frontend;
+  delete req.session.returnTo;
+  res.redirect(returnTo);
 });
 
 app.get('/auth/logout', (req, res) => {
