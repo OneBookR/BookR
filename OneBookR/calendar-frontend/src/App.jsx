@@ -43,9 +43,19 @@ function App() {
   }), [urlParams]);
 
   const authReturnTo = useMemo(() => {
-    // Spara original URL i sessionStorage för att bevara params genom OAuth
     const currentPath = window.location.pathname + window.location.search;
-    sessionStorage.setItem('auth_return_path', currentPath);
+    // Spara invitations-parametrar i sessionStorage för att bevara genom OAuth
+    const params = new URLSearchParams(window.location.search);
+    const groupId = params.get('group');
+    const invitee = params.get('invitee');
+    const directAccess = params.get('directAccess');
+
+    if (groupId || invitee || directAccess) {
+      sessionStorage.setItem('invitation_group', groupId || '');
+      sessionStorage.setItem('invitation_invitee', invitee || '');
+      sessionStorage.setItem('invitation_directAccess', directAccess || '');
+    }
+
     return encodeURIComponent(currentPath || '/');
   }, []);
 
@@ -114,11 +124,18 @@ function App() {
           setUser(data);
           console.log('✅ User authenticated:', data.email);
 
-          // Om vi kommer från OAuth med returnTo sparad, använd den
-          const savedReturnPath = sessionStorage.getItem('auth_return_path');
-          if (savedReturnPath && !sessionStorage.getItem('post_login_restored')) {
+          // Om vi har sparade invitations-parametrar, restora dem efter login
+          const savedGroup = sessionStorage.getItem('invitation_group');
+          const savedInvitee = sessionStorage.getItem('invitation_invitee');
+          const savedDirectAccess = sessionStorage.getItem('invitation_directAccess');
+
+          if ((savedGroup || savedInvitee) && !sessionStorage.getItem('post_login_restored')) {
             sessionStorage.setItem('post_login_restored', 'true');
-            window.location.href = savedReturnPath;
+            const url = new URL(window.location);
+            if (savedGroup) url.searchParams.set('group', savedGroup);
+            if (savedInvitee) url.searchParams.set('invitee', savedInvitee);
+            if (savedDirectAccess) url.searchParams.set('directAccess', savedDirectAccess);
+            window.location.href = url.toString();
             return;
           }
 
