@@ -81,6 +81,12 @@ export default function CompareCalendar({
   
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
 
+  // ✅ PROPOSAL POPUP NOTIFICATION
+  const [proposalNotification, setProposalNotification] = useState({
+    open: false,
+    proposal: null
+  });
+
   // ✅ ROBUST RATE LIMITING
   const [requestState, setRequestState] = useState({
     lastFetch: 0,
@@ -553,9 +559,16 @@ export default function CompareCalendar({
               minute: '2-digit'
             });
 
+            // ✅ SHOW BROWSER NOTIFICATION
             showNotification('📋 Nytt tidsförslag!', {
               body: `${proposal.title} - ${startTime}`,
               requireInteraction: true
+            });
+
+            // ✅ SHOW TOAST POPUP IN APP
+            setProposalNotification({
+              open: true,
+              proposal
             });
           });
         }
@@ -1535,6 +1548,76 @@ export default function CompareCalendar({
         >
           {toast.message}
         </Alert>
+      </Snackbar>
+
+      {/* ✅ PROPOSAL POPUP - Bottom Right Corner */}
+      <Snackbar
+        open={proposalNotification.open}
+        autoHideDuration={null}
+        onClose={() => setProposalNotification({ ...proposalNotification, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        sx={{
+          '& .MuiPaper-root': {
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            boxShadow: '0 24px 60px rgba(15, 23, 42, 0.18)',
+            borderRadius: '12px',
+            border: '1px solid var(--border)',
+            backdropFilter: 'blur(18px)',
+            minWidth: 320
+          }
+        }}
+      >
+        <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2 }}>
+          {proposalNotification.proposal && (
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, mb: 1, color: 'var(--text)' }}>
+                📋 {proposalNotification.proposal.title}
+              </Typography>
+
+              <Typography variant="body2" sx={{ mb: 0.5, color: 'var(--text-secondary)' }}>
+                <strong>Tid:</strong> {new Date(proposalNotification.proposal.start).toLocaleString('sv-SE')}
+              </Typography>
+
+              <Typography variant="body2" sx={{ mb: 2, color: 'var(--text-secondary)' }}>
+                <strong>Med:</strong> {proposalNotification.proposal.suggestedBy}
+              </Typography>
+
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  sx={{
+                    bgcolor: '#4caf50',
+                    '&:hover': { bgcolor: '#45a049' },
+                    flex: 1
+                  }}
+                  onClick={() => {
+                    voteSuggestion(proposalNotification.proposal.id, 'accepted');
+                    setProposalNotification({ ...proposalNotification, open: false });
+                  }}
+                >
+                  ✓ Acceptera
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    borderColor: '#f44336',
+                    color: '#f44336',
+                    '&:hover': { borderColor: '#d32f2f', color: '#d32f2f' },
+                    flex: 1
+                  }}
+                  onClick={() => {
+                    voteSuggestion(proposalNotification.proposal.id, 'rejected');
+                    setProposalNotification({ ...proposalNotification, open: false });
+                  }}
+                >
+                  ✗ Neka
+                </Button>
+              </Box>
+            </Box>
+          )}
+        </Paper>
       </Snackbar>
     </Box>
   );
