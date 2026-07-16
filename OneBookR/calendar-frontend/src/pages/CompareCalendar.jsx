@@ -547,6 +547,7 @@ export default function CompareCalendar({
       if (response.ok) {
         const data = await response.json();
         const newSuggestions = data.suggestions || [];
+        const userEmail = userData.email;
 
         // ✅ DETECT NEW PROPOSALS
         const previousIds = previousSuggestionsRef.current.map(s => s.id);
@@ -559,17 +560,22 @@ export default function CompareCalendar({
               minute: '2-digit'
             });
 
-            // ✅ SHOW BROWSER NOTIFICATION
-            showNotification('📋 Nytt tidsförslag!', {
-              body: `${proposal.title} - ${startTime}`,
-              requireInteraction: true
-            });
+            // ✅ ONLY SHOW NOTIFICATION IF NOT THE PROPOSER
+            const isMyProposal = proposal.suggestedBy?.toLowerCase() === userEmail?.toLowerCase();
 
-            // ✅ SHOW TOAST POPUP IN APP
-            setProposalNotification({
-              open: true,
-              proposal
-            });
+            if (!isMyProposal) {
+              // ✅ SHOW BROWSER NOTIFICATION
+              showNotification('📋 Nytt tidsförslag!', {
+                body: `${proposal.title} - ${startTime}`,
+                requireInteraction: true
+              });
+
+              // ✅ SHOW TOAST POPUP IN APP
+              setProposalNotification({
+                open: true,
+                proposal
+              });
+            }
           });
         }
 
@@ -580,7 +586,7 @@ export default function CompareCalendar({
     } catch (error) {
       console.error('❌ Failed to fetch suggestions:', error);
     }
-  }, [propGroupId, showNotification]);
+  }, [propGroupId, userData.email, showNotification]);
 
   // ✅ HANDLE SUGGEST FUNCTION
   const handleSuggest = useCallback((slot) => {
