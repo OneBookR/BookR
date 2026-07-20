@@ -2633,118 +2633,116 @@ async function createMeetingEvents(suggestion, group) {
       }
     }
 
-    // ✅ SKAPA EVENT FÖR VARJE GRUPPMEDLEM MED RÄTT API
-    for (const member of group.members) {
-      try {
-        if (!member.token) {
-          console.warn(`⚠️ No token for ${member.email}, skipping event creation`);
-          errors.push(`${member.email}: No valid token`);
-          continue;
-        }
+    // ✅ FIND PROPOSER - CREATE EVENT FROM THEIR ACCOUNT WITH OTHERS AS ATTENDEES
+    let proposer = group.members.find(m =>
+      m.email.toLowerCase() === suggestion.suggestedBy.toLowerCase()
+    );
 
-        const provider = member.provider || 'google';
-        console.log(`📅 Creating ${provider} event for ${member.email}`);
-
-        if (provider === 'microsoft') {
-          // ✅ MICROSOFT GRAPH API EVENT
-          const msEventData = {
-            subject: suggestion.title,
-            body: {
-              contentType: 'text',
-              content: `Möte föreslagen av ${suggestion.suggestedBy}\n\nSkapad via BookR - Kalenderjämförelse${sharedMeetLink ? `\n\nGoogle Meet: ${sharedMeetLink}` : ''}`
-            },
-            start: {
-              dateTime: suggestion.start,
-              timeZone: 'Europe/Stockholm'
-            },
-            end: {
-              dateTime: suggestion.end,
-              timeZone: 'Europe/Stockholm'
-            },
-            attendees: group.members
-              .filter(m => m.email.toLowerCase() !== member.email.toLowerCase())
-              .map(m => ({
-                emailAddress: { address: m.email, name: m.email.split('@')[0] }
-              })),
-            location: sharedMeetLink ? { displayName: sharedMeetLink } : 
-                     suggestion.location ? { displayName: suggestion.location } : undefined
-          };
-
-          const response = await fetchWithRetry(
-            'https://graph.microsoft.com/v1.0/me/events',
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${member.token}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(msEventData)
-            }
-          );
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-          }
-
-          const event = await response.json();
-          eventIds[member.email] = event.id;
-          console.log(`✅ Created Microsoft event for ${member.email}: ${event.id}`);
-        } else {
-          // ✅ GOOGLE CALENDAR API EVENT
-          const eventData = {
-            summary: suggestion.title,
-            description: `Möte föreslagen av ${suggestion.suggestedBy}\n\nSkapad via BookR - Kalenderjämförelse`,
-            start: {
-              dateTime: suggestion.start,
-              timeZone: 'Europe/Stockholm'
-            },
-            end: {
-              dateTime: suggestion.end,
-              timeZone: 'Europe/Stockholm'
-            },
-            attendees: group.members
-              .filter(m => m.email.toLowerCase() !== member.email.toLowerCase())
-              .map(m => ({ email: m.email })),
-            reminders: { useDefault: true },
-            visibility: 'default',
-            status: 'confirmed'
-          };
-
-          // ✅ ANVÄND DELAD MEET-LÄNK ELLER PLATS
-          if (sharedMeetLink) {
-            eventData.description += `\n\nGoogle Meet: ${sharedMeetLink}`;
-            eventData.location = sharedMeetLink;
-          } else if (suggestion.location) {
-            eventData.location = suggestion.location;
-          }
-
-          const response = await fetchWithRetry(
-            'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${member.token}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(eventData)
-            }
-          );
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-          }
-
-          const event = await response.json();
-          eventIds[member.email] = event.id;
-          console.log(`✅ Created Google event for ${member.email}: ${event.id}`);
-        }
-
-      } catch (error) {
-        console.error(`❌ Failed to create event for ${member.email}:`, error.message);
-        errors.push(`${member.email}: ${error.message}`);
+    if (!proposer || !proposer.token) {
+      proposer = group.members.find(m => m.token);
+      if (!proposer) {
+        throw new Error('No member with valid token found');
       }
+      console.warn(`⚠️ Proposer has no token, using ${proposer.email} instead`);
+    }
+
+    const provider = proposer.provider || 'google';
+    console.log(`📅 Creating ${provider} event from proposer ${proposer.email}`);
+
+    // ✅ EVENT DATA WITH ALL OTHER MEMBERS AS ATTENDEES
+    const otherAttendees = group.members
+      .filter(m => m.email.toLowerCase() !== proposer.email.toLowerCase());
+
+    if (provider === 'microsoft') {
+      // ✅ MICROSOFT GRAPH API EVENT - FROM PROPOSER
+      const msEventData = {
+        subject: suggestion.title,
+        body: {
+          contentType: 'text',
+          content: `Möte föreslagen av ${suggestion.suggestedBy}\n\nSkapad via BookR - Kalenderjämförelse${sharedMeetLink ? `\n\nGoogle Meet: ${sharedMeetLink}` : ''}`
+        },
+        start: {
+          dateTime: suggestion.start,
+          timeZone: 'Europe/Stockholm'
+        },
+        end: {
+          dateTime: suggestion.end,
+          timeZone: 'Europe/Stockholm'
+        },
+        attendees: otherAttendees.map(m => ({
+          emailAddress: { address: m.email, name: m.email.split('@')[0] }
+        })),
+        location: sharedMeetLink ? { displayName: sharedMeetLink } :
+                 suggestion.location ? { displayName: suggestion.location } : undefined
+      };
+
+      const response = await fetchWithRetry(
+        'https://graph.microsoft.com/v1.0/me/events',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${proposer.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(msEventData)
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const event = await response.json();
+      eventIds[proposer.email] = event.id;
+      console.log(`✅ Created Microsoft invitation event: ${event.id}`);
+    } else {
+      // ✅ GOOGLE CALENDAR API EVENT - FROM PROPOSER
+      const eventData = {
+        summary: suggestion.title,
+        description: `Möte föreslagen av ${suggestion.suggestedBy}\n\nSkapad via BookR - Kalenderjämförelse`,
+        start: {
+          dateTime: suggestion.start,
+          timeZone: 'Europe/Stockholm'
+        },
+        end: {
+          dateTime: suggestion.end,
+          timeZone: 'Europe/Stockholm'
+        },
+        attendees: otherAttendees.map(m => ({ email: m.email })),
+        reminders: { useDefault: true },
+        visibility: 'default',
+        status: 'confirmed'
+      };
+
+      // ✅ ANVÄND DELAD MEET-LÄNK ELLER PLATS
+      if (sharedMeetLink) {
+        eventData.description += `\n\nGoogle Meet: ${sharedMeetLink}`;
+        eventData.location = sharedMeetLink;
+      } else if (suggestion.location) {
+        eventData.location = suggestion.location;
+      }
+
+      const response = await fetchWithRetry(
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${proposer.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(eventData)
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const event = await response.json();
+      eventIds[proposer.email] = event.id;
+      console.log(`✅ Created Google invitation event: ${event.id}`);
     }
 
     return {
