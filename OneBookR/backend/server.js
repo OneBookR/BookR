@@ -2331,10 +2331,14 @@ app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
       eventIds: {} // För att spåra skapade events
     };
 
-    // ✅ INITIERA RÖSTER FÖR ALLA MEDLEMMAR (UTOM FÖRSLAGET)
+    // ✅ INITIERA RÖSTER FÖR ALLA MEDLEMMAR
     group.members.forEach(member => {
-      if (member.email.toLowerCase() !== email.toLowerCase()) {
-        suggestion.votes[member.email] = 'pending'; // pending, accepted, rejected
+      const memberEmail = member.email.toLowerCase();
+      if (memberEmail !== email.toLowerCase()) {
+        suggestion.votes[memberEmail] = 'pending'; // pending, accepted, rejected
+      } else {
+        // Proposer automatically accepts their own proposal
+        suggestion.votes[memberEmail] = 'accepted';
       }
     });
 
@@ -2657,9 +2661,11 @@ async function createMeetingEvents(suggestion, group) {
               dateTime: suggestion.end,
               timeZone: 'Europe/Stockholm'
             },
-            attendees: group.members.map(m => ({
-              emailAddress: { address: m.email, name: m.email.split('@')[0] }
-            })),
+            attendees: group.members
+              .filter(m => m.email.toLowerCase() !== member.email.toLowerCase())
+              .map(m => ({
+                emailAddress: { address: m.email, name: m.email.split('@')[0] }
+              })),
             location: sharedMeetLink ? { displayName: sharedMeetLink } : 
                      suggestion.location ? { displayName: suggestion.location } : undefined
           };
@@ -2697,7 +2703,9 @@ async function createMeetingEvents(suggestion, group) {
               dateTime: suggestion.end,
               timeZone: 'Europe/Stockholm'
             },
-            attendees: group.members.map(m => ({ email: m.email })),
+            attendees: group.members
+              .filter(m => m.email.toLowerCase() !== member.email.toLowerCase())
+              .map(m => ({ email: m.email })),
             reminders: { useDefault: true },
             visibility: 'default',
             status: 'confirmed'
