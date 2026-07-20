@@ -7,14 +7,12 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { Resend } from 'resend';
-import { randomUUID } from 'crypto';
 import { initializeFirebase } from './firestore.js';
-import {
+import { 
   addToWaitlist, createGroup, createInvitation, createUser, updateUserLastLogin,
-  logDataAccess, createBookingSession, updateBookingSession,
-  saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail
+  logDataAccess, createBookingSession, updateBookingSession
 } from './firestore.js';
-import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
+import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import 'dotenv/config';
 
 // ===== APPLICATION SETUP =====
@@ -34,49 +32,11 @@ try {
 }
 
 // ===== IN-MEMORY STORAGE =====
-// activeGroups is the primary read cache. It is hydrated from Firestore on
-// startup so groups survive Railway restarts. Every write also persists to
-// Firestore asynchronously (write-through).
 const activeGroups = new Map();
-
-// Hydrate from Firestore on startup — non-blocking
-if (db) {
-  loadAllActiveGroups()
-    .then(groups => {
-      for (const [id, group] of groups) {
-        activeGroups.set(id, group);
-      }
-      console.log(`✅ Hydrated ${groups.size} active groups from Firestore`);
-    })
-    .catch(err => console.warn('⚠️ Could not hydrate groups from Firestore:', err.message));
-}
-
-// Write-through helper — persists to Firestore without blocking the caller
-function persistGroup(groupId, group) {
-  if (!db) return;
-  saveActiveGroup(groupId, group).catch(err =>
-    console.warn(`⚠️ Firestore group write failed for ${groupId}:`, err.message)
-  );
-}
-
-function removePersistedGroup(groupId) {
-  if (!db) return;
-  deleteActiveGroup(groupId).catch(err =>
-    console.warn(`⚠️ Firestore group delete failed for ${groupId}:`, err.message)
-  );
-}
 
 // ===== ENVIRONMENT-SPECIFIC CONFIGURATION =====
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const IS_LOCALHOST = !IS_PRODUCTION;
-
-// ✅ SÄKERHET: Vägra starta i produktion utan en riktig SESSION_SECRET.
-// Utan denna spärr skulle servern falla tillbaka på en publik, hårdkodad
-// sträng och sessioner skulle kunna förfalskas av vem som helst.
-if (IS_PRODUCTION && !process.env.SESSION_SECRET) {
-  console.error('KRITISKT: SESSION_SECRET saknas i miljövariabler. Avbryter start i produktion.');
-  process.exit(1);
-}
 
 const CONFIG = {
   session: {
@@ -129,6 +89,22 @@ class BookRError extends Error {
 
 // ===== VALIDATION HELPERS =====
 const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+function sanitizeReturnTo(returnTo) {
+  if (!returnTo || typeof returnTo !== 'string') {
+    return null;
+  }
+
+  if (!returnTo.startsWith('/')) {
+    return null;
+  }
+
+  if (returnTo.startsWith('//') || returnTo.includes('://')) {
+    return null;
+  }
+
+  return returnTo;
+}
 
 // ✅ VALIDERA ANVÄNDARTOKEN
 async function validateUserToken(user) {
@@ -598,22 +574,16 @@ async function fetchMicrosoftCalendarEvents(token, timeMin, timeMax, userEmail) 
   try {
     const startTime = new Date(timeMin).toISOString();
     const endTime = new Date(timeMax).toISOString();
-
-    // ✅ Använd calendarView (inte /events med $filter) — calendarView hanterar
-    // tidszoner korrekt och returnerar events som ÖVERLAPPAR intervallet, inte
-    // bara de som startar och slutar inuti det. /events?$filter=start/dateTime ge '...'
-    // jämför UTC-sträng mot lokal tid utan Z-suffix och missar ofta Outlook-events.
-    const eventsUrl = `https://graph.microsoft.com/v1.0/me/calendarView?` +
-      `startDateTime=${encodeURIComponent(startTime)}&` +
-      `endDateTime=${encodeURIComponent(endTime)}&` +
+    
+    const eventsUrl = `https://graph.microsoft.com/v1.0/me/events?` +
+      `$filter=start/dateTime ge '${startTime}' and end/dateTime le '${endTime}'&` +
       `$select=subject,start,end,showAs,responseStatus,isAllDay,isCancelled,attendees&` +
       `$orderby=start/dateTime&$top=2500`;
 
     const response = await fetchWithRetry(eventsUrl, {
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'outlook.timezone="UTC"'
+        'Content-Type': 'application/json'
       }
     });
 
@@ -691,9 +661,9 @@ async function fetchInvitedEvents(token, userEmail, timeMin, timeMax) {
 }
 
 // ===== FREE SLOT DETECTION - KORREKT KONTROLL AV ALLA DELTAGARE =====
-function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '09:00', dayEnd = '17:00', allParticipants = []) {
+function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '09:00', dayEnd = '17:00') {
   const freeSlots = [];
-
+  
   try {
     const [startHour, startMinute] = dayStart.split(':').map(Number);
     const [endHour, endMinute] = dayEnd.split(':').map(Number);
@@ -702,31 +672,24 @@ function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '
       throw new BookRError('Invalid work hours format', 400, 'INVALID_WORK_HOURS');
     }
 
-    // ✅ GRUPPERA BUSY TIMES PER PERSON — använd email direkt (ej anonymiserad)
-    // så att vi aldrig slår ihop två olika personers data av misstag.
+    // ✅ GRUPPERA BUSY TIMES PER PERSON
     const busyTimesByPerson = {};
     const personEmails = new Set();
-
+    
     busyTimes.forEach(busy => {
       if (busy && busy.email && busy.start && busy.end) {
-        const key = busy.email;
-        if (!busyTimesByPerson[key]) {
-          busyTimesByPerson[key] = [];
+        if (!busyTimesByPerson[busy.email]) {
+          busyTimesByPerson[busy.email] = [];
         }
-        busyTimesByPerson[key].push({
+        busyTimesByPerson[busy.email].push({
           start: new Date(busy.start),
           end: new Date(busy.end)
         });
-        personEmails.add(key);
+        personEmails.add(busy.email);
       }
     });
 
-    // ✅ participants = ALLA gruppmedlemmar, inte bara de med events.
-    // Säkerställer att en person vars kalender är tom eller vars fetch
-    // misslyckas fortfarande räknas med (tom kalender = aldrig blockerar).
-    const participants = allParticipants.length > 0
-      ? allParticipants
-      : Array.from(personEmails);
+    const participants = Array.from(personEmails);
     console.log(`🔍 Analyzing free times for participants: ${participants.join(', ')}`);
     console.log(`📊 Busy periods per person:`, participants.map(email => 
       `${email}: ${busyTimesByPerson[email]?.length || 0} periods`
@@ -860,9 +823,9 @@ if (IS_PRODUCTION) {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        connectSrc: ["'self'", "https://accounts.google.com", "https://www.googleapis.com", "https://login.microsoftonline.com", "https://graph.microsoft.com", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://www.googletagmanager.com", "wss:", "ws:"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com", "https://apis.google.com", "https://www.googletagmanager.com", "https://www.onebookr.se"],
-        scriptSrcElem: ["'self'", "'unsafe-inline'", "https://accounts.google.com", "https://apis.google.com", "https://www.googletagmanager.com", "https://www.onebookr.se"],
+        connectSrc: ["'self'", "https://accounts.google.com", "https://www.googleapis.com", "https://login.microsoftonline.com", "https://graph.microsoft.com", "wss:", "ws:"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com", "https://apis.google.com", "https://www.onebookr.se"],
+        scriptSrcElem: ["'self'", "'unsafe-inline'", "https://accounts.google.com", "https://apis.google.com", "https://www.onebookr.se"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "https:", "http:"],
@@ -917,7 +880,6 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Global limiter — all routes except static assets
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,
@@ -925,7 +887,8 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    return req.path.startsWith('/css/') ||
+    return req.path.startsWith('/auth/') || 
+           req.path.startsWith('/css/') ||
            req.path.startsWith('/js/') ||
            req.path.startsWith('/assets/') ||
            req.path.includes('favicon') ||
@@ -937,50 +900,13 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Auth limiter — strict, applied to OAuth initiation endpoints
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: 'Too many login attempts, please try again in 15 minutes' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Invite limiter — prevent email spam
-const inviteLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
-  message: { error: 'Too many invitations sent, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Polling limiter — group status/availability polling
-const pollingLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 40,
-  message: { error: 'Too many requests, please slow down' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
 // ===== PASSPORT CONFIGURATION - UPPDATERA CALLBACK URLs =====
 passport.serializeUser((user, done) => {
-  const serialized = {
-    ...user,
-    accessToken: encryptToken(user.accessToken),
-    refreshToken: encryptToken(user.refreshToken),
-  };
-  done(null, serialized);
+  done(null, user);
 });
 
 passport.deserializeUser((user, done) => {
-  const deserialized = {
-    ...user,
-    accessToken: decryptToken(user.accessToken),
-    refreshToken: decryptToken(user.refreshToken),
-  };
-  done(null, deserialized);
+  done(null, user);
 });
 
 // ✅ ENDAST EN GOOGLE STRATEGY
@@ -1119,152 +1045,305 @@ app.post('/api/invitation/:id/respond', (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/auth/me', async (req, res) => {
-  if (!req.user) {
-    return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
-  }
-  const isValidToken = await validateUserToken(req.user);
-  if (!isValidToken) {
-    req.logout((err) => {
-      if (err) console.error('❌ Logout error:', err);
-      req.session.destroy(() => {
-        res.clearCookie(CONFIG.session.name);
-        res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED', requiresReauth: true });
-      });
-    });
-    return;
-  }
-  res.json(req.user);
-});
-
 app.get('/api/user', async (req, res) => {
   if (req.user) {
-    // ✅ VALIDERA TOKEN INNAN VI RETURNERAR USER
     const isValidToken = await validateUserToken(req.user);
-    
+
     if (!isValidToken) {
       console.log(`❌ Invalid token for user ${anonymizeEmail(req.user.email)}, forcing re-authentication`);
-      
-      // ✅ RENSA SESSION OCH TVINGA OMAUTENTISERING
       req.logout((err) => {
         if (err) console.error('❌ Logout error:', err);
         req.session.destroy(() => {
           res.clearCookie(CONFIG.session.name);
-          res.status(401).json({ 
-            error: 'Token expired', 
+          res.status(401).json({
+            error: 'Token expired',
             code: 'TOKEN_EXPIRED',
-            requiresReauth: true 
+            requiresReauth: true
           });
         });
       });
       return;
     }
-    
-    res.json({ user: req.user });
+
+    // Returnera aldrig accessToken eller refreshToken till klienten
+    const { accessToken, refreshToken, ...safeUser } = req.user;
+    res.json({ user: safeUser });
   } else {
     res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
   }
 });
 
-app.get('/auth/google', authLimiter, (req, res, next) => {
+// Returnerar bara identitetsinfo — aldrig tokens
+app.get('/api/auth/me', (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+  }
+  res.json({
+    email: req.user.email,
+    name: req.user.name,
+    provider: req.user.provider,
+    id: req.user.id
+  });
+});
+
+app.get('/api/calendar/upcoming', async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+  }
+
+  const accessToken = req.user.accessToken;
+  if (!accessToken || req.user.provider !== 'google') {
+    return res.json({ events: [] });
+  }
+
   try {
-    const state = randomUUID();
-    const returnTo = req.query.returnTo || '/';
-
-    console.log(`🔐 [OAuth Google Init]`);
-    console.log(`   Query returnTo: ${req.query.returnTo}`);
-    console.log(`   Storing in session: ${returnTo}`);
-
-    req.session.oauthState = state;
-    req.session.oauthProvider = 'google';
-    req.session.returnTo = returnTo;
-
-    // Force save session before redirect
-    req.session.save((err) => {
-      if (err) console.error('❌ Session save error:', err);
-
-      passport.authenticate('google', {
-        scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
-        state,
-      })(req, res, next);
+    const timeMin = new Date().toISOString();
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=5&orderBy=startTime&singleEvents=true&timeMin=${encodeURIComponent(timeMin)}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.error('Google Calendar API error:', err);
+      return res.status(response.status).json({ error: 'Calendar fetch failed', events: [] });
+    }
+
+    const data = await response.json();
+    const events = (data.items || []).map(e => ({
+      id: e.id,
+      title: e.summary || '',
+      start: e.start,
+      end: e.end,
+      location: e.location || null,
+      hangoutLink: e.hangoutLink || null,
+      conferenceUri: e.conferenceData?.entryPoints?.[0]?.uri || null
+    }));
+
+    res.json({ events });
+  } catch (error) {
+    console.error('Calendar upcoming fetch error:', error);
+    res.status(500).json({ error: 'Internal server error', events: [] });
+  }
+});
+
+// GET /api/calendar/events?start=X&end=Y — returns only {start,end} per event (no titles/descriptions)
+app.get('/api/calendar/events', async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+
+  const { start, end } = req.query;
+  if (!start || !end) return res.status(400).json({ error: 'start and end query params required' });
+
+  const accessToken = req.user.accessToken;
+  if (!accessToken) return res.json({ events: [] });
+
+  try {
+    let events = [];
+
+    if (req.user.provider === 'microsoft') {
+      const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}&$select=start,end&$top=100`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (resp.ok) {
+        const data = await resp.json();
+        events = (data.value || []).map(e => ({ start: e.start.dateTime, end: e.end.dateTime }));
+      }
+    } else {
+      const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(start)}&timeMax=${encodeURIComponent(end)}&singleEvents=true&fields=items(start,end)&maxResults=500`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (resp.ok) {
+        const data = await resp.json();
+        events = (data.items || []).map(e => ({ start: e.start, end: e.end }));
+      }
+    }
+
+    res.json({ events });
+  } catch (error) {
+    console.error('Calendar events fetch error:', error);
+    res.status(500).json({ error: 'Internal server error', events: [] });
+  }
+});
+
+// POST /api/calendar/events — create a calendar event
+app.post('/api/calendar/events', async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+
+  const { title, start, end, description } = req.body;
+  if (!title || !start || !end) return res.status(400).json({ error: 'title, start and end are required' });
+  if (typeof title !== 'string' || title.length > 500) return res.status(400).json({ error: 'Invalid title' });
+  if (isNaN(Date.parse(start)) || isNaN(Date.parse(end))) return res.status(400).json({ error: 'Invalid start or end date' });
+  if (description && (typeof description !== 'string' || description.length > 5000)) return res.status(400).json({ error: 'Invalid description' });
+
+  const accessToken = req.user.accessToken;
+  if (!accessToken) return res.status(400).json({ error: 'No calendar access for this account' });
+
+  try {
+    if (req.user.provider === 'microsoft') {
+      const url = 'https://graph.microsoft.com/v1.0/me/events';
+      const body = {
+        subject: title,
+        body: { contentType: 'text', content: description || '' },
+        start: { dateTime: new Date(start).toISOString(), timeZone: 'Europe/Stockholm' },
+        end: { dateTime: new Date(end).toISOString(), timeZone: 'Europe/Stockholm' }
+      };
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!resp.ok) return res.status(resp.status).json({ error: 'Failed to create event' });
+      const data = await resp.json();
+      res.json({ id: data.id, start: data.start.dateTime, end: data.end.dateTime });
+    } else {
+      const url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+      const body = {
+        summary: title,
+        description: description || '',
+        start: { dateTime: new Date(start).toISOString(), timeZone: 'Europe/Stockholm' },
+        end: { dateTime: new Date(end).toISOString(), timeZone: 'Europe/Stockholm' }
+      };
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!resp.ok) return res.status(resp.status).json({ error: 'Failed to create event' });
+      const data = await resp.json();
+      res.json({ id: data.id, start: data.start.dateTime, end: data.end.dateTime });
+    }
+  } catch (error) {
+    console.error('Calendar event create error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/task/schedule — schedule task sessions around existing calendar events
+app.post('/api/task/schedule', async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+
+  const { taskName, estimatedHours, workStartHour, workEndHour, minSessionHours, maxSessionHours, breakMinutes } = req.body;
+  if (!taskName || !estimatedHours) return res.status(400).json({ error: 'taskName and estimatedHours required' });
+
+  const accessToken = req.user.accessToken;
+  if (!accessToken) return res.status(400).json({ error: 'No calendar access for this account' });
+
+  try {
+    const now = new Date();
+    const twoWeeksLater = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const start = workStartHour ?? 9;
+    const endHour = workEndHour ?? 18;
+    const minSession = minSessionHours ?? 1;
+    const maxSession = maxSessionHours ?? 4;
+    const breakMins = breakMinutes ?? 15;
+
+    // Fetch existing events
+    let busySlots = [];
+    if (req.user.provider === 'microsoft') {
+      const url = `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(now.toISOString())}&endDateTime=${encodeURIComponent(twoWeeksLater.toISOString())}&$select=start,end&$top=200`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (resp.ok) {
+        const data = await resp.json();
+        busySlots = (data.value || []).map(e => ({ start: new Date(e.start.dateTime), end: new Date(e.end.dateTime) }));
+      }
+    } else {
+      const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now.toISOString())}&timeMax=${encodeURIComponent(twoWeeksLater.toISOString())}&singleEvents=true&fields=items(start,end)&maxResults=500`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (resp.ok) {
+        const data = await resp.json();
+        busySlots = (data.items || []).map(e => ({
+          start: new Date(e.start.dateTime || e.start.date),
+          end: new Date(e.end.dateTime || e.end.date)
+        }));
+      }
+    }
+
+    // Find free slots and schedule task sessions
+    const taskSlots = [];
+    let remainingHours = parseFloat(estimatedHours);
+    const current = new Date(now);
+
+    while (remainingHours > 0 && current < twoWeeksLater && taskSlots.length < 20) {
+      current.setHours(start, 0, 0, 0);
+      if (current < now) current.setDate(current.getDate() + 1);
+
+      const dayEnd = new Date(current);
+      dayEnd.setHours(endHour, 0, 0, 0);
+
+      while (current < dayEnd && remainingHours > 0) {
+        const sessionDuration = Math.min(parseFloat(maxSession), remainingHours);
+        const slotEnd = new Date(current.getTime() + sessionDuration * 60 * 60 * 1000);
+
+        if (slotEnd > dayEnd) break;
+
+        const overlaps = busySlots.some(b => current < b.end && slotEnd > b.start);
+        if (!overlaps) {
+          if (sessionDuration >= parseFloat(minSession)) {
+            taskSlots.push({ start: current.toISOString(), end: slotEnd.toISOString(), duration: sessionDuration });
+            remainingHours -= sessionDuration;
+            current.setTime(slotEnd.getTime() + breakMins * 60 * 1000);
+          } else {
+            current.setTime(slotEnd.getTime());
+          }
+        } else {
+          const nextBusy = busySlots.filter(b => b.start >= current).sort((a, b) => a.start - b.start)[0];
+          if (nextBusy) {
+            current.setTime(nextBusy.end.getTime() + breakMins * 60 * 1000);
+          } else {
+            break;
+          }
+        }
+      }
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    res.json({ taskSlots, scheduled: remainingHours <= 0 });
+  } catch (error) {
+    console.error('Task schedule error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/auth/google', (req, res, next) => {
+  try {
+    req.session.authReturnTo = sanitizeReturnTo(req.query.returnTo) || '/';
+    passport.authenticate('google', { scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'] })(req, res, next);
   } catch (error) {
     console.error('❌ Google auth init error:', error);
     res.redirect(`${CONFIG.urls.frontend}?error=auth_init_failed`);
   }
 });
 
-app.get('/auth/google/callback', (req, res, next) => {
-  const { state } = req.query;
-  if (!state || state !== req.session.oauthState || req.session.oauthProvider !== 'google') {
-    console.warn('⚠️ Google OAuth CSRF state mismatch');
-    return res.redirect(`${CONFIG.urls.frontend}?error=oauth_state_mismatch`);
+app.get('/auth/google/callback',
+  passport.authenticate('google', { 
+    failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed` 
+  }),
+  (req, res) => {
+    const returnTo = sanitizeReturnTo(req.session.authReturnTo) || '/';
+    delete req.session.authReturnTo;
+    res.redirect(`${CONFIG.urls.frontend}${returnTo}`);
   }
-  delete req.session.oauthState;
-  delete req.session.oauthProvider;
-  passport.authenticate('google', {
-    failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed`,
-  })(req, res, next);
-}, (req, res) => {
-  const returnTo = req.session.returnTo || CONFIG.urls.frontend;
+);
 
-  console.log(`🔐 [OAuth Google Callback]`);
-  console.log(`   Session returnTo: ${returnTo}`);
-  console.log(`   Redirecting to: ${returnTo}`);
-
-  delete req.session.returnTo;
-  res.redirect(returnTo);
-});
-
-app.get('/auth/microsoft', authLimiter, (req, res, next) => {
+app.get('/auth/microsoft', (req, res, next) => {
   try {
-    const state = randomUUID();
-    const returnTo = req.query.returnTo || '/';
-
-    console.log(`🔐 [OAuth Microsoft Init]`);
-    console.log(`   Query returnTo: ${req.query.returnTo}`);
-    console.log(`   Storing in session: ${returnTo}`);
-
-    req.session.oauthState = state;
-    req.session.oauthProvider = 'microsoft';
-    req.session.returnTo = returnTo;
-
-    // Force save session before redirect
-    req.session.save((err) => {
-      if (err) console.error('❌ Session save error:', err);
-
-      passport.authenticate('microsoft', {
-        scope: ['user.read', 'calendars.read'],
-        state,
-      })(req, res, next);
-    });
+    req.session.authReturnTo = sanitizeReturnTo(req.query.returnTo) || '/';
+    passport.authenticate('microsoft', { scope: ['user.read', 'calendars.read'] })(req, res, next);
   } catch (error) {
     console.error('❌ Microsoft auth init error:', error);
     res.redirect(`${CONFIG.urls.frontend}?error=auth_init_failed`);
   }
 });
 
-app.get('/auth/microsoft/callback', (req, res, next) => {
-  const { state } = req.query;
-  if (!state || state !== req.session.oauthState || req.session.oauthProvider !== 'microsoft') {
-    console.warn('⚠️ Microsoft OAuth CSRF state mismatch');
-    return res.redirect(`${CONFIG.urls.frontend}?error=oauth_state_mismatch`);
+app.get('/auth/microsoft/callback',
+  passport.authenticate('microsoft', { 
+    failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed` 
+  }),
+  (req, res) => {
+    const returnTo = sanitizeReturnTo(req.session.authReturnTo) || '/';
+    delete req.session.authReturnTo;
+    res.redirect(`${CONFIG.urls.frontend}${returnTo}`);
   }
-  delete req.session.oauthState;
-  delete req.session.oauthProvider;
-  passport.authenticate('microsoft', {
-    failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed`,
-  })(req, res, next);
-}, (req, res) => {
-  const returnTo = req.session.returnTo || CONFIG.urls.frontend;
-
-  console.log(`🔐 [OAuth Microsoft Callback]`);
-  console.log(`   Session returnTo: ${returnTo}`);
-  console.log(`   Redirecting to: ${returnTo}`);
-
-  delete req.session.returnTo;
-  res.redirect(returnTo);
-});
+);
 
 app.get('/auth/logout', (req, res) => {
   console.log('🚪 Logout request received');
@@ -1285,124 +1364,6 @@ app.get('/auth/logout', (req, res) => {
       // ✅ REDIRECT WITH CACHE BUSTING
       const redirectUrl = `${CONFIG.urls.frontend}?logout=success&t=${Date.now()}`;
       res.redirect(redirectUrl);
-    });
-  });
-});
-
-// ===== GDPR ENDPOINTS (Art. 15 rätt till tillgång, Art. 17 rätt till radering) =====
-
-app.get('/api/gdpr/export', (req, res) => {
-  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-
-  const userEmail = req.user.email;
-
-  // Hitta alla aktiva grupper där användaren är med
-  const userGroups = [];
-  for (const [groupId, group] of activeGroups.entries()) {
-    const member = group.members.find(m => m.email.toLowerCase() === userEmail.toLowerCase());
-    if (member) {
-      userGroups.push({
-        groupId: groupId.substring(0, 8) + '...',  // Truncerat av integritetsskäl
-        role: member.isCreator ? 'creator' : 'member',
-        joinedAt: member.joinedAt || group.createdAt,
-        memberCount: group.members.length
-      });
-    }
-  }
-
-  const exportData = {
-    exportDate: new Date().toISOString(),
-    requestedBy: userEmail,
-    personalData: {
-      email: userEmail,
-      provider: req.user.provider || 'google',
-      displayName: req.user.displayName || req.user.name?.givenName || null
-    },
-    activeCalendarSessions: userGroups,
-    dataBookRStores: [
-      'E-postadress (för identifiering och inbjudningar)',
-      'OAuth-provider (Google eller Microsoft)',
-      'Aktiva gruppsessioner och tillhörande mötestider',
-      'Anonym serverlogg för felsökning (utan personlig data)'
-    ],
-    dataBookRDoesNotStore: [
-      'Kalenderevents, titlar, platser eller beskrivningar',
-      'Kontaktuppgifter utöver e-post',
-      'OAuth-tokens sparas ej permanent — rensas vid utloggning'
-    ],
-    dataRetentionPolicy: 'All sessionsdata raderas automatiskt efter 24 timmar.',
-    legalBasis: 'Berättigat intresse (tillhandahålla kalenderjämförelsetjänst). Analytik-cookies kräver aktivt samtycke.',
-    subProcessors: [
-      { name: 'Google LLC', purpose: 'OAuth-autentisering och kalenderåtkomst', location: 'USA (EU-US DPF)' },
-      { name: 'Microsoft Corporation', purpose: 'OAuth-autentisering och kalenderåtkomst', location: 'USA (EU-US DPF)' },
-      { name: 'Resend Inc.', purpose: 'E-postutskick för inbjudningar', location: 'USA' },
-      { name: 'Railway Corp.', purpose: 'Serverdrift och hosting', location: 'USA' },
-      { name: 'Google Firebase', purpose: 'Anonym driftsloggning', location: 'USA (EU-US DPF)' }
-    ],
-    yourRights: {
-      access: 'Du har rätt att få tillgång till din data — detta är den exporten.',
-      erasure: 'Du kan radera all din data via knappen "Radera all data" i GDPR-dialogen.',
-      portability: 'Denna export är maskinläsbar JSON.',
-      objection: 'Kontakta support@onebookr.se för invändningar mot behandling.',
-      complaints: 'Du kan anmäla klagomål till Integritetsskyddsmyndigheten (IMY) på imy.se.'
-    },
-    contact: 'support@onebookr.se'
-  };
-
-  gdprLog('GDPR export requested', { userEmail: anonymizeEmail(userEmail) });
-  res.json(exportData);
-});
-
-app.delete('/api/gdpr/delete', (req, res) => {
-  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-
-  const userEmail = req.user.email;
-  let groupsRemoved = 0;
-
-  // Ta bort användaren från alla aktiva grupper
-  for (const [groupId, group] of activeGroups.entries()) {
-    const before = group.members.length;
-    group.members = group.members.filter(
-      m => m.email.toLowerCase() !== userEmail.toLowerCase()
-    );
-    if (group.members.length < before) {
-      groupsRemoved++;
-      // Radera hela gruppen om skaparen lämnar eller gruppen är tom
-      if (group.members.length === 0) {
-        activeGroups.delete(groupId);
-        removePersistedGroup(groupId);
-      } else {
-        activeGroups.set(groupId, group);
-        persistGroup(groupId, group);
-      }
-    }
-  }
-
-  // Ta bort från Firestore om tillgängligt
-  if (db) {
-    db.collection('users').where('email', '==', userEmail).get()
-      .then(snapshot => {
-        const batch = db.batch();
-        snapshot.forEach(doc => batch.delete(doc.ref));
-        return batch.commit();
-      })
-      .catch(err => console.warn('⚠️ Firebase delete failed (non-blocking):', err.message));
-  }
-
-  gdprLog('GDPR delete requested — user data removed', {
-    userEmail: anonymizeEmail(userEmail),
-    groupsRemoved
-  });
-
-  // Logga ut och förstör session
-  req.logout((err) => {
-    if (err) console.error('❌ Logout error during GDPR delete:', err);
-    req.session.destroy((destroyErr) => {
-      if (destroyErr) console.error('❌ Session destroy error during GDPR delete:', destroyErr);
-      res.clearCookie(CONFIG.session.name);
-      res.clearCookie('connect.sid');
-      res.clearCookie('bookr_session');
-      res.json({ success: true, message: 'All data deleted and session terminated.' });
     });
   });
 });
@@ -1549,21 +1510,11 @@ function getGroupMembersDecrypted(group) {
 
 // ===== API ROUTES =====
 
-app.post('/api/invite', inviteLimiter, async (req, res) => {
+app.post('/api/invite', async (req, res) => {
   try {
-    // ✅ SÄKERHET: Kräv inloggad session — avsändaren och tokenet hämtas
-    // alltid från den autentiserade sessionen, aldrig från request body.
-    // Annars kan vem som helst skicka BookR-mejl som utger sig för att
-    // vara en godtycklig person (phishing/spoofing).
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
-    }
-
     // ✅ SINGLE DESTRUCTURING WITH PROPER VARIABLE NAMES
-    const { emails: inviteEmails, groupName: rawGroupName, directAccessEmails } = req.body;
-    const senderInfo = req.user;
-    const fromToken = req.user.accessToken;
-
+    const { emails: inviteEmails, fromUser: senderInfo, fromToken, groupName: rawGroupName, directAccessEmails } = req.body;
+    
     // ✅ GDPR LOGGING WITH CORRECT EMAIL COUNT
     gdprLog('Invite request received', { 
       emailCount: Array.isArray(inviteEmails) ? inviteEmails.length : 0,
@@ -1603,34 +1554,23 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
       throw new BookRError(`Invalid email addresses: ${invalidEmails.join(', ')}`, 400, 'INVALID_EMAILS');
     }
 
-    // ✅ VALIDATION: GROUPNAME LENGTH
-    if (rawGroupName && typeof rawGroupName !== 'string') {
-      throw new BookRError('Group name must be a string', 400, 'INVALID_GROUP_NAME');
-    }
-    if (rawGroupName && rawGroupName.length > 100) {
-      throw new BookRError('Group name must be 100 characters or fewer', 400, 'GROUP_NAME_TOO_LONG');
-    }
-
-    // ✅ VALIDATION: DIRECT ACCESS EMAILS
-    if (directAccessEmails !== undefined) {
-      if (!Array.isArray(directAccessEmails)) {
-        throw new BookRError('directAccessEmails must be an array', 400, 'INVALID_DIRECT_ACCESS_EMAILS');
-      }
-      const invalidDirect = directAccessEmails.filter(e => typeof e !== 'string' || !validateEmail(e));
-      if (invalidDirect.length > 0) {
-        throw new BookRError('Invalid email in directAccessEmails', 400, 'INVALID_DIRECT_ACCESS_EMAILS');
-      }
-    }
-
     // ✅ GROUP SETUP
-    // ✅ SÄKERHET: Kryptografiskt säkert ID — groupId är den enda spärren
-    // som skyddar gruppens kalenderdata, så det får inte vara gissbart.
-    const groupId = `group_${randomUUID()}`;
+    const groupId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const frontendUrl = process.env.FRONTEND_URL || CONFIG.urls.frontend;
     const groupName = rawGroupName?.trim() || 'Kalenderjämförelse';
 
-    // ✅ Provider är redan känd från den autentiserade sessionen
-    const creatorProvider = req.user.provider || 'google';
+    // ✅ DETEKTERA CREATOR PROVIDER
+    let creatorProvider = 'google';
+    if (fromToken) {
+      try {
+        const testGoogle = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo?fields=email', {
+          headers: { 'Authorization': `Bearer ${fromToken}` }
+        });
+        creatorProvider = testGoogle.ok ? 'google' : 'microsoft';
+      } catch {
+        creatorProvider = 'microsoft';
+      }
+    }
 
     // ✅ SKAPA GRUPP MED SYNLIGA EMAILS FÖR DELTAGARE
     const group = {
@@ -1650,7 +1590,6 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
     };
 
     activeGroups.set(groupId, group);
-    persistGroup(groupId, group);
 
     // ✅ FÖRBÄTTRAD EMAIL DEBUGGING
     const emailResults = [];
@@ -1764,22 +1703,27 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
 
 app.post('/api/group/:groupId/join', validateGroup, async (req, res) => {
   try {
-    // ✅ SÄKERHET: Identitet och token hämtas alltid från den autentiserade
-    // sessionen — aldrig från request body. Annars kan vem som helst gå
-    // med i en grupp "som" en annan medlem genom att bara skicka dennes
-    // e-post plus ett eget/godtyckligt token.
-    if (!req.user?.email) {
-      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
-    }
-
-    const email = req.user.email;
-    const token = req.user.accessToken;
-    const provider = req.user.provider || 'google';
+    const { email, token } = req.body;
 
     console.log(`👥 Join request for group ${req.params.groupId} from ${anonymizeEmail(email)}`);
 
-    if (!token) {
-      throw new BookRError('No calendar access token for this session', 400, 'MISSING_TOKEN');
+    if (!email || !token) {
+      throw new BookRError('Email and token are required', 400, 'MISSING_PARAMETERS');
+    }
+
+    if (!validateEmail(email)) {
+      throw new BookRError('Invalid email format', 400, 'INVALID_EMAIL');
+    }
+
+    // ✅ DETEKTERA PROVIDER FRÅN TOKEN
+    let provider = 'google';
+    try {
+      const testGoogle = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo?fields=email', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      provider = testGoogle.ok ? 'google' : 'microsoft';
+    } catch {
+      provider = 'microsoft';
     }
 
     const existingMember = req.group.members.find(m => m.email.toLowerCase() === email.toLowerCase());
@@ -1798,7 +1742,6 @@ app.post('/api/group/:groupId/join', validateGroup, async (req, res) => {
     }
 
     activeGroups.set(req.params.groupId, req.group);
-    persistGroup(req.params.groupId, req.group);
 
     console.log(`✅ User joined group ${req.params.groupId}. Total members: ${req.group.members.length}`);
 
@@ -1848,7 +1791,7 @@ app.post('/api/group/:groupId/join', validateGroup, async (req, res) => {
 });
 
 // ✅ UPPDATERAD GROUP STATUS - VISA EMAILS FÖR DELTAGARE
-app.get('/api/group/:groupId/status', pollingLimiter, validateGroup, (req, res) => {
+app.get('/api/group/:groupId/status', validateGroup, (req, res) => {
   res.json({
     id: req.group.id,
     name: req.group.name,
@@ -1871,222 +1814,12 @@ app.get('/api/group/:groupId/status', pollingLimiter, validateGroup, (req, res) 
   });
 });
 
-app.post('/api/availability', async (req, res) => {
-  try {
-    const { tokens, timeMin, timeMax, duration = 60, dayStart = '09:00', dayEnd = '17:00' } = req.body;
-
-    // ✅ VALIDATION: REQUIRED FIELDS
-    if (!Array.isArray(tokens) || tokens.length === 0) {
-      return res.status(400).json({ error: 'tokens must be a non-empty array', code: 'INVALID_TOKENS' });
-    }
-    if (tokens.length > 20) {
-      return res.status(400).json({ error: 'Maximum 20 tokens allowed', code: 'TOO_MANY_TOKENS' });
-    }
-    if (!timeMin || !timeMax) {
-      return res.status(400).json({ error: 'timeMin and timeMax are required', code: 'MISSING_DATE_RANGE' });
-    }
-    if (isNaN(new Date(timeMin).getTime()) || isNaN(new Date(timeMax).getTime())) {
-      return res.status(400).json({ error: 'Invalid date format for timeMin or timeMax', code: 'INVALID_DATE' });
-    }
-    const parsedDuration = parseInt(duration, 10);
-    if (isNaN(parsedDuration) || parsedDuration < 15 || parsedDuration > 480) {
-      return res.status(400).json({ error: 'duration must be between 15 and 480 minutes', code: 'INVALID_DURATION' });
-    }
-    const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
-    if (!timePattern.test(dayStart) || !timePattern.test(dayEnd)) {
-      return res.status(400).json({ error: 'dayStart and dayEnd must be HH:MM format', code: 'INVALID_TIME_FORMAT' });
-    }
-
-    console.log('📅 Calendar comparison request:', {
-      tokenCount: tokens?.length || 0,
-      timeMin,
-      timeMax,
-      duration,
-      dayStart,
-      dayEnd
-    });
-
-    // ✅ VALIDERA ALLA TOKENS FÖRST
-    const validTokens = [];
-    const invalidTokens = [];
-    
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-      if (!token) {
-        invalidTokens.push(i);
-        continue;
-      }
-      
-      try {
-        // ✅ TESTA TOKEN
-        const testResponse = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (testResponse.ok) {
-          validTokens.push(token);
-        } else {
-          // ✅ FÖRSÖK MICROSOFT OM GOOGLE MISSLYCKAS
-          const msTestResponse = await fetchWithRetry('https://graph.microsoft.com/v1.0/me', {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          
-          if (msTestResponse.ok) {
-            validTokens.push(token);
-          } else {
-            invalidTokens.push(i);
-          }
-        }
-      } catch (error) {
-        console.warn(`⚠️ Token ${i + 1} validation failed:`, error.message);
-        invalidTokens.push(i);
-      }
-    }
-    
-    if (invalidTokens.length > 0) {
-      console.warn(`⚠️ Found ${invalidTokens.length} invalid tokens out of ${tokens.length}`);
-      
-      if (validTokens.length === 0) {
-        return res.status(401).json({
-          error: 'All tokens are invalid or expired',
-          code: 'ALL_TOKENS_EXPIRED',
-          requiresReauth: true,
-          invalidTokens
-        });
-      }
-    }
-
-    if (!Array.isArray(tokens) || tokens.length === 0) {
-      throw new BookRError('Tokens array is required and must not be empty', 400, 'MISSING_TOKENS');
-    }
-    
-    // ✅ ANVÄND ENDAST GILTIGA TOKENS
-    const tokensToUse = validTokens.length > 0 ? validTokens : tokens;
-
-    if (!timeMin || !timeMax) {
-      throw new BookRError('timeMin and timeMax are required', 400, 'MISSING_TIME_RANGE');
-    }
-
-    const { start, end } = validateDateRange(timeMin, timeMax);
-
-    if (parseInt(duration) < 15 || parseInt(duration) > 480) {
-      throw new BookRError('Duration must be between 15 and 480 minutes', 400, 'INVALID_DURATION');
-    }
-
-    const allBusyTimes = [];
-
-    // ✅ FÖRBÄTTRAD TOKEN PROCESSING MED GDPR-SÄKER EMAIL-HÄMTNING
-    for (let i = 0; i < tokensToUse.length; i++) {
-      const token = tokensToUse[i];
-      if (!token) continue;
-
-      try {
-        console.log(`📋 Fetching ALL categories for participant ${i + 1}/${tokens.length}`);
-
-        // ✅ GDPR-SÄKER EMAIL-HÄMTNING OCH PROVIDER DETECTION
-        let userEmail = `participant_${i + 1}@privacy.local`;
-        let provider = 'google';
-        
-        try {
-          // ✅ FÖRSÖK GOOGLE FÖRST
-          const googleProfileResponse = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo?fields=email', {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (googleProfileResponse.ok) {
-            const profileData = await googleProfileResponse.json();
-            userEmail = profileData.email || userEmail;
-            provider = 'google';
-            console.log(`📧 Participant ${i + 1} identified as Google user`);
-          } else {
-            // ✅ FÖRSÖK MICROSOFT
-            const msProfileResponse = await fetchWithRetry('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            
-            if (msProfileResponse.ok) {
-              const msProfileData = await msProfileResponse.json();
-              userEmail = msProfileData.mail || msProfileData.userPrincipalName || userEmail;
-              provider = 'microsoft';
-              console.log(`📧 Participant ${i + 1} identified as Microsoft user`);
-            }
-          }
-        } catch (profileError) {
-          console.warn(`⚠️ Could not fetch user profile for participant ${i + 1}:`, profileError.message);
-        }
-
-        // ✅ HÄMTA FRÅN ALLA KALENDRAR/KATEGORIER MED RÄTT PROVIDER
-        const allEvents = await fetchAllCalendarEvents(token, timeMin, timeMax, userEmail, provider);
-        console.log(`📊 Participant ${i + 1}: Total events from ALL categories: ${allEvents.length}`);
-
-        // ✅ PROCESSA EVENTS GDPR-SÄKERT
-        const busyTimes = processCalendarEvents(allEvents, userEmail, false);
-        console.log(`✅ Participant ${i + 1}: ${busyTimes.length} busy periods after processing`);
-
-        allBusyTimes.push(...busyTimes);
-        
-      } catch (error) {
-        console.error(`❌ Error fetching calendar ${i + 1}:`, error.message);
-      }
-    }
-
-    console.log(`📊 Total busy periods from ALL participants: ${allBusyTimes.length}`);
-    
-    // ✅ GDPR-SÄKER DEBUG INFO
-    const busyByPerson = {};
-    allBusyTimes.forEach(busy => {
-      if (!busyByPerson[busy.email]) busyByPerson[busy.email] = [];
-      busyByPerson[busy.email].push(busy);
-    });
-    
-    console.log('📊 Busy times breakdown (GDPR-safe):');
-    Object.entries(busyByPerson).forEach(([email, times]) => {
-      console.log(`   Participant: ${times.length} busy periods (from ALL calendar categories)`);
-    });
-
-    const freeSlots = findFreeTimeSlots(start, end, allBusyTimes, parseInt(duration), dayStart, dayEnd);
-
-    console.log(`✅ Found ${freeSlots.length} common free slots`);
-
-    // ✅ FIREBASE: LOGGA KALENDERJÄMFÖRELSE
-    if (db) {
-      try {
-        await logDataAccess(
-          'calendar_comparison',
-          'direct_comparison',
-          null,
-          `tokens_${tokens?.length || 0}_slots_${freeSlots.length}`
-        );
-        
-        gdprLog('Firebase: Calendar comparison completed', {
-          tokenCount: tokens?.length || 0,
-          freeSlots: freeSlots.length,
-          dateRange: `${timeMin?.split('T')[0]} - ${timeMax?.split('T')[0]}`
-        });
-      } catch (firebaseError) {
-        console.warn('⚠️ Firebase comparison logging failed:', firebaseError.message);
-      }
-    }
-
-    res.json(freeSlots);
-  } catch (error) {
-    console.error('❌ Availability error:', error);
-
-    if (error instanceof BookRError) {
-      return res.status(error.statusCode).json({ error: error.message, code: error.code });
-    }
-
-    res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
-  }
+app.post('/api/availability', (req, res) => {
+  // Direktjämförelse via tokens är borttagen — använd /api/group/:id/availability med session
+  res.status(410).json({ error: 'Direct token comparison removed. Use group-based availability endpoint.', code: 'ENDPOINT_REMOVED' });
 });
 
-app.get('/api/group/:groupId/availability', pollingLimiter, validateGroup, async (req, res) => {
+app.get('/api/group/:groupId/availability', validateGroup, async (req, res) => {
   try {
     const { timeMin, timeMax, duration = 60, dayStart = '09:00', dayEnd = '17:00', includeAll = 'false' } = req.query;
 
@@ -2109,14 +1842,7 @@ app.get('/api/group/:groupId/availability', pollingLimiter, validateGroup, async
       return res.json([]);
     }
 
-    // ✅ Bygg upp busyTimes per faktisk email (ej anonymiserad) så att
-    // findFreeTimeSlots kan kontrollera ALLA deltagare — även de utan events.
-    // Om vi bara bygger participants från de som HAR events ignoreras de
-    // vars kalender är tom eller vars fetch misslyckas.
-    const busyTimesByEmail = {};
-    for (const { email } of memberTokens) {
-      busyTimesByEmail[email] = [];
-    }
+    const allMemberBusyTimes = [];
 
     const memberPromises = memberTokens.map(async ({ email, token }) => {
       try {
@@ -2125,10 +1851,11 @@ app.get('/api/group/:groupId/availability', pollingLimiter, validateGroup, async
         // ✅ DETEKTERA PROVIDER BASERAT PÅ GRUPPMEDLEM
         const member = req.group.members.find(m => m.email === email);
         let provider = 'google';
-
+        
         if (member && member.provider) {
           provider = member.provider;
         } else {
+          // ✅ FÖRSÖK DETEKTERA PROVIDER
           try {
             const testGoogle = await fetchWithRetry('https://www.googleapis.com/oauth2/v2/userinfo?fields=email', {
               headers: { 'Authorization': `Bearer ${token}` }
@@ -2145,34 +1872,23 @@ app.get('/api/group/:groupId/availability', pollingLimiter, validateGroup, async
         const busyTimes = processCalendarEvents(calendarEvents, email, includeAll === 'true');
         console.log(`✅ Member ${email}: ${busyTimes.length} busy periods after processing`);
 
-        return { email, busyTimes };
+        return busyTimes;
       } catch (error) {
         console.error(`❌ Error fetching calendar for ${email}:`, error.message);
-        return { email, busyTimes: [] };
+        return [];
       }
     });
 
     const memberResults = await Promise.allSettled(memberPromises);
-    const allMemberBusyTimes = [];
-
     memberResults.forEach(result => {
       if (result.status === 'fulfilled') {
-        const { email, busyTimes } = result.value;
-        // ✅ Tagga varje busyTime med den faktiska (ej anonymiserade) emailen
-        // så att findFreeTimeSlots kan aggregera korrekt per person.
-        busyTimes.forEach(bt => {
-          allMemberBusyTimes.push({ ...bt, email });
-        });
-        console.log(`📋 ${email}: ${busyTimes.length} busy periods added`);
+        allMemberBusyTimes.push(...result.value);
       }
     });
 
     console.log(`📊 Total busy periods across all members: ${allMemberBusyTimes.length}`);
 
-    const freeSlots = findFreeTimeSlots(
-      start, end, allMemberBusyTimes, parseInt(duration), dayStart, dayEnd,
-      memberTokens.map(m => m.email) // ✅ Skicka med ALLA deltagare — även de utan events
-    );
+    const freeSlots = findFreeTimeSlots(start, end, allMemberBusyTimes, parseInt(duration), dayStart, dayEnd);
 
     console.log(`✅ Generated ${freeSlots.length} free slots for group ${req.params.groupId}`);
 
@@ -2278,19 +1994,11 @@ const suggestionVotes = new Map();
 // ✅ CREATE MEETING SUGGESTION
 app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
   try {
-    // ✅ SÄKERHET: Vem förslaget kommer från hämtas från den autentiserade
-    // sessionen — aldrig från request body — annars kan vem som helst
-    // lägga ett förslag "som" en annan gruppmedlem.
-    if (!req.user?.email) {
-      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
-    }
-
     const { groupId } = req.params;
-    const { start, end, title, withMeet, location } = req.body;
-    const email = req.user.email;
+    const { start, end, email, title, withMeet, location } = req.body;
 
     // ✅ VALIDERA INPUT
-    if (!start || !end || !title) {
+    if (!start || !end || !email || !title) {
       throw new BookRError('Missing required fields', 400, 'MISSING_FIELDS');
     }
 
@@ -2314,7 +2022,7 @@ app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
     }
 
     // ✅ SKAPA FÖRSLAG MED UNIK ID
-    const suggestionId = `suggest_${groupId}_${randomUUID()}`;
+    const suggestionId = `suggest_${groupId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     const suggestion = {
       id: suggestionId,
@@ -2428,20 +2136,12 @@ app.get('/api/group/:groupId/suggestions', validateGroup, async (req, res) => {
 // ✅ VOTE ON SUGGESTION
 app.post('/api/group/:groupId/suggestion/:suggestionId/vote', validateGroup, async (req, res) => {
   try {
-    // ✅ SÄKERHET: Vem som röstar hämtas från den autentiserade sessionen
-    // — aldrig från request body — annars kan vem som helst rösta "som"
-    // en annan gruppmedlem och tvinga fram/avslå möten åt dem.
-    if (!req.user?.email) {
-      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
-    }
-
     const { groupId, suggestionId } = req.params;
-    const { vote } = req.body;
-    const email = req.user.email;
+    const { email, vote } = req.body;
 
     // ✅ VALIDERA INPUT
-    if (!vote) {
-      throw new BookRError('Missing vote', 400, 'MISSING_FIELDS');
+    if (!email || !vote) {
+      throw new BookRError('Missing email or vote', 400, 'MISSING_FIELDS');
     }
 
     if (!['accepted', 'rejected'].includes(vote)) {
