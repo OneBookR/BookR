@@ -1,11 +1,77 @@
 // firestore.js
 import admin from 'firebase-admin';
-import { encryptToken, decryptToken } from './gdpr-utils.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ✅ ROBUST INITIALIZATION WITH ERROR HANDLING
 let db = null;
 let isInitialized = false;
 let initPromise = null;
+
+function getFirebaseConfigFromEnv() {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+      return {
+        source: 'FIREBASE_SERVICE_ACCOUNT',
+        config: {
+          ...serviceAccount,
+          private_key: serviceAccount.private_key?.replace(/\\n/g, '\n')
+        }
+      };
+    } catch (error) {
+      throw new Error(`Invalid FIREBASE_SERVICE_ACCOUNT JSON: ${error.message}`);
+    }
+  }
+
+  const configFromFields = {
+    type: 'service_account',
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    client_id: process.env.FIREBASE_CLIENT_ID,
+    auth_uri: process.env.FIREBASE_AUTH_URI || 'https://accounts.google.com/o/oauth2/auth',
+    token_uri: process.env.FIREBASE_TOKEN_URI || 'https://oauth2.googleapis.com/token',
+    auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL || 'https://www.googleapis.com/oauth2/v1/certs',
+    client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL
+  };
+
+  if (configFromFields.project_id && configFromFields.private_key && configFromFields.client_email) {
+    return {
+      source: 'FIREBASE_* fields',
+      config: configFromFields
+    };
+  }
+
+  const serviceAccountFile = process.env.FIREBASE_SERVICE_ACCOUNT_FILE
+    ? path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_FILE)
+    : path.join(__dirname, 'firebase-key.json');
+
+  if (fs.existsSync(serviceAccountFile)) {
+    try {
+      const fileData = fs.readFileSync(serviceAccountFile, 'utf8');
+      const serviceAccount = JSON.parse(fileData);
+
+      return {
+        source: `file:${serviceAccountFile}`,
+        config: {
+          ...serviceAccount,
+          private_key: serviceAccount.private_key?.replace(/\\n/g, '\n')
+        }
+      };
+    } catch (error) {
+      throw new Error(`Invalid Firebase service account file (${serviceAccountFile}): ${error.message}`);
+    }
+  }
+
+  return null;
+}
 
 export async function initializeFirebase() {
   if (isInitialized && db) return db;
@@ -14,27 +80,21 @@ export async function initializeFirebase() {
   initPromise = (async () => {
     try {
       console.log('[Firebase] Initializing...');
-      
-      // ✅ ANVÄND MILJÖVARIABLER ISTÄLLET FÖR JSON-FIL
-      const firebaseConfig = {
-        type: 'service_account',
-        project_id: process.env.FIREBASE_PROJECT_ID || 'bookr-7a313',
-        private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID || 'd2b65834c90651d547045b5368aec4609b57bf22',
-        private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n') || 
-          '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDd1D9He8sqSU+g\nwATJPVyrnPE5dlxL33kR67IVlVFKsf21+R5HSzvh29i2n0j1/Ak0SVLBrAd6I5pb\na7Jm5NbrxnCJQd/87HRAE02kN3tfAUnNu78lIvlhHc5b0GYDsAQx5IEPtWpqrr6T\nQPOXjRM3QkqR2ZB5dzQR1xYsvEV/Az5paGgmmTMXyO+nQKNaH9Ohci46O5ISpuuk\n7Wm7uwX+3gwYitWiN1dbGolXykgaOocPSJMACQ5jSB4SCOTW3+bs4tfMt9+2CsM0\nWlKYGbAQYp+r26nXxKzqJGBgd/tW3sKdAD0jq9i+ojZ2v8wyZ6SPz7wYs1vhnXHJ\nBd0UrgVZAgMBAAECggEAFiaQY7gfVet4eZH4XbX0ZSiTR+HN8+pD7H+vdTXx+6D2\nt4SW5ZdEIANeylbxJ1Wm/6MbZz52iAI6csrix3aDZYttB6+zHk49iiZt+CoYINOq\nmydrvgQWMys8RMZ0YVrira67xSX1kziRds0jZdc5pijG9HXCq6EKazD3RGP6a+UR\n7xh7Jm6aTG6qV1XY40Do2iDN88aHrrsw6TOSZAPpJjWDS8+Jxxqo40nbaZEz2EMz\nvfL7oVNI9VNVSo8CQo67QojZkXmQ6czirD8w+RDUSu3I4bKElr64UjDlncFj3Oa3\niDQQ5L5jtS2UkoDzFZBBLWgDxJAGGMfgsqo4VAtSBwKBgQDvxxrIKTnjNx8LwxcU\n7eC0yptlVbt6pCMGjNKzDMNIN1YnZYRDNq1/khGclk8qxwhxH7XJoMhZS0bCmS9Z\n1j77afz3ha/JQtnSZI5T6SDP1qami0wiMLjys2Du+vV8cfjFxzCkgIJIA+5hqTwA\ntl7lO6VbETnHfd5fZwIAlhsTCwKBgQDs1kagSVnH3dyNKIcyssXNaXTpsMk2dlZf\n5hkgLU2dHEuBuqdfdKsqelt71fYt4vtEW3/5UCtUtrftPvs35FbqEQnSfrSXzTEe\nJS3Q3YSsJ6Hcu/HKqnGOvk01FsNqTLrIlQUTCoDQsu7BAwxNktcYn8tTmGsSyJvT\nm8pOBRkHqwKBgDy/mQ11RHFImdkFCGgJDJFBc7Vszx73Ttht/UPXy/IT8wPwOF4/\nEB3uCABAJLaVzpG6kvgOgDP/WmIbJWABY9uWsryTZkH7aexgBZ9ExUdi/r3bNOLE\nrVbwE3L4qhFpXrndCXnkBR3xwQeFNOqJSemR/wbfil/8h8Zr9pnnbdyZAoGBAJdo\nMQR9gBkHG91eIHhn046LMYPIUgowQu3R4xQwAiNDmH3Z/vBGXLquOFgFo/kX17yO\nplSTTPA+U30nO2Ey5+GBfP8Fo5w8QH9eE1kolI2eVJsRx/ThW/F+dUtQPyNw5CQh\nKHpQx6MkEQBxW2coTbxfQ5Qwp5r9hqkUOpQALE07AoGAS6PI83daIqFE47KG/sEW\ndjk1mmZ57BHUcLye2YPpnde5IH+kIcXlMPXkC3lWMCXELNemku7sjv3ZYIJB+bzj\nQT+06dYRPFuyTvJiidwx9G81Mu3CKzWiWB4AF052c9saYBrvNcXarAUmTXByk5V+\nuY9Nib9cokJePblBa01nNjc=\n-----END PRIVATE KEY-----\n',
-        client_email: process.env.FIREBASE_CLIENT_EMAIL || 'firebase-adminsdk-fbsvc@bookr-7a313.iam.gserviceaccount.com',
-        client_id: process.env.FIREBASE_CLIENT_ID || '105542045034087254652',
-        auth_uri: 'https://accounts.google.com/o/oauth2/auth',
-        token_uri: 'https://oauth2.googleapis.com/token',
-        auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
-        client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL || 
-          'https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40bookr-7a313.iam.gserviceaccount.com'
-      };
+      const firebaseSetup = getFirebaseConfigFromEnv();
 
-      // ✅ KONTROLLERA ATT CREDENTIALS FINNS
-      if (!firebaseConfig.private_key || !firebaseConfig.client_email) {
-        console.warn('[Firebase] ⚠️ Using fallback credentials from code');
+      if (!firebaseSetup) {
+        throw new Error(
+          'Firebase Admin credentials are missing. Provide FIREBASE_SERVICE_ACCOUNT, FIREBASE_* admin fields, or FIREBASE_SERVICE_ACCOUNT_FILE (defaults to backend/firebase-key.json).'
+        );
       }
+
+      const { config: firebaseConfig, source } = firebaseSetup;
+
+      if (!firebaseConfig.project_id || !firebaseConfig.private_key || !firebaseConfig.client_email) {
+        throw new Error(`Firebase service account is missing required fields (source: ${source})`);
+      }
+
+      console.log(`[Firebase] Using credentials from ${source}`);
 
       // ✅ INITIERA ADMIN SDK EN GÅNG
       if (admin.apps.length === 0) {
@@ -48,8 +108,7 @@ export async function initializeFirebase() {
       
       // ✅ SÄTT FIRESTORE INSTÄLLNINGAR FÖR BÄTTRE PRESTANDA
       db.settings({
-        ignoreUndefinedProperties: true,
-        timestampsInSnapshots: true
+        ignoreUndefinedProperties: true
       });
 
       isInitialized = true;
@@ -450,66 +509,35 @@ async function logDataAccess(action, userEmail, targetEmail, dataType) {
   }
 }
 
-// ===== ACTIVE GROUPS — persistent group state that survives restarts =====
-// Member OAuth tokens are encrypted with AES-256-GCM before storage.
-
-function encryptGroupMembers(members) {
-  return members.map(m => ({ ...m, token: encryptToken(m.token) }));
-}
-
-function decryptGroupMembers(members) {
-  return (members || []).map(m => ({ ...m, token: decryptToken(m.token) }));
-}
-
+// ✅ ACTIVE GROUPS PERSISTENCE (For group state across restarts)
 async function saveActiveGroup(groupId, groupData) {
-  const expiresAt = new Date(new Date(groupData.createdAt).getTime() + 24 * 60 * 60 * 1000);
-  const doc = {
-    ...groupData,
-    members: encryptGroupMembers(groupData.members || []),
-    memberEmails: (groupData.members || []).map(m => m.email.toLowerCase()),
-    expiresAt,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  };
-  await getDb().collection('active_groups').doc(groupId).set(doc);
+  const docRef = getDb().collection('active_groups').doc(groupId);
+  await docRef.set(groupData, { merge: true });
 }
 
 async function deleteActiveGroup(groupId) {
-  await getDb().collection('active_groups').doc(groupId).delete();
+  const docRef = getDb().collection('active_groups').doc(groupId);
+  await docRef.delete();
 }
 
 async function loadAllActiveGroups() {
-  const now = new Date();
-  const snapshot = await getDb()
-    .collection('active_groups')
-    .where('expiresAt', '>', now)
-    .get();
-
+  const snapshot = await getDb().collection('active_groups').get();
   const groups = new Map();
-  for (const doc of snapshot.docs) {
-    const data = doc.data();
-    groups.set(doc.id, {
-      ...data,
-      id: doc.id,
-      members: decryptGroupMembers(data.members),
-    });
-  }
+  snapshot.docs.forEach(doc => {
+    groups.set(doc.id, doc.data());
+  });
   return groups;
 }
 
 async function getActiveGroupsByEmail(email) {
-  const snapshot = await getDb()
-    .collection('active_groups')
-    .where('memberEmails', 'array-contains', email.toLowerCase())
+  const snapshot = await getDb().collection('active_groups')
+    .where('members', 'array-contains', { email })
     .get();
-
-  return snapshot.docs.map(doc => {
-    const data = doc.data();
-    return {
-      ...data,
-      id: doc.id,
-      members: decryptGroupMembers(data.members),
-    };
+  const groups = new Map();
+  snapshot.docs.forEach(doc => {
+    groups.set(doc.id, doc.data());
   });
+  return groups;
 }
 
 // ✅ EXPORT ALL FUNCTIONS - ENDAST EN GÅNG!
@@ -554,14 +582,14 @@ export {
   createUser,
   getUser,
   updateUserLastLogin,
-  
+
   // GDPR & Audit
   deleteUserData,
   logDataAccess,
 
-  // Active groups
+  // Active Groups Persistence
   saveActiveGroup,
   deleteActiveGroup,
   loadAllActiveGroups,
-  getActiveGroupsByEmail,
+  getActiveGroupsByEmail
 };

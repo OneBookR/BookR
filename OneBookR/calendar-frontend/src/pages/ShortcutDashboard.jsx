@@ -302,10 +302,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         }
         
         // Sedan, gå med i gruppen
-        const joinRes = await apiRequest(`/api/group/join`, {
+        const joinRes = await apiRequest(`/api/group/${groupId}/join`, {
           method: 'POST',
           body: JSON.stringify({
-            groupId,
             invitee: inviteeId,
             email: userEmail
           })

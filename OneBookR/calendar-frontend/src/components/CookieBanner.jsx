@@ -33,12 +33,12 @@ function activateAnalytics() {
   if (typeof window.gtag === 'function') return; // redan aktiv
   const s = document.createElement('script');
   s.async = true;
-  s.src = 'https://www.googletagmanager.com/gtag/js?id=G-BN7W80K6QD';
+  s.src = 'https://www.googletagmanager.com/gtag/js?id=G-SPNL4HKZ7R';
   document.head.appendChild(s);
   window.dataLayer = window.dataLayer || [];
   window.gtag = function () { window.dataLayer.push(arguments); };
   window.gtag('js', new Date());
-  window.gtag('config', 'G-BN7W80K6QD', { anonymize_ip: true });
+  window.gtag('config', 'G-SPNL4HKZ7R', { anonymize_ip: true });
 }
 
 function applyConsent(prefs) {

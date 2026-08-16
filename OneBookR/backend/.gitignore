@@ -1,1 +1,9 @@
 .qodo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Firebase Admin service account (local only)
+firebase-key.json

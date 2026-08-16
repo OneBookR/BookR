@@ -270,6 +270,9 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
           }, 500);
         }
       } else {
+        if (data?.inviteLinks && Array.isArray(data.inviteLinks)) {
+          setGroupLink(data.inviteLinks.join('\n'));
+        }
         setMessage(data?.error || 'Något gick fel.');
       }
       
