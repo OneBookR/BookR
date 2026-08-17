@@ -33,14 +33,23 @@ function App() {
 
   // ✅ URL PARAMS
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
-  const params = useMemo(() => ({
+
+  // OBS: params är riktig React-state, inte en useMemo av window.location.
+  // window.location.search muteras utanför Reacts kontroll (via
+  // history.replaceState i t.ex. handleLeaveGroup), och en useMemo med
+  // tom dependency-array fångar bara URL:en vid första renderingen — den
+  // uppdateras aldrig efteråt. Det gjorde att "Lämna grupp" tog bort
+  // ?group= ur adressfältet men params.groupId förblev satt för alltid,
+  // så shouldShowDashboard förblev true och man landade kvar i gruppvyn.
+  // Varje ställe som muterar URL:en måste nu även anropa setParams.
+  const [params, setParams] = useState(() => ({
     groupId: urlParams.get('group'),
     inviteeId: urlParams.get('invitee'),
     authToken: urlParams.get('auth'),
     view: urlParams.get('view'),
     meetingType: urlParams.get('meetingType'),
     error: urlParams.get('error')
-  }), [urlParams]);
+  }));
 
   const authReturnTo = useMemo(() => {
     const currentPath = window.location.pathname + window.location.search;
@@ -197,9 +206,14 @@ function App() {
     url.searchParams.delete('contactEmail');
     url.searchParams.delete('contactName');
     url.searchParams.delete('meetingType');
-    
+
     window.history.replaceState({}, '', url);
-    
+
+    // ✅ Måste även nollställa params-state — annars förblir params.groupId
+    // satt (se kommentar vid params-state ovan) och shouldShowDashboard
+    // stannar kvar på true trots att URL:en och currentView är rensade.
+    setParams(prev => ({ ...prev, groupId: null, inviteeId: null, meetingType: null }));
+
     // Återgå till shortcut dashboard
     setCurrentView('shortcut');
   }, []);
@@ -212,11 +226,13 @@ function App() {
       const url = new URL(window.location);
       url.searchParams.set('view', 'task');
       window.history.replaceState({}, '', url);
+      setParams(prev => ({ ...prev, view: 'task' }));
       setCurrentView('task');
     } else {
       const url = new URL(window.location);
       url.searchParams.set('meetingType', type);
       window.history.replaceState({}, '', url);
+      setParams(prev => ({ ...prev, meetingType: type }));
       setCurrentView('dashboard');
     }
   }, []);
@@ -555,9 +571,10 @@ function App() {
           {shouldShowTask ? (
             <Task user={user} />
           ) : shouldShowDashboard ? (
-            <Dashboard 
-              user={user} 
+            <Dashboard
+              user={user}
               onNavigateToMeeting={handleNavigateToMeeting}
+              groupId={params.groupId}
             />
           ) : (
             <ShortcutDashboard 

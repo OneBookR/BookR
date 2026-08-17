@@ -690,6 +690,50 @@ async function fetchInvitedEvents(token, userEmail, timeMin, timeMax) {
   }
 }
 
+// ✅ Bygger ett Date-objekt för en given klockslag (HH, MM) i Europe/Stockholm
+// på samma kalenderdag som `referenceDate`, oavsett vilken tidszon Node-
+// processen själv kör i. Date.setHours() sätter timmen i SERVERNS lokala
+// tid — på Railway är det UTC, så dayStart="09:00" blev tolkat som 09:00
+// UTC = 11:00 svensk sommartid (ännu mer under vintertid-skiftet), vilket
+// förklarade varför de förinställda arbetstiderna 09–17 visade slots
+// klockan 11–19 eller 13–19 istället. DST-säker: räknar ut Stockholms
+// faktiska UTC-offset för just det datumet via Intl, så det fungerar
+// korrekt både sommar- och vintertid.
+function stockholmTimeOnDate(referenceDate, hour, minute) {
+  const tzName = 'Europe/Stockholm';
+
+  // Gissa en UTC-tidpunkt genom att naivt sätta önskad timme som om den
+  // vore UTC, mät sedan hur den gissningen faktiskt visas i Stockholm-tid
+  // och korrigera med precis den skillnaden en gång. En enda korrigering
+  // räcker — offseten (UTC+1 eller UTC+2 beroende på sommar-/vintertid)
+  // är konstant kring den här tidpunkten, det är inget att iterera mot.
+  const guess = new Date(Date.UTC(
+    referenceDate.getUTCFullYear(),
+    referenceDate.getUTCMonth(),
+    referenceDate.getUTCDate(),
+    hour, minute, 0, 0
+  ));
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tzName,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(guess);
+
+  const get = (type) => Number(parts.find(p => p.type === type)?.value);
+  const shownAsUtc = Date.UTC(
+    get('year'), get('month') - 1, get('day'),
+    get('hour'), get('minute'), get('second')
+  );
+
+  // Om guess (tolkad som UTC) visas som t.ex. 11:00 i Stockholm men vi
+  // ville ha 09:00 där, ligger shownAsUtc 2h EFTER guess i absolut tid —
+  // vi måste alltså dra bort mellanskillnaden från guess.
+  const diffMs = shownAsUtc - guess.getTime();
+  return new Date(guess.getTime() - diffMs);
+}
+
 // ===== FREE SLOT DETECTION - KORREKT KONTROLL AV ALLA DELTAGARE =====
 function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '09:00', dayEnd = '17:00', allParticipants = []) {
   const freeSlots = [];
@@ -759,11 +803,11 @@ function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '
         continue;
       }
 
-      const workStart = new Date(currentDate);
-      workStart.setHours(startHour, startMinute, 0, 0);
-      
-      const workEnd = new Date(currentDate);
-      workEnd.setHours(endHour, endMinute, 0, 0);
+      // ✅ Bygg arbetsdagens start/slut i Europe/Stockholm-tid, inte serverns
+      // lokala tid (Railway kör UTC) — annars blir t.ex. dayStart="09:00"
+      // tolkat som 09:00 UTC = 11:00 svensk sommartid.
+      const workStart = stockholmTimeOnDate(currentDate, startHour, startMinute);
+      const workEnd = stockholmTimeOnDate(currentDate, endHour, endMinute);
 
       console.log(`\n📅 Analyzing ${currentDate.toLocaleDateString('sv-SE')}`);
 
