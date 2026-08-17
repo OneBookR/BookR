@@ -14,6 +14,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
 import InviteFriend from './InviteFriend';
+import { useNotifications } from '../hooks/useNotifications.js';
 
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
@@ -79,6 +80,16 @@ export default function CompareCalendar({
   const [meetingLocation, setMeetingLocation] = useState('');
   
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
+
+  // ✅ PROPOSAL POPUP NOTIFICATION — visas i nedre högra hörnet direkt när
+  // ett nytt tidsförslag kommer in, så mottagaren inte behöver scrolla ner
+  // och leta för att upptäcka det.
+  const [proposalNotification, setProposalNotification] = useState({
+    open: false,
+    proposal: null
+  });
+  const previousSuggestionsRef = useRef([]);
+  const { showNotification } = useNotifications();
 
   // ✅ ROBUST RATE LIMITING
   const [requestState, setRequestState] = useState({
@@ -286,15 +297,18 @@ export default function CompareCalendar({
     }
   }, [propGroupId, groupInfo, user]);
   
-  // ✅ POLLING: Enkel 3-sekunders polling
+  // ✅ POLLING: Snabb 1-sekunders polling för proposals — så att popup-
+  // notisen för ett nytt tidsförslag dyker upp nästan omedelbart istället
+  // för att mottagaren måste vänta flera sekunder eller uppleva att den
+  // inte kommer alls.
   useEffect(() => {
     if (!propGroupId || !hasJoinedGroup) return;
-    
+
     const timer = setInterval(() => {
       fetchGroupStatus();
-      fetchSuggestions(); // ✅ Uppdatera även förslag
-    }, 3000);
-    
+      fetchSuggestions(); // ✅ Snabbare uppdateringar av förslag
+    }, 1000);
+
     return () => clearInterval(timer);
   }, [propGroupId, hasJoinedGroup]);
 
@@ -534,18 +548,52 @@ export default function CompareCalendar({
   // ✅ FETCH SUGGESTIONS FUNCTION - FIXA API URL
   const fetchSuggestions = useCallback(async () => {
     if (!propGroupId) return;
-    
+
     try {
       const response = await apiRequest(`/api/group/${propGroupId}/suggestions`);
-      
+
       if (response.ok) {
         const data = await response.json();
-        setSuggestions(data.suggestions || []);
+        const newSuggestions = data.suggestions || [];
+        const userEmail = userData.email;
+
+        // ✅ DETECT NEW PROPOSALS - jämför mot förra pollningen för att
+        // upptäcka precis de förslag som är nya sedan sist.
+        const previousIds = previousSuggestionsRef.current.map(s => s.id);
+        const newProposals = newSuggestions.filter(s => !previousIds.includes(s.id));
+
+        if (newProposals.length > 0) {
+          newProposals.forEach(proposal => {
+            // ✅ Visa aldrig popupen för personen som själv skapade förslaget
+            const isMyProposal = proposal.suggestedBy?.toLowerCase() === userEmail?.toLowerCase();
+            if (isMyProposal) return;
+
+            const startTime = new Date(proposal.start).toLocaleTimeString('sv-SE', {
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+
+            // ✅ Webbläsarnotis (om tillåtet)
+            showNotification('📋 Nytt tidsförslag!', {
+              body: `${proposal.title} - ${startTime}`,
+              requireInteraction: true
+            });
+
+            // ✅ Popup direkt i appen, nedre högra hörnet
+            setProposalNotification({
+              open: true,
+              proposal
+            });
+          });
+        }
+
+        previousSuggestionsRef.current = newSuggestions;
+        setSuggestions(newSuggestions);
       }
     } catch (error) {
       console.error('❌ Failed to fetch suggestions:', error);
     }
-  }, [propGroupId]);
+  }, [propGroupId, userData.email, showNotification]);
 
   // ✅ HANDLE SUGGEST FUNCTION
   const handleSuggest = useCallback((slot) => {
@@ -1486,6 +1534,77 @@ export default function CompareCalendar({
         >
           {toast.message}
         </Alert>
+      </Snackbar>
+
+      {/* ✅ PROPOSAL POPUP - Bottom Right Corner. Visas direkt när ett nytt
+          tidsförslag kommer in, så mottagaren inte behöver scrolla ner och
+          leta efter det. */}
+      <Snackbar
+        open={proposalNotification.open}
+        onClose={() => setProposalNotification({ ...proposalNotification, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        sx={{
+          '& .MuiPaper-root': {
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            boxShadow: '0 24px 60px rgba(15, 23, 42, 0.18)',
+            borderRadius: '12px',
+            border: '1px solid var(--border)',
+            backdropFilter: 'blur(18px)',
+            minWidth: 320
+          }
+        }}
+      >
+        <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2 }}>
+          {proposalNotification.proposal && (
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, mb: 1, color: 'var(--text)' }}>
+                📋 {proposalNotification.proposal.title}
+              </Typography>
+
+              <Typography variant="body2" sx={{ mb: 0.5, color: 'var(--text-secondary)' }}>
+                <strong>Tid:</strong> {new Date(proposalNotification.proposal.start).toLocaleString('sv-SE')}
+              </Typography>
+
+              <Typography variant="body2" sx={{ mb: 2, color: 'var(--text-secondary)' }}>
+                <strong>Med:</strong> {proposalNotification.proposal.suggestedBy}
+              </Typography>
+
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  sx={{
+                    bgcolor: '#4caf50',
+                    '&:hover': { bgcolor: '#45a049' },
+                    flex: 1
+                  }}
+                  onClick={() => {
+                    voteSuggestion(proposalNotification.proposal.id, 'accepted');
+                    setProposalNotification({ ...proposalNotification, open: false });
+                  }}
+                >
+                  ✓ Acceptera
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    borderColor: '#f44336',
+                    color: '#f44336',
+                    '&:hover': { borderColor: '#d32f2f', color: '#d32f2f' },
+                    flex: 1
+                  }}
+                  onClick={() => {
+                    voteSuggestion(proposalNotification.proposal.id, 'rejected');
+                    setProposalNotification({ ...proposalNotification, open: false });
+                  }}
+                >
+                  ✗ Neka
+                </Button>
+              </Box>
+            </Box>
+          )}
+        </Paper>
       </Snackbar>
     </Box>
   );
