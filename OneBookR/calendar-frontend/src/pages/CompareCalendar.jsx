@@ -258,21 +258,20 @@ export default function CompareCalendar({
     }
   }, [propGroupId, hasJoinedGroup]);
 
-  // ✅ AUTO-REFRESH: Endast för skapare när alla anslutit
+  // ✅ AUTO-REFRESH: För ALLA medlemmar (inte bara skaparen) när alla anslutit.
+  // Tidigare gällde detta bara skaparen, vilket gjorde att den som blivit
+  // inbjuden och satt i väntrummet aldrig automatiskt togs vidare in i
+  // jämförelsen även fast groupInfo (via polling) visade att alla anslutit —
+  // de fick sitta kvar tills de manuellt laddade om sidan.
   useEffect(() => {
     if (!propGroupId || !groupInfo || !user) return;
-    
-    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
-    const isCreator = groupInfo.members?.some(m => m.email === userEmail && m.isCreator);
-    
-    if (!isCreator) return;
-    
+
     const reloadKey = `bookr_refreshed_${propGroupId}`;
     if (sessionStorage.getItem(reloadKey) === 'true') return;
-    
+
     const pendingCount = groupInfo.pendingMembers?.length || 0;
     const memberCount = groupInfo.memberCount || 0;
-    
+
     if (pendingCount === 0 && memberCount >= 2) {
       console.log('🎉 AUTO-REFRESH: Alla anslutna!');
       sessionStorage.setItem(reloadKey, 'true');

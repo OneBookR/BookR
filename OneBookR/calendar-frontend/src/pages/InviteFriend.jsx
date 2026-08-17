@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import { API_BASE_URL } from '../config';
+import { apiRequest } from '../utils/apiConfig.js';
 
 const InviteFriend = ({ fromUser, theme }) => {
   // ✅ STABLE USER DATA EXTRACTION
@@ -169,6 +170,8 @@ const InviteFriend = ({ fromUser, theme }) => {
   }, []);
 
   // ✅ OPTIMIZED SEND INVITES WITH PROPER ERROR HANDLING
+  const sendingRef = useRef(false);
+
   const sendInvites = useCallback(async () => {
     if (isLoading || emails.length === 0) {
       if (emails.length === 0) {
@@ -181,7 +184,14 @@ const InviteFriend = ({ fromUser, theme }) => {
       setMessage('Kunde inte hitta din e-postadress. Logga ut och logga in igen.');
       return;
     }
-    
+
+    // ✅ ROBUST DUBBELKLICKSSPÄRR: setIsLoading är async (re-render), så ett
+    // andra klick innan re-rendern hunnit disabla knappen kunde annars
+    // trigga ett andra /api/invite-anrop och skapa en duplicerad grupp/
+    // inbjudan till samma mottagare. sendingRef är synkron och stoppar det.
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+
     setIsLoading(true);
     setMessage('Skickar inbjudningar...');
 
@@ -211,15 +221,27 @@ const InviteFriend = ({ fromUser, theme }) => {
         directAccessEmails,
       };
       
-      const res = await fetch(`${API_BASE_URL}/api/invite`, {
+      // ✅ VIKTIGT: apiRequest skickar med credentials: 'include' så
+      // sessionscookien följer med. Ett rått fetch() gjorde det INTE,
+      // vilket fick /api/invite att svara 401 (ej inloggad) — det visades
+      // bara som ett generiskt felmeddelande i UI:t, aldrig som en tydlig
+      // inloggningsfel, vilket gjorde det svårt att upptäcka.
+      const res = await apiRequest('/api/invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
       });
 
       // Handle rate limiting
       if (res.status === 429) {
         setMessage('För många förfrågningar. Vänta en minut och försök igen.');
+        return;
+      }
+
+      // ✅ TYDLIGT 401-MEDDELANDE: annars ser det ut som att inbjudan
+      // "gick igenom" fast servern avvisade den tyst, vilket är precis det
+      // förvirrande läge som orsakade väntrums-buggen tidigare.
+      if (res.status === 401) {
+        setMessage('Din session har gått ut. Logga ut och in igen, och skicka inbjudan på nytt.');
         return;
       }
 
@@ -273,11 +295,12 @@ const InviteFriend = ({ fromUser, theme }) => {
         setMessage('Tekniskt fel. Försök igen om en stund.');
       }
     } finally {
+      sendingRef.current = false;
       setIsLoading(false);
     }
   }, [
-    isLoading, 
-    emails, 
+    isLoading,
+    emails,
     userData.isValid,
     userData.email,
     groupName,
