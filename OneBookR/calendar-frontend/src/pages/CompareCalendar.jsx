@@ -186,26 +186,32 @@ export default function CompareCalendar({
   }, [myToken]);
 
   // ✅ JOIN GROUP AUTOMATICALLY - FIXA API URL (FLYTTA FÖRE fetchGroupAvailability)
+  // OBS: kräver INTE myToken. Backend hämtar identitet och kalender-token
+  // uteslutande från den autentiserade sessionen (req.user), aldrig från
+  // request body (se /api/group/:id/join i server.js) — det är en
+  // medveten säkerhetsspärr mot att låtsas vara någon annan. Men
+  // Dashboard.jsx skickar alltid myToken={null} till den här komponenten
+  // (tokens hanteras server-side sedan en tidigare omskrivning), så ett
+  // krav här på ett icke-null myToken gjorde att joinGroup() alltid
+  // avbröt sig självt tyst — ingen inbjuden kunde någonsin gå med i en
+  // grupp, vilket fastnade dem i väntrummet permanent.
   const joinGroup = useCallback(async () => {
-    if (!propGroupId || !user || !myToken) return;
-    
-    // ✅ VALIDERA TOKEN FÖRST
-    const isTokenValid = await validateToken();
-    if (!isTokenValid) {
-      console.log('❌ Cannot join group - invalid token');
-      return false;
-    }
-    
+    if (!propGroupId || !user) return;
+
+    // OBS: ingen klientsidig myToken-validering här längre — validateToken()
+    // kräver myToken, som (se ovan) alltid är null från den här sidan.
+    // Backend är redan den auktoritativa källan för sessionsstatus och
+    // svarar 401 nedan om sessionen faktiskt är ogiltig.
+
     try {
       const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
-      
+
       console.log(`👥 Joining group ${propGroupId} as ${userEmail}`);
-      
+
       const response = await apiRequest(`/api/group/${propGroupId}/join`, {
         method: 'POST',
         body: JSON.stringify({
-          email: userEmail,
-          token: myToken
+          email: userEmail
         })
       });
       
@@ -229,7 +235,7 @@ export default function CompareCalendar({
       console.error('❌ Join group error:', error);
       return false;
     }
-  }, [propGroupId, user, myToken, validateToken]);
+  }, [propGroupId, user]);
 
   // ✅ REMOVED OLD fetchGroupAvailability - REPLACED WITH UNIFIED fetchAvailability
 
@@ -301,14 +307,15 @@ export default function CompareCalendar({
       console.log('⏳ Already fetching, skipping...');
       return;
     }
-    
-    // ✅ VALIDERA TOKEN FÖRST
-    const isTokenValid = await validateToken();
-    if (!isTokenValid) {
-      setError('Token ogiltig - omdirigerar till inloggning...');
-      return;
-    }
-    
+
+    // OBS: validateToken() kräver myToken, som denna sida alltid får som
+    // null (tokens hanteras server-side via sessionen, se joinGroup ovan).
+    // Ett krav på den här klientsidiga valideringen gjorde att
+    // kalenderjämförelsen aldrig gick att starta för gruppflödet — samma
+    // rotorsak som gjorde att man aldrig kunde gå med i en grupp.
+    // Endpointen nedan är själv skyddad server-side och svarar 401 om
+    // sessionen faktiskt är ogiltig; det hanteras i felgrenen längre ner.
+
     setIsLoading(true);
     setHasSearched(true);
     setError(null);
@@ -465,8 +472,7 @@ export default function CompareCalendar({
     dayStart,
     dayEnd,
     groupInfo?.memberCount,
-    includeAllEvents,
-    validateToken
+    includeAllEvents
   ]);
 
   // ✅ AUTO-FETCH ENDAST EFTER REFRESH - INTE INNAN
