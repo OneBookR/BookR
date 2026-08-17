@@ -1,0 +1,135 @@
+<svg width="2200" height="1500" viewBox="0 0 2200 1500" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">BookR architecture and flow</title>
+  <desc id="desc">BookR system diagram showing user login, frontend, Vite proxy, Express backend, OAuth, Google/Microsoft APIs, Firestore, cache, security, and email flow.</desc>
+
+  <defs>
+    <marker id="arrow" markerWidth="18" markerHeight="18" refX="15" refY="9" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L18,9 L0,18 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 32px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 600 18px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .box-title { font: 700 22px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .small { font: 500 14px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .label { font: 600 13px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .box { fill: #ffffff; stroke: #dbeafe; stroke-width: 2; }
+      .box2 { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; }
+      .box3 { fill: #ecfdf5; stroke: #a7f3d0; stroke-width: 2; }
+      .box4 { fill: #fff7ed; stroke: #fed7aa; stroke-width: 2; }
+      .note { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.5; }
+      .blue-line { stroke: #2563eb; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .green-line { stroke: #0f766e; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .amber-line { stroke: #b45309; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dark-line { stroke: #334155; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .purple-line { stroke: #7c3aed; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="2200" height="1500" fill="#eff6ff"/>
+
+  <text x="1100" y="60" text-anchor="middle" class="title">BookR – Arkitektur och flow</text>
+  <text x="1100" y="92" text-anchor="middle" class="subtitle">Varje steg förklarar vad som händer och varför det behövs</text>
+
+  <!-- Top row boxes -->
+  <rect x="50" y="150" width="220" height="120" rx="16" class="box"/>
+  <text x="160" y="192" text-anchor="middle" class="box-title">Användare</text>
+  <text x="160" y="218" text-anchor="middle" class="small">Loggar in</text>
+  <text x="160" y="238" text-anchor="middle" class="small">med Google / Microsoft</text>
+
+  <rect x="340" y="140" width="260" height="170" rx="16" class="box2"/>
+  <text x="470" y="177" text-anchor="middle" class="box-title">React Frontend</text>
+  <text x="470" y="206" text-anchor="middle" class="small">UI, navigering, state,</text>
+  <text x="470" y="227" text-anchor="middle" class="small">grupp-/inbjudningsflöde</text>
+  <text x="470" y="248" text-anchor="middle" class="small">visar mötestidsförslag</text>
+  <text x="470" y="269" text-anchor="middle" class="small">äger inte tokens</text>
+
+  <rect x="650" y="150" width="220" height="150" rx="16" class="box2"/>
+  <text x="760" y="188" text-anchor="middle" class="box-title">Vite Proxy</text>
+  <text x="760" y="214" text-anchor="middle" class="small">/api och /auth</text>
+  <text x="760" y="236" text-anchor="middle" class="small">dirigeras till backend</text>
+  <text x="760" y="258" text-anchor="middle" class="small">i lokal utveckling</text>
+
+  <rect x="930" y="150" width="350" height="220" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="1105" y="188" text-anchor="middle" class="box-title">Express Backend</text>
+  <text x="1105" y="214" text-anchor="middle" class="small">Sessionshantering</text>
+  <text x="1105" y="235" text-anchor="middle" class="small">Passport OAuth</text>
+  <text x="1105" y="256" text-anchor="middle" class="small">Tokenvalidering</text>
+  <text x="1105" y="277" text-anchor="middle" class="small">Kalenderlogik</text>
+  <text x="1105" y="298" text-anchor="middle" class="small">GDPR + rate limiting</text>
+  <text x="1105" y="319" text-anchor="middle" class="small">Email + gruppflöde</text>
+
+  <rect x="1380" y="150" width="340" height="180" rx="18" class="box3"/>
+  <text x="1550" y="188" text-anchor="middle" class="box-title">Kalender-API:er</text>
+  <text x="1550" y="216" text-anchor="middle" class="small">Google Calendar API</text>
+  <text x="1550" y="237" text-anchor="middle" class="small">Microsoft Graph</text>
+  <text x="1550" y="258" text-anchor="middle" class="small">Användarens kalender =</text>
+  <text x="1550" y="279" text-anchor="middle" class="small">källa till upptagna tider</text>
+
+  <!-- Middle left explanatory box -->
+  <rect x="300" y="420" width="620" height="170" rx="18" class="note"/>
+  <text x="610" y="455" text-anchor="middle" class="box-title">Flöde i praktiken</text>
+  <text x="620" y="487" text-anchor="middle" class="small">1. inloggning och session</text>
+  <text x="620" y="510" text-anchor="middle" class="small">2. kalenderhämtning från Google / Microsoft</text>
+  <text x="620" y="533" text-anchor="middle" class="small">3. filtrering och beräkning av upptagna tider</text>
+  <text x="620" y="556" text-anchor="middle" class="small">4. jämförelse mellan deltagare → lediga mötestidsförslag</text>
+
+  <!-- security box -->
+  <rect x="1030" y="470" width="280" height="130" rx="18" class="box4"/>
+  <text x="1170" y="510" text-anchor="middle" class="box-title">Säkerhet</text>
+  <text x="1170" y="536" text-anchor="middle" class="small">CORS, Helmet, session cookies,</text>
+  <text x="1170" y="558" text-anchor="middle" class="small">state validation, rate limits</text>
+
+  <!-- Firestore -->
+  <rect x="1380" y="420" width="340" height="180" rx="18" class="box3"/>
+  <text x="1550" y="458" text-anchor="middle" class="box-title">Firestore</text>
+  <text x="1550" y="486" text-anchor="middle" class="small">Users</text>
+  <text x="1550" y="508" text-anchor="middle" class="small">Groups</text>
+  <text x="1550" y="530" text-anchor="middle" class="small">Invitations</text>
+  <text x="1550" y="552" text-anchor="middle" class="small">Waitlist</text>
+  <text x="1550" y="574" text-anchor="middle" class="small">+ activeGroups cache</text>
+
+  <!-- Email -->
+  <rect x="1380" y="680" width="340" height="170" rx="18" class="box4"/>
+  <text x="1550" y="718" text-anchor="middle" class="box-title">Email / Resend</text>
+  <text x="1550" y="746" text-anchor="middle" class="small">Skickar inbjudningar</text>
+  <text x="1550" y="768" text-anchor="middle" class="small">och återkoppling</text>
+  <text x="1550" y="790" text-anchor="middle" class="small">till gruppmedlemmar</text>
+
+  <!-- Button bottom note -->
+  <rect x="80" y="1010" width="2040" height="220" rx="18" class="note"/>
+  <text x="110" y="1050" class="box-title">Viktig tolkning</text>
+  <text x="110" y="1080" class="small">BookR är ett backend-driven system: frontend visar UI, men autentisering, tokenvalidering, kalenderhämtning, filtrering, GDPR-skydd och tidsberäkning sker på servern.</text>
+  <text x="110" y="1107" class="small">Det gör att systemet kan höja säkerhet, minska risken för dataläckage och ge konsekvent affärslogik oavsett frontend- eller klientmiljö.</text>
+  <text x="110" y="1134" class="small">Det centrala värdet ligger i att kombinera många användares kalenderdata och hitta en tidslucka som faktiskt passar hela gruppen.</text>
+  <text x="110" y="1161" class="small">Det är därför systemet inte bara är en kalender-app – det är ett säkerhetsmedvetet, dataintensivt matchningssystem för mötesplanering.</text>
+
+  <!-- arrows with labels -->
+  <path d="M270 210 H340" class="blue-line"/>
+  <text x="305" y="190" text-anchor="middle" class="label">Klickar in</text>
+
+  <path d="M600 225 H650" class="blue-line"/>
+  <text x="625" y="205" text-anchor="middle" class="label">UI-anrop</text>
+
+  <path d="M870 225 H930" class="blue-line"/>
+  <text x="900" y="205" text-anchor="middle" class="label">/api + /auth</text>
+
+  <path d="M1280 220 H1380" class="green-line"/>
+  <text x="1318" y="200" text-anchor="middle" class="label">Hämta kalenderhändelser</text>
+
+  <path d="M1105 370 L1105 470" class="dark-line"/>
+  <text x="1188" y="420" text-anchor="middle" class="label">Sessions- och säkerhetskontroll</text>
+
+  <path d="M1280 510 C1320 540, 1340 540, 1380 510" class="purple-line"/>
+  <text x="1325" y="490" text-anchor="middle" class="label">Spara användare, grupp, inbjudningar</text>
+
+  <path d="M1250 770 C1328 760, 1350 740, 1380 760" class="amber-line"/>
+  <text x="1308" y="742" text-anchor="middle" class="label">Skicka inbjudningar</text>
+
+  <path d="M1550 600 L1550 680" class="amber-line"/>
+  <text x="1595" y="640" text-anchor="middle" class="label">Notifikation</text>
+
+  <path d="M930 415 C820 462, 760 470, 690 490" class="dark-line"/>
+  <text x="860" y="465" text-anchor="middle" class="label">busy times → free slots → förslag</text>
+
+  <text x="1100" y="1460" text-anchor="middle" class="small">Grafen visar arkitekturen och varför varje lager finns – inte bara vad som händer, utan också varför det behövs.</text>
+</svg>

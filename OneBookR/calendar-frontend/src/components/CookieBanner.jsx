@@ -3,6 +3,10 @@ import { Box, Button, Switch, Typography, Divider, Paper, Collapse } from '@mui/
 
 const STORAGE_KEY = 'bookr_cookie_consent';
 
+// Enda källan till sanning för GA4 Measurement ID – matcha detta mot
+// "Measurement ID" i GA4 (Admin > Data streams) om det någonsin ändras.
+const GA_MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-BN7W80K6QD';
+
 const DEFAULT_PREFS = {
   necessary: true,   // alltid på, kan inte stängas av
   analytics: false,
@@ -33,12 +37,12 @@ function activateAnalytics() {
   if (typeof window.gtag === 'function') return; // redan aktiv
   const s = document.createElement('script');
   s.async = true;
-  s.src = 'https://www.googletagmanager.com/gtag/js?id=G-SPNL4HKZ7R';
+  s.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
   document.head.appendChild(s);
   window.dataLayer = window.dataLayer || [];
   window.gtag = function () { window.dataLayer.push(arguments); };
   window.gtag('js', new Date());
-  window.gtag('config', 'G-SPNL4HKZ7R', { anonymize_ip: true });
+  window.gtag('config', GA_MEASUREMENT_ID, { anonymize_ip: true });
 }
 
 function applyConsent(prefs) {

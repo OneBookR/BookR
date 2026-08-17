@@ -11,7 +11,6 @@ import { randomUUID } from 'crypto';
 import { initializeFirebase } from './firestore.js';
 import {
   addToWaitlist, createGroup, createInvitation, createUser, updateUserLastLogin,
-  getInvitationsByEmail, getInvitation, updateInvitation,
   logDataAccess, createBookingSession, updateBookingSession,
   saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail
 } from './firestore.js';
@@ -1101,51 +1100,8 @@ const validateAuth = (req, res, next) => {
 // ===== API ROUTES =====
 
 // ✅ MISSING ENDPOINTS THAT FRONTEND EXPECTS
-app.get('/api/invitations/:email', async (req, res) => {
-  try {
-    const email = String(req.params.email || '').toLowerCase().trim();
-
-    if (!validateEmail(email)) {
-      return res.status(400).json({ error: 'Invalid email', code: 'INVALID_EMAIL' });
-    }
-
-    let invitations = [];
-
-    if (db) {
-      invitations = await getInvitationsByEmail(email);
-    }
-
-    // Fallback i localhost/minne så att väntläge inte blir permanent även om
-    // Firestore inte är tillgängligt.
-    const memoryInvitations = Array.from(activeGroups.values())
-      .filter((group) =>
-        (group.invitedEmails || []).some((invitedEmail) => invitedEmail.toLowerCase() === email) &&
-        !group.members.some((member) => member.email.toLowerCase() === email)
-      )
-      .map((group) => ({
-        id: `mem:${group.id}:${encodeURIComponent(email)}`,
-        email,
-        groupId: group.id,
-        inviteeId: email,
-        fromEmail: group.creator,
-        groupName: group.name,
-        createdAt: group.createdAt,
-        responded: false,
-        directAccess: false
-      }));
-
-    const mergedInvitations = [...invitations];
-    for (const invitation of memoryInvitations) {
-      if (!mergedInvitations.some((existing) => existing.groupId === invitation.groupId && existing.email?.toLowerCase() === email)) {
-        mergedInvitations.push(invitation);
-      }
-    }
-
-    res.json({ invitations: mergedInvitations });
-  } catch (error) {
-    console.error('❌ Failed to fetch invitations:', error);
-    res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
-  }
+app.get('/api/invitations/:email', (req, res) => {
+  res.json([]);
 });
 
 app.post('/api/errors', (req, res) => {
@@ -1158,62 +1114,9 @@ app.post('/api/contact-request', (req, res) => {
   res.json({ success: true, message: 'Contact request processed' });
 });
 
-app.post('/api/invitation/:id/respond', async (req, res) => {
-  try {
-    const invitationId = String(req.params.id || '');
-    const response = String(req.body?.response || '').trim();
-
-    if (!invitationId) {
-      return res.status(400).json({ error: 'Invitation id is required', code: 'MISSING_INVITATION_ID' });
-    }
-
-    if (!['accept', 'decline'].includes(response)) {
-      return res.status(400).json({ error: 'Invalid response', code: 'INVALID_RESPONSE' });
-    }
-
-    // Minne-fallback invitationer
-    if (invitationId.startsWith('mem:')) {
-      const [, groupId, encodedEmail] = invitationId.split(':');
-      const email = decodeURIComponent(encodedEmail || '').toLowerCase();
-      const group = activeGroups.get(groupId);
-
-      if (group) {
-        group.invitedEmails = (group.invitedEmails || []).filter((invitedEmail) => invitedEmail.toLowerCase() !== email);
-        activeGroups.set(groupId, group);
-        persistGroup(groupId, group);
-      }
-
-      return res.json({ success: true });
-    }
-
-    let invitation = null;
-
-    if (db) {
-      invitation = await getInvitation(invitationId);
-      await updateInvitation(invitationId, {
-        responded: true,
-        accepted: response === 'accept',
-        respondedAt: new Date().toISOString()
-      });
-    }
-
-    // Vid avböj, ta bort från pending-listan i aktiv grupp så att skaparen
-    // inte sitter kvar i väntläge på en redan avböjd inbjudan.
-    if (invitation?.groupId && response === 'decline' && activeGroups.has(invitation.groupId)) {
-      const group = activeGroups.get(invitation.groupId);
-      group.invitedEmails = (group.invitedEmails || []).filter(
-        (invitedEmail) => invitedEmail.toLowerCase() !== invitation.email?.toLowerCase()
-      );
-      activeGroups.set(invitation.groupId, group);
-      persistGroup(invitation.groupId, group);
-    }
-
-    console.log('Invitation response:', invitationId, req.body);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('❌ Invitation response failed:', error);
-    res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
-  }
+app.post('/api/invitation/:id/respond', (req, res) => {
+  console.log('Invitation response:', req.params.id, req.body);
+  res.json({ success: true });
 });
 
 app.get('/api/auth/me', async (req, res) => {
@@ -1785,19 +1688,6 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
 
     if (failedEmails.length > 0) {
       console.warn(`⚠️ Failed emails: ${failedEmails.map(f => f.email).join(', ')}`);
-    }
-
-    // Undvik falsk "success" som annars skickar skaparen till väntrum där
-    // ingen någonsin kan ansluta.
-    if (successfulEmails.length === 0) {
-      return res.status(502).json({
-        error: 'Inga inbjudningar kunde skickas. Kontrollera e-postkonfigurationen och försök igen.',
-        code: 'INVITES_NOT_SENT',
-        groupId,
-        inviteLinks,
-        emailResults,
-        timestamp: new Date().toISOString()
-      });
     }
 
     // ✅ FIREBASE: SPARA GRUPP

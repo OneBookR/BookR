@@ -6,15 +6,13 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 // ✅ CLEAN IMPORTS - Ta bort onödiga imports
 import '../styles/theme.css';
-import {
-  Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle,
-  DialogActions, Paper, CircularProgress, Snackbar, Alert, IconButton, Chip
+import { 
+  Card, CardContent, Typography, Button, TextField, Box, Dialog, DialogTitle, 
+  DialogActions, Paper, CircularProgress, Snackbar, Alert, IconButton, Chip 
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
-import InviteFriend from './InviteFriend';
-import { useNotifications } from '../hooks/useNotifications.js';
 
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
@@ -81,21 +79,13 @@ export default function CompareCalendar({
   
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
 
-  // ✅ PROPOSAL POPUP NOTIFICATION
-  const [proposalNotification, setProposalNotification] = useState({
-    open: false,
-    proposal: null
-  });
-
   // ✅ ROBUST RATE LIMITING
   const [requestState, setRequestState] = useState({
     lastFetch: 0,
     inProgress: false
   });
 
-  // ✅ TRACK PREVIOUS SUGGESTIONS FOR DETECTING NEW PROPOSALS
-  const previousSuggestionsRef = useRef([]);
-  const { showNotification } = useNotifications();
+  // ✅ LÄGG TILL VÄNTRUM STATE
   const [waitingRoom, setWaitingRoom] = useState({
     show: false,
     members: [],
@@ -177,9 +167,7 @@ export default function CompareCalendar({
 
   // ✅ ROBUST TOKEN VALIDATION USING EXISTING VALIDATOR (FLYTTA FÖRE ANVÄNDNING)
   const validateToken = useCallback(async () => {
-    if (!myToken) {
-      return Boolean(propGroupId && userData.isLoggedIn);
-    }
+    if (!myToken) return false;
     
     try {
       const isValid = await TokenValidator.validateToken(myToken);
@@ -194,11 +182,11 @@ export default function CompareCalendar({
       console.error('❌ Token validation error:', error);
       return false;
     }
-  }, [myToken, propGroupId, userData.isLoggedIn]);
+  }, [myToken]);
 
   // ✅ JOIN GROUP AUTOMATICALLY - FIXA API URL (FLYTTA FÖRE fetchGroupAvailability)
   const joinGroup = useCallback(async () => {
-    if (!propGroupId || !user) return false;
+    if (!propGroupId || !user || !myToken) return;
     
     // ✅ VALIDERA TOKEN FÖRST
     const isTokenValid = await validateToken();
@@ -292,15 +280,15 @@ export default function CompareCalendar({
     }
   }, [propGroupId, groupInfo, user]);
   
-  // ✅ POLLING: Snabb 1-sekunders polling för proposals
+  // ✅ POLLING: Enkel 3-sekunders polling
   useEffect(() => {
     if (!propGroupId || !hasJoinedGroup) return;
-
+    
     const timer = setInterval(() => {
       fetchGroupStatus();
-      fetchSuggestions(); // ✅ Snabbare uppdateringar av förslag
-    }, 1000); // Reducerad från 3000ms till 1000ms för omedelbar notification
-
+      fetchSuggestions(); // ✅ Uppdatera även förslag
+    }, 3000);
+    
     return () => clearInterval(timer);
   }, [propGroupId, hasJoinedGroup]);
 
@@ -540,87 +528,24 @@ export default function CompareCalendar({
   // ✅ FETCH SUGGESTIONS FUNCTION - FIXA API URL
   const fetchSuggestions = useCallback(async () => {
     if (!propGroupId) return;
-
+    
     try {
       const response = await apiRequest(`/api/group/${propGroupId}/suggestions`);
-
+      
       if (response.ok) {
         const data = await response.json();
-        const newSuggestions = data.suggestions || [];
-        const userEmail = userData.email;
-
-        // ✅ DETECT NEW PROPOSALS
-        const previousIds = previousSuggestionsRef.current.map(s => s.id);
-        const newProposals = newSuggestions.filter(s => !previousIds.includes(s.id));
-
-        if (newProposals.length > 0) {
-          newProposals.forEach(proposal => {
-            const startTime = new Date(proposal.start).toLocaleTimeString('sv-SE', {
-              hour: '2-digit',
-              minute: '2-digit'
-            });
-
-            // ✅ ONLY SHOW NOTIFICATION IF NOT THE PROPOSER
-            const isMyProposal = proposal.suggestedBy?.toLowerCase() === userEmail?.toLowerCase();
-
-            if (!isMyProposal) {
-              // ✅ SHOW BROWSER NOTIFICATION
-              showNotification('📋 Nytt tidsförslag!', {
-                body: `${proposal.title} - ${startTime}`,
-                requireInteraction: true
-              });
-
-              // ✅ SHOW TOAST POPUP IN APP
-              setProposalNotification({
-                open: true,
-                proposal
-              });
-            }
-          });
-        }
-
-        // ✅ UPDATE TRACKING
-        previousSuggestionsRef.current = newSuggestions;
-        setSuggestions(newSuggestions);
+        setSuggestions(data.suggestions || []);
       }
     } catch (error) {
       console.error('❌ Failed to fetch suggestions:', error);
     }
-  }, [propGroupId, userData.email, showNotification]);
+  }, [propGroupId]);
 
   // ✅ HANDLE SUGGEST FUNCTION
   const handleSuggest = useCallback((slot) => {
     if (!slot) return;
     setSuggestDialog({ open: true, slot });
   }, []);
-
-  // ✅ HANDLE CALENDAR SLOT SELECTION - Enable clicking time slots in calendar
-  const handleSelectSlot = useCallback((slotInfo) => {
-    if (!propGroupId) return;
-
-    // Convert calendar slot to proposal format
-    const proposal = {
-      start: slotInfo.start,
-      end: slotInfo.end
-    };
-
-    console.log('📅 [Calendar Slot Selected]', proposal);
-    handleSuggest(proposal);
-  }, [propGroupId, handleSuggest]);
-
-  // ✅ HANDLE EVENT CLICK - Click on available time slot events to propose
-  const handleSelectEvent = useCallback((event) => {
-    if (!propGroupId) return;
-
-    // Only allow clicking on "free slot" events (available times)
-    if (event.title?.includes('Ledig tid')) {
-      console.log('📅 [Available Slot Clicked]', event);
-      handleSuggest({
-        start: event.start,
-        end: event.end
-      });
-    }
-  }, [propGroupId, handleSuggest]);
 
   // ✅ CONFIRM SUGGEST FUNCTION - FÖRBÄTTRAD MED ERROR HANDLING
   const confirmSuggest = useCallback(async () => {
@@ -812,10 +737,6 @@ export default function CompareCalendar({
       <Typography sx={{ color: 'var(--text-secondary)', maxWidth: 760, mb: 3, lineHeight: 1.7 }}>
         Jämför tillgänglighet, se vilka som redan är inne och skicka ett mötesförslag i samma lugna gränssnitt som resten av BookR.
       </Typography>
-
-      {!propGroupId && (
-        <InviteFriend fromUser={user} embedded />
-      )}
       
       {/* ✅ AUTO-REFRESH STATUS */}
       {propGroupId && groupInfo && groupInfo.pendingMembers?.length === 0 && groupInfo.memberCount >= 2 && (
@@ -1064,10 +985,9 @@ export default function CompareCalendar({
       )}
     </Paper>
   ), [
-    theme,
+    theme, 
     propGroupId, 
     groupInfo, 
-    user,
     userData,
     myToken, 
     invitedTokens, 
@@ -1418,9 +1338,6 @@ export default function CompareCalendar({
               eventPropGetter={eventPropGetter}
               views={['month', 'week', 'day']}
               defaultView="week"
-              selectable={propGroupId ? true : false}
-              onSelectSlot={propGroupId ? handleSelectSlot : undefined}
-              onSelectEvent={propGroupId ? handleSelectEvent : undefined}
               messages={{
                 next: 'Nästa',
                 previous: 'Föregående',
@@ -1554,76 +1471,6 @@ export default function CompareCalendar({
         >
           {toast.message}
         </Alert>
-      </Snackbar>
-
-      {/* ✅ PROPOSAL POPUP - Bottom Right Corner */}
-      <Snackbar
-        open={proposalNotification.open}
-        autoHideDuration={null}
-        onClose={() => setProposalNotification({ ...proposalNotification, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        sx={{
-          '& .MuiPaper-root': {
-            backgroundColor: 'rgba(255,255,255,0.95)',
-            boxShadow: '0 24px 60px rgba(15, 23, 42, 0.18)',
-            borderRadius: '12px',
-            border: '1px solid var(--border)',
-            backdropFilter: 'blur(18px)',
-            minWidth: 320
-          }
-        }}
-      >
-        <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2 }}>
-          {proposalNotification.proposal && (
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 800, mb: 1, color: 'var(--text)' }}>
-                📋 {proposalNotification.proposal.title}
-              </Typography>
-
-              <Typography variant="body2" sx={{ mb: 0.5, color: 'var(--text-secondary)' }}>
-                <strong>Tid:</strong> {new Date(proposalNotification.proposal.start).toLocaleString('sv-SE')}
-              </Typography>
-
-              <Typography variant="body2" sx={{ mb: 2, color: 'var(--text-secondary)' }}>
-                <strong>Med:</strong> {proposalNotification.proposal.suggestedBy}
-              </Typography>
-
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button
-                  size="small"
-                  variant="contained"
-                  sx={{
-                    bgcolor: '#4caf50',
-                    '&:hover': { bgcolor: '#45a049' },
-                    flex: 1
-                  }}
-                  onClick={() => {
-                    voteSuggestion(proposalNotification.proposal.id, 'accepted');
-                    setProposalNotification({ ...proposalNotification, open: false });
-                  }}
-                >
-                  ✓ Acceptera
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  sx={{
-                    borderColor: '#f44336',
-                    color: '#f44336',
-                    '&:hover': { borderColor: '#d32f2f', color: '#d32f2f' },
-                    flex: 1
-                  }}
-                  onClick={() => {
-                    voteSuggestion(proposalNotification.proposal.id, 'rejected');
-                    setProposalNotification({ ...proposalNotification, open: false });
-                  }}
-                >
-                  ✗ Neka
-                </Button>
-              </Box>
-            </Box>
-          )}
-        </Paper>
       </Snackbar>
     </Box>
   );

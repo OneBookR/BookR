@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, Box, Button, Card, CardContent, Grid, Chip, IconButton, Badge, Paper, Snackbar, Alert, Switch, FormControlLabel } from '@mui/material';
+import { Container, Typography, Box, Button, Card, CardContent, Grid, Chip, IconButton, Badge, Paper, Snackbar, Alert } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import GroupIcon from '@mui/icons-material/Group';
 import CheckIcon from '@mui/icons-material/Check';
@@ -40,44 +40,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [teams, setTeams] = useState([]);
   const [hasDirectAccessTeam, setHasDirectAccessTeam] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' eller 'team'
-  const [showMeetingTitles, setShowMeetingTitles] = useState(false);
-  const [joiningMeetingId, setJoiningMeetingId] = useState(null);
-
-  const currentUserEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || '';
-  const meetingPrivacySettingKey = currentUserEmail ? `bookr_show_meeting_titles_${currentUserEmail}` : 'bookr_show_meeting_titles';
-
-  useEffect(() => {
-    if (!currentUserEmail) return;
-
-    const savedPreference = localStorage.getItem(meetingPrivacySettingKey);
-    setShowMeetingTitles(savedPreference === 'true');
-  }, [currentUserEmail, meetingPrivacySettingKey]);
-
-  useEffect(() => {
-    if (!currentUserEmail) return;
-
-    localStorage.setItem(meetingPrivacySettingKey, String(showMeetingTitles));
-  }, [currentUserEmail, meetingPrivacySettingKey, showMeetingTitles]);
 
 
   useEffect(() => {
     const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
     if (!userEmail) return;
-
-    const fetchUpcomingMeetings = async () => {
-      try {
-        const response = await apiRequest(`/api/calendar/upcoming?includeDetails=${showMeetingTitles}`);
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Calendar fetch failed');
-        }
-
-        setUpcomingMeetings(data.events || []);
-      } catch (err) {
-        console.log('Failed to fetch calendar events:', err);
-      }
-    };
     
     // Hämta invites från samma endpoint som InvitationSidebar
     apiRequest(`/api/invitations/${encodeURIComponent(userEmail)}`)
@@ -102,7 +69,17 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     setInvites(prev => [...prev, ...formattedRequests]);
 
     // Hämta upcoming meetings via backend-proxy — accessToken hanteras server-side
-    fetchUpcomingMeetings();
+    apiRequest('/api/calendar/upcoming')
+      .then(res => res.json())
+      .then(data => {
+        const meetings = (data.events || []).filter(event =>
+          event.hangoutLink ||
+          event.conferenceUri ||
+          (event.location && event.location.includes('meet.google.com'))
+        );
+        setUpcomingMeetings(meetings);
+      })
+      .catch(err => console.log('Failed to fetch calendar events:', err));
 
     // Hämta tidsförslag (samma logik som CompareCalendar)
     if (userEmail) {
@@ -151,36 +128,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [user?.email, showMeetingTitles]);
-
-  const handleJoinUpcomingMeeting = async (meetingId) => {
-    if (!meetingId) return;
-
-    setJoiningMeetingId(meetingId);
-
-    try {
-      const response = await apiRequest(`/api/calendar/upcoming/${encodeURIComponent(meetingId)}/join`);
-      const data = await response.json();
-
-      if (!response.ok || !data.joinUrl) {
-        throw new Error(data.error || 'Kunde inte hämta möteslänk');
-      }
-
-      window.open(data.joinUrl, '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      setToast({ open: true, message: `Kunde inte öppna mötet: ${error.message}`, severity: 'error' });
-    } finally {
-      setJoiningMeetingId(null);
-    }
-  };
+  }, [user?.email]);
 
   const handleNavigateToMeeting = (type) => {
     if (type === 'team') {
       setCurrentView('team');
-    } else if (type === 'task') {
-      window.location.href = '/?view=task';
     } else {
-      // Befintlig logik för 1v1 och group
+      // Befintlig logik för 1v1, group, task
       window.location.href = `/?meetingType=${type}`;
     }
   };
@@ -302,9 +256,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         }
         
         // Sedan, gå med i gruppen
-        const joinRes = await apiRequest(`/api/group/${groupId}/join`, {
+        const joinRes = await apiRequest(`/api/group/join`, {
           method: 'POST',
           body: JSON.stringify({
+            groupId,
             invitee: inviteeId,
             email: userEmail
           })
@@ -536,6 +491,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       }
     }
   };
+
+
+  const currentUserEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || '';
 
   const quickStats = [
     {
@@ -972,16 +930,6 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                   </Box>
                   <Chip label={upcomingMeetings.length} sx={{ bgcolor: 'rgba(17,24,39,0.05)', fontWeight: 800, color: 'var(--text)' }} />
                 </Box>
-                <Box sx={{ mb: 2, p: 1.5, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
-                  <FormControlLabel
-                    control={<Switch checked={showMeetingTitles} onChange={(event) => setShowMeetingTitles(event.target.checked)} />}
-                    label="Visa mötestitlar"
-                    sx={{ alignItems: 'flex-start', m: 0 }}
-                  />
-                  <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-secondary)', mt: 0.5, lineHeight: 1.6 }}>
-                    När detta är aktiverat hämtar BookR privata kalenderdetaljer till dashboarden för att visa riktiga mötestitlar.
-                  </Typography>
-                </Box>
                 <Box sx={{ display: 'grid', gap: 1.5 }}>
                   {upcomingMeetings.length === 0 ? (
                     <Box sx={{ py: 6, px: 2, textAlign: 'center', borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px dashed rgba(17,24,39,0.08)' }}>
@@ -990,14 +938,12 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                   ) : (
                     upcomingMeetings.slice(0, 5).map((meeting) => {
                       const timeUntil = getTimeUntilMeeting(meeting.start);
-                      const meetingLabel = showMeetingTitles && meeting.title
-                        ? meeting.title
-                        : 'Digitalt möte';
+                      const meetUrl = meeting.hangoutLink || meeting.conferenceUri;
 
                       return (
                         <Box key={meeting.id} sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', border: '1px solid rgba(17,24,39,0.05)' }}>
                           <Typography sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.75 }}>
-                            {meetingLabel}
+                            {meeting.title || 'Untitled Meeting'}
                           </Typography>
                           <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 0.5 }}>
                             {formatDateTime(meeting.start)}
@@ -1005,8 +951,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
                           <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mb: 1.5 }}>
                             Startar om {timeUntil}
                           </Typography>
-                          {meeting.joinable && (
-                            <Button size="small" variant="contained" disabled={joiningMeetingId === meeting.id} onClick={() => handleJoinUpcomingMeeting(meeting.id)} sx={{ bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}>
+                          {meetUrl && (
+                            <Button size="small" variant="contained" onClick={() => window.open(meetUrl, '_blank')} sx={{ bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}>
                               Gå med i mötet
                             </Button>
                           )}

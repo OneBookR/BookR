@@ -1,11 +1,5 @@
 // firestore.js
 import admin from 'firebase-admin';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // ✅ ROBUST INITIALIZATION WITH ERROR HANDLING
 let db = null;
@@ -14,22 +8,15 @@ let initPromise = null;
 
 function getFirebaseConfigFromEnv() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    try {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-      return {
-        source: 'FIREBASE_SERVICE_ACCOUNT',
-        config: {
-          ...serviceAccount,
-          private_key: serviceAccount.private_key?.replace(/\\n/g, '\n')
-        }
-      };
-    } catch (error) {
-      throw new Error(`Invalid FIREBASE_SERVICE_ACCOUNT JSON: ${error.message}`);
-    }
+    return {
+      ...serviceAccount,
+      private_key: serviceAccount.private_key?.replace(/\\n/g, '\n')
+    };
   }
 
-  const configFromFields = {
+  return {
     type: 'service_account',
     project_id: process.env.FIREBASE_PROJECT_ID,
     private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
@@ -41,36 +28,6 @@ function getFirebaseConfigFromEnv() {
     auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL || 'https://www.googleapis.com/oauth2/v1/certs',
     client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL
   };
-
-  if (configFromFields.project_id && configFromFields.private_key && configFromFields.client_email) {
-    return {
-      source: 'FIREBASE_* fields',
-      config: configFromFields
-    };
-  }
-
-  const serviceAccountFile = process.env.FIREBASE_SERVICE_ACCOUNT_FILE
-    ? path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT_FILE)
-    : path.join(__dirname, 'firebase-key.json');
-
-  if (fs.existsSync(serviceAccountFile)) {
-    try {
-      const fileData = fs.readFileSync(serviceAccountFile, 'utf8');
-      const serviceAccount = JSON.parse(fileData);
-
-      return {
-        source: `file:${serviceAccountFile}`,
-        config: {
-          ...serviceAccount,
-          private_key: serviceAccount.private_key?.replace(/\\n/g, '\n')
-        }
-      };
-    } catch (error) {
-      throw new Error(`Invalid Firebase service account file (${serviceAccountFile}): ${error.message}`);
-    }
-  }
-
-  return null;
 }
 
 export async function initializeFirebase() {
@@ -80,21 +37,11 @@ export async function initializeFirebase() {
   initPromise = (async () => {
     try {
       console.log('[Firebase] Initializing...');
-      const firebaseSetup = getFirebaseConfigFromEnv();
-
-      if (!firebaseSetup) {
-        throw new Error(
-          'Firebase Admin credentials are missing. Provide FIREBASE_SERVICE_ACCOUNT, FIREBASE_* admin fields, or FIREBASE_SERVICE_ACCOUNT_FILE (defaults to backend/firebase-key.json).'
-        );
-      }
-
-      const { config: firebaseConfig, source } = firebaseSetup;
+      const firebaseConfig = getFirebaseConfigFromEnv();
 
       if (!firebaseConfig.project_id || !firebaseConfig.private_key || !firebaseConfig.client_email) {
-        throw new Error(`Firebase service account is missing required fields (source: ${source})`);
+        throw new Error('Firebase service account is missing required environment variables');
       }
-
-      console.log(`[Firebase] Using credentials from ${source}`);
 
       // ✅ INITIERA ADMIN SDK EN GÅNG
       if (admin.apps.length === 0) {
@@ -108,7 +55,8 @@ export async function initializeFirebase() {
       
       // ✅ SÄTT FIRESTORE INSTÄLLNINGAR FÖR BÄTTRE PRESTANDA
       db.settings({
-        ignoreUndefinedProperties: true
+        ignoreUndefinedProperties: true,
+        timestampsInSnapshots: true
       });
 
       isInitialized = true;
