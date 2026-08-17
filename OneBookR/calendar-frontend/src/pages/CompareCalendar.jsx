@@ -13,6 +13,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
+import InviteFriend from './InviteFriend';
 
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
@@ -736,7 +737,16 @@ export default function CompareCalendar({
       <Typography sx={{ color: 'var(--text-secondary)', maxWidth: 760, mb: 3, lineHeight: 1.7 }}>
         Jämför tillgänglighet, se vilka som redan är inne och skicka ett mötesförslag i samma lugna gränssnitt som resten av BookR.
       </Typography>
-      
+
+      {/* ✅ BJUD IN-FORMULÄR: visas bara innan man är i en grupp. Detta
+          tappades bort i en tidigare refaktorisering (InviteFriend
+          slutade renderas här), vilket gjorde att den här vyn bara visade
+          "Behöver minst 2 kalendrar" utan något sätt att faktiskt bjuda
+          in någon. */}
+      {!propGroupId && (
+        <InviteFriend fromUser={user} embedded />
+      )}
+
       {/* ✅ AUTO-REFRESH STATUS */}
       {propGroupId && groupInfo && groupInfo.pendingMembers?.length === 0 && groupInfo.memberCount >= 2 && (
         <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(31,122,77,0.08)', borderRadius: 3, border: '1px solid rgba(31,122,77,0.16)' }}>

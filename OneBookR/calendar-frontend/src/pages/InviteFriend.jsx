@@ -1,22 +1,21 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar } from '@mui/material';
+import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar, Button } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
-import { API_BASE_URL } from '../config';
 import { apiRequest } from '../utils/apiConfig.js';
 
-const InviteFriend = ({ fromUser, theme }) => {
+const InviteFriend = ({ fromUser, theme, embedded = false }) => {
   // ✅ STABLE USER DATA EXTRACTION
   const userData = useMemo(() => {
     let email = fromUser;
     if (typeof fromUser === 'object' && fromUser) {
       email = fromUser.email || fromUser.emails?.[0]?.value || fromUser.emails?.[0];
     }
-    
+
     // Clean mailto: prefix
     if (email?.startsWith('mailto:')) {
       email = email.replace('mailto:', '');
     }
-    
+
     return {
       email,
       isValid: Boolean(email?.includes('@'))
@@ -29,10 +28,11 @@ const InviteFriend = ({ fromUser, theme }) => {
   const [groupName, setGroupName] = useState('');
   const [message, setMessage] = useState('');
   const [groupLink, setGroupLink] = useState('');
+  const [requiresReauth, setRequiresReauth] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredContacts, setFilteredContacts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const [teamContacts, setTeamContacts] = useState([]);
   const [lastContactsUpdate, setLastContactsUpdate] = useState(0);
 
@@ -50,7 +50,7 @@ const InviteFriend = ({ fromUser, theme }) => {
   // ✅ OPTIMIZED TEAM CONTACTS LOADING
   const loadTeamContacts = useCallback(() => {
     if (!userData.email) return;
-    
+
     try {
       const savedContacts = JSON.parse(
         localStorage.getItem(`bookr_team_contacts_${userData.email}`) || '[]'
@@ -77,20 +77,20 @@ const InviteFriend = ({ fromUser, theme }) => {
     }
 
     const allContacts = [...contacts, ...teamContacts];
-    
+
     // Deduplicate by email
-    const uniqueContacts = allContacts.filter((contact, index, self) => 
+    const uniqueContacts = allContacts.filter((contact, index, self) =>
       index === self.findIndex(c => c.email === contact.email)
     );
 
     const filtered = uniqueContacts
-      .filter(contact => 
+      .filter(contact =>
         contact.email.toLowerCase().includes(inputValue.toLowerCase()) ||
         (contact.name && contact.name.toLowerCase().includes(inputValue.toLowerCase()))
       )
       .filter(contact => !emails.includes(contact.email))
       .slice(0, 5); // Limit results
-    
+
     setFilteredContacts(filtered);
     setShowSuggestions(filtered.length > 0);
   }, [inputValue, contacts, teamContacts, emails]);
@@ -124,10 +124,10 @@ const InviteFriend = ({ fromUser, theme }) => {
       e.preventDefault();
       return;
     }
-    
+
     if (['Enter', ',', ' ', 'Tab'].includes(e.key)) {
       e.preventDefault();
-      
+
       if (showSuggestions && filteredContacts.length > 0) {
         selectContact(filteredContacts[0]);
       } else if (inputValue.trim()) {
@@ -136,7 +136,7 @@ const InviteFriend = ({ fromUser, theme }) => {
         }
       }
     }
-    
+
     if (e.key === 'Escape') {
       setShowSuggestions(false);
     }
@@ -145,7 +145,7 @@ const InviteFriend = ({ fromUser, theme }) => {
   const selectContact = useCallback((contact) => {
     const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
     const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess || contact.directAccess;
-    
+
     if (hasDirectAccess) {
       // Direct booking
       const groupId = `direct_${Date.now()}`;
@@ -194,13 +194,14 @@ const InviteFriend = ({ fromUser, theme }) => {
 
     setIsLoading(true);
     setMessage('Skickar inbjudningar...');
+    setRequiresReauth(false);
 
     try {
       // Check for direct access emails
       const directAccessEmails = [];
       if (userData.email && teamContacts.length > 0) {
         emails.forEach(invitedEmail => {
-          const contact = teamContacts.find(c => 
+          const contact = teamContacts.find(c =>
             c.email.toLowerCase() === invitedEmail.toLowerCase() && c.directAccess
           );
           if (contact) {
@@ -210,7 +211,7 @@ const InviteFriend = ({ fromUser, theme }) => {
       }
 
       // Clean emails (remove mailto: prefix)
-      const cleanEmails = emails.map(email => 
+      const cleanEmails = emails.map(email =>
         email.startsWith('mailto:') ? email.replace('mailto:', '') : email
       );
 
@@ -220,12 +221,11 @@ const InviteFriend = ({ fromUser, theme }) => {
         groupName: groupName.trim() || 'Namnlös grupp',
         directAccessEmails,
       };
-      
+
       // ✅ VIKTIGT: apiRequest skickar med credentials: 'include' så
-      // sessionscookien följer med. Ett rått fetch() gjorde det INTE,
-      // vilket fick /api/invite att svara 401 (ej inloggad) — det visades
-      // bara som ett generiskt felmeddelande i UI:t, aldrig som en tydlig
-      // inloggningsfel, vilket gjorde det svårt att upptäcka.
+      // sessionscookien följer med till /api/invite (kräver inloggad
+      // session). Ett rått fetch() utan detta fick tidigare servern att
+      // tyst svara 401.
       const res = await apiRequest('/api/invite', {
         method: 'POST',
         body: JSON.stringify(requestBody)
@@ -237,18 +237,17 @@ const InviteFriend = ({ fromUser, theme }) => {
         return;
       }
 
-      // ✅ TYDLIGT 401-MEDDELANDE: annars ser det ut som att inbjudan
-      // "gick igenom" fast servern avvisade den tyst, vilket är precis det
-      // förvirrande läge som orsakade väntrums-buggen tidigare.
+      // Handle unauthenticated — show re-login button
       if (res.status === 401) {
-        setMessage('Din session har gått ut. Logga ut och in igen, och skicka inbjudan på nytt.');
+        setRequiresReauth(true);
+        setMessage('');
         return;
       }
 
       // Parse response safely
       let data = null;
       const contentType = res.headers.get('content-type');
-      
+
       if (contentType && contentType.includes('application/json')) {
         try {
           data = await res.json();
@@ -270,11 +269,11 @@ const InviteFriend = ({ fromUser, theme }) => {
         setInputValue('');
         setGroupName('');
         setMessage('Inbjudningar skickade!');
-        
+
         if (data.inviteLinks && Array.isArray(data.inviteLinks)) {
           setGroupLink(data.inviteLinks.join('\n'));
         }
-        
+
         // Navigate to group if created
         if (data.groupId) {
           console.log('✅ Redirecting to group:', data.groupId);
@@ -283,12 +282,15 @@ const InviteFriend = ({ fromUser, theme }) => {
           }, 500);
         }
       } else {
+        if (data?.inviteLinks && Array.isArray(data.inviteLinks)) {
+          setGroupLink(data.inviteLinks.join('\n'));
+        }
         setMessage(data?.error || 'Något gick fel.');
       }
-      
+
     } catch (err) {
       console.error('Send invites error:', err);
-      
+
       if (err.name === 'TypeError' && err.message.includes('fetch')) {
         setMessage('Nätverksfel. Kontrollera din internetanslutning.');
       } else {
@@ -315,7 +317,7 @@ const InviteFriend = ({ fromUser, theme }) => {
           key={email}
           label={email}
           onDelete={() => handleDelete(email)}
-          sx={{ 
+          sx={{
             mb: 1,
             bgcolor: currentTheme.colors.primary,
             color: '#fff',
@@ -349,7 +351,7 @@ const InviteFriend = ({ fromUser, theme }) => {
           {filteredContacts.map((contact) => {
             const contactSettings = JSON.parse(localStorage.getItem('bookr_contact_settings') || '{}');
             const hasDirectAccess = contactSettings[contact.id]?.hasCalendarAccess || contact.directAccess;
-            
+
             return (
               <ListItem
                 key={contact.id}
@@ -369,15 +371,15 @@ const InviteFriend = ({ fromUser, theme }) => {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <span>{contact.name}</span>
                       {hasDirectAccess && (
-                        <Chip 
-                          label="Direktåtkomst" 
-                          size="small" 
+                        <Chip
+                          label="Direktåtkomst"
+                          size="small"
                           sx={{ fontSize: 10, height: 20, bgcolor: 'rgba(31,122,77,0.12)', color: 'var(--success)', border: '1px solid rgba(31,122,77,0.14)' }}
                         />
                       )}
                     </Box>
                   }
-                  secondary={hasDirectAccess 
+                  secondary={hasDirectAccess
                     ? `${contact.email} • Klicka för att boka direkt`
                     : contact.email
                   }
@@ -390,12 +392,170 @@ const InviteFriend = ({ fromUser, theme }) => {
     );
   }, [showSuggestions, filteredContacts, selectContact]);
 
+  const inviteForm = (
+    <>
+      <Chip
+        label="Invite Flow"
+        sx={{
+          mb: 2,
+          bgcolor: 'rgba(17,24,39,0.04)',
+          border: '1px solid rgba(17,24,39,0.06)',
+          color: 'var(--text)',
+          fontWeight: 800,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase'
+        }}
+      />
+
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: {
+            xs: '100%',
+            sm: 460
+          }
+        }}
+      >
+        <TextField
+          label="Gruppnamn"
+          value={groupName}
+          onChange={e => setGroupName(e.target.value)}
+          placeholder="Ex: Projektgruppen, Lunchgänget..."
+          sx={{ mb: 2.5 }}
+          fullWidth
+          variant="outlined"
+        />
+      </Box>
+
+      {emails.length > 0 && (
+        <Box sx={{ mb: 2.5 }}>
+          <Typography variant="caption" sx={{ display: 'block', mb: 1, color: 'var(--text-secondary)', fontWeight: 700 }}>
+            Deltagare som kommer få inbjudan
+          </Typography>
+          {renderEmailChips}
+        </Box>
+      )}
+
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: 1.5,
+          mb: 1,
+          position: 'relative',
+          width: '100%',
+          maxWidth: {
+            xs: '100%',
+            sm: 460
+          }
+        }}
+      >
+        <Box sx={{ position: 'relative', flex: 1 }}>
+          <TextField
+            label="E-postadress"
+            value={inputValue}
+            inputRef={inputRef}
+            onChange={handleInputChange}
+            onKeyDown={handleInputKeyDown}
+            onFocus={() => {
+              if (inputValue && filteredContacts.length > 0) {
+                setShowSuggestions(true);
+              }
+            }}
+            onBlur={() => {
+              setTimeout(() => {
+                if (inputValue && !showSuggestions) {
+                  addEmail(inputValue);
+                  setInputValue('');
+                }
+                setShowSuggestions(false);
+              }, 150);
+            }}
+            fullWidth
+            placeholder="Skriv e-post och tryck Enter eller ,"
+            variant="outlined"
+          />
+
+          {renderSuggestions}
+        </Box>
+
+        <IconButton
+          onClick={sendInvites}
+          disabled={emails.length === 0 || isLoading}
+          sx={{
+            alignSelf: 'stretch',
+            minWidth: 56,
+            borderRadius: 3,
+            backgroundColor: 'var(--text)',
+            color: 'var(--surface-strong)',
+            '&:hover': {
+              backgroundColor: '#000000'
+            },
+            '&.Mui-disabled': {
+              backgroundColor: 'rgba(17,24,39,0.12)',
+              color: 'rgba(255,255,255,0.8)'
+            }
+          }}
+        >
+          <SendIcon />
+        </IconButton>
+      </Box>
+
+      <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+        Tips: tryck Enter, kommatecken eller välj en kontakt från listan för att lägga till flera deltagare.
+      </Typography>
+
+      {requiresReauth && (
+        <Box sx={{ mt: 2, p: 2, borderRadius: 3, bgcolor: 'rgba(180,35,24,0.06)', border: '1px solid rgba(180,35,24,0.14)' }}>
+          <Typography sx={{ color: 'var(--error)', fontWeight: 700, mb: 1 }}>
+            Din session har gått ut. Logga in igen för att fortsätta.
+          </Typography>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => { window.location.href = '/auth/logout'; }}
+            sx={{ bgcolor: 'var(--primary, #111827)', color: '#fff', borderRadius: 2, textTransform: 'none', fontWeight: 700, '&:hover': { bgcolor: 'var(--primary-hover, #374151)' } }}
+          >
+            Logga in igen
+          </Button>
+        </Box>
+      )}
+
+      {message && (
+        <Box sx={{ mt: 2, p: 2, borderRadius: 3, bgcolor: message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'rgba(180,35,24,0.08)' : 'rgba(31,122,77,0.08)', border: `1px solid ${message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'rgba(180,35,24,0.14)' : 'rgba(31,122,77,0.14)'}` }}>
+          <Typography sx={{ color: message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'var(--error)' : 'var(--success)', fontWeight: 700 }}>
+            {message}
+          </Typography>
+        </Box>
+      )}
+
+      {groupLink && (
+        <Box sx={{ mt: 2, p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'var(--text)', mb: 1 }}>
+            Skapade länkar
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+            {groupLink.split('\n').map((link, i) => (
+              <Box key={i}>
+                <a href={link} target="_blank" rel="noopener noreferrer">{link}</a>
+              </Box>
+            ))}
+          </Typography>
+        </Box>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return <Box sx={{ mb: 3 }}>{inviteForm}</Box>;
+  }
+
   return (
     <Paper
       elevation={0}
-      sx={{ 
-        p: { xs: 3, md: 4 }, 
-        bgcolor: 'rgba(255,255,255,0.78)', 
+      sx={{
+        p: { xs: 3, md: 4 },
+        bgcolor: 'rgba(255,255,255,0.78)',
         borderRadius: 4,
         boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)',
         border: '1px solid var(--border)',
@@ -405,18 +565,6 @@ const InviteFriend = ({ fromUser, theme }) => {
     >
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1.1fr 0.9fr' }, gap: 3, alignItems: 'start' }}>
         <Box>
-          <Chip
-            label="Invite Flow"
-            sx={{
-              mb: 2,
-              bgcolor: 'rgba(17,24,39,0.04)',
-              border: '1px solid rgba(17,24,39,0.06)',
-              color: 'var(--text)',
-              fontWeight: 800,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase'
-            }}
-          />
           <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)', mb: 1.25 }}>
             Bjud in vänner utan att det känns som ett formulärblock.
           </Typography>
@@ -424,80 +572,7 @@ const InviteFriend = ({ fromUser, theme }) => {
             Skapa en grupp, lägg till deltagare och skicka iväg en ren inbjudan direkt. Kontakter med direktåtkomst kan bokas snabbare härifrån.
           </Typography>
 
-          <TextField
-            label="Gruppnamn"
-            value={groupName}
-            onChange={e => setGroupName(e.target.value)}
-            fullWidth
-            placeholder="Ex: Projektgruppen, Lunchgänget..."
-            sx={{ mb: 2.5 }}
-            variant="outlined"
-          />
-          
-          {emails.length > 0 && (
-            <Box sx={{ mb: 2.5 }}>
-              <Typography variant="caption" sx={{ display: 'block', mb: 1, color: 'var(--text-secondary)', fontWeight: 700 }}>
-                Deltagare som kommer få inbjudan
-              </Typography>
-              {renderEmailChips}
-            </Box>
-          )}
-          
-          <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 1.5, mb: 1, position: 'relative' }}>
-            <Box sx={{ position: 'relative', flex: 1 }}>
-              <TextField
-                label="E-postadress"
-                value={inputValue}
-                inputRef={inputRef}
-                onChange={handleInputChange}
-                onKeyDown={handleInputKeyDown}
-                onFocus={() => {
-                  if (inputValue && filteredContacts.length > 0) {
-                    setShowSuggestions(true);
-                  }
-                }}
-                onBlur={() => {
-                  setTimeout(() => {
-                    if (inputValue && !showSuggestions) {
-                      addEmail(inputValue);
-                      setInputValue('');
-                    }
-                    setShowSuggestions(false);
-                  }, 150);
-                }}
-                fullWidth
-                placeholder="Skriv e-post och tryck Enter eller ,"
-                variant="outlined"
-              />
-              
-              {renderSuggestions}
-            </Box>
-            
-            <IconButton
-              onClick={sendInvites}
-              disabled={emails.length === 0 || isLoading}
-              sx={{
-                alignSelf: 'stretch',
-                minWidth: 56,
-                borderRadius: 3,
-                backgroundColor: 'var(--text)',
-                color: 'var(--surface-strong)',
-                '&:hover': {
-                  backgroundColor: '#000000'
-                },
-                '&.Mui-disabled': {
-                  backgroundColor: 'rgba(17,24,39,0.12)',
-                  color: 'rgba(255,255,255,0.8)'
-                }
-              }}
-            >
-              <SendIcon />
-            </IconButton>
-          </Box>
-
-          <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
-            Tips: tryck Enter, kommatecken eller välj en kontakt från listan för att lägga till flera deltagare.
-          </Typography>
+          {inviteForm}
         </Box>
 
         <Box sx={{ display: 'grid', gap: 1.5 }}>
@@ -521,29 +596,6 @@ const InviteFriend = ({ fromUser, theme }) => {
               {groupName.trim() ? `Gruppnamn: ${groupName.trim()}` : 'Du kan ange gruppnamn eller låta BookR skapa en namnlös grupp.'}
             </Typography>
           </Box>
-
-          {message && (
-            <Box sx={{ p: 2, borderRadius: 3, bgcolor: message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'rgba(180,35,24,0.08)' : 'rgba(31,122,77,0.08)', border: `1px solid ${message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'rgba(180,35,24,0.14)' : 'rgba(31,122,77,0.14)'}` }}>
-              <Typography sx={{ color: message.toLowerCase().includes('fel') || message.toLowerCase().includes('kunde') ? 'var(--error)' : 'var(--success)', fontWeight: 700 }}>
-                {message}
-              </Typography>
-            </Box>
-          )}
-
-          {groupLink && (
-            <Box sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'var(--text)', mb: 1 }}>
-                Skapade länkar
-              </Typography>
-              <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                {groupLink.split('\n').map((link, i) => (
-                  <Box key={i}>
-                    <a href={link} target="_blank" rel="noopener noreferrer">{link}</a>
-                  </Box>
-                ))}
-              </Typography>
-            </Box>
-          )}
         </Box>
       </Box>
     </Paper>
