@@ -144,11 +144,22 @@ function App() {
           console.log('✅ User authenticated:', data.email);
 
           // ✅ Restora från localStorage (persistent genom Gmail login + OAuth)
-          const savedGroup = localStorage.getItem('invitation_group');
-          const savedInvitee = localStorage.getItem('invitation_invitee');
-          const savedDirectAccess = localStorage.getItem('invitation_directAccess');
+          // OBS: körs ALDRIG om vi redan står på en annan special-route (t.ex.
+          // /boka-demo) — annars kapar gammal localStorage från ett tidigare
+          // besök i det vanliga inbjudningsflödet bort användaren mitt i ett
+          // helt orelaterat flöde och kastar in dem i den vanliga dashboarden
+          // istället. Det här hände på riktigt: en användare som testat
+          // "Bjud in vänner" innan hamnade i CompareCalendar istället för
+          // boka-demo-kalendern efter att ha loggat in där.
+          const isOnUnrelatedSpecialRoute = window.location.pathname !== '/' &&
+            ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/boka-demo'].includes(window.location.pathname);
+
+          const savedGroup = isOnUnrelatedSpecialRoute ? null : localStorage.getItem('invitation_group');
+          const savedInvitee = isOnUnrelatedSpecialRoute ? null : localStorage.getItem('invitation_invitee');
+          const savedDirectAccess = isOnUnrelatedSpecialRoute ? null : localStorage.getItem('invitation_directAccess');
 
           console.log(`📌 [Post-Login Restoration Check]`);
+          console.log(`   Current path: ${window.location.pathname}`);
           console.log(`   Saved Group (localStorage): ${savedGroup}`);
           console.log(`   Saved Invitee (localStorage): ${savedInvitee}`);
           console.log(`   Restoration flag: ${localStorage.getItem('post_login_restored')}`);
@@ -210,6 +221,16 @@ function App() {
     url.searchParams.delete('meetingType');
 
     window.history.replaceState({}, '', url);
+
+    // ✅ Rensa även localStorage-kvarlevorna från inbjudningsflödet — annars
+    // ligger de kvar och kapar en helt orelaterad framtida session (t.ex.
+    // /boka-demo) tillbaka till den här gamla gruppen efter nästa inloggning
+    // (se restoration-logiken i checkUser ovan för hela historien).
+    localStorage.removeItem('invitation_group');
+    localStorage.removeItem('invitation_invitee');
+    localStorage.removeItem('invitation_directAccess');
+    localStorage.removeItem('post_login_restored');
+    localStorage.removeItem('post_login_reloaded');
 
     // ✅ Måste även nollställa params-state — annars förblir params.groupId
     // satt (se kommentar vid params-state ovan) och shouldShowDashboard

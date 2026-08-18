@@ -100,9 +100,13 @@ export default function BokaDemo() {
     );
   }
 
+  // ✅ Kalendersteget behöver en bredare yta (veckovy) än formulär/login-
+  // korten, som ska förbli smala och centrerade.
+  const containerWidth = step === 'calendar' ? 'md' : 'sm';
+
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'var(--background)' }}>
-      <Container maxWidth="sm" sx={{ pt: { xs: 6, md: 10 }, pb: 8 }}>
+      <Container maxWidth={containerWidth} sx={{ pt: { xs: 6, md: 10 }, pb: 8 }}>
         <Typography sx={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', textAlign: 'center', mb: 5 }}>
           BookR
         </Typography>
@@ -186,17 +190,30 @@ export default function BokaDemo() {
         )}
 
         {confirmedMeeting && (
-          <Paper elevation={0} sx={{ borderRadius: 6, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, md: 5 }, textAlign: 'center' }}>
-            <Box sx={{ width: 56, height: 56, borderRadius: '50%', bgcolor: 'rgba(31,122,77,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 2.5 }}>
-              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'var(--success)' }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1 }}>
-              Klart!
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 4 }}>
+              Klar
             </Typography>
-            <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              Demot är bokat och ligger redan i din kalender. En bekräftelse med alla detaljer är på väg till din mejl.
-            </Typography>
-          </Paper>
+            <Paper elevation={0} sx={{ borderRadius: 6, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, md: 5 } }}>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 2.5 }}>
+                Nu har du gjort din första kalenderjämförelse med BookR.
+              </Typography>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 2.5 }}>
+                Ganska skönt att inte behöva kolla i sin egna kalender innan du bokade något?
+              </Typography>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 4 }}>
+                Vi ser fram emot att prata mer med er.
+              </Typography>
+              <Button
+                href="/"
+                variant="outlined"
+                fullWidth
+                sx={{ py: 1.6, borderRadius: 3, borderColor: 'var(--border)', color: 'var(--text)', fontWeight: 700, '&:hover': { borderColor: 'rgba(17,24,39,0.22)', bgcolor: 'rgba(17,24,39,0.02)' } }}
+              >
+                Tillbaka till startsidan
+              </Button>
+            </Paper>
+          </Box>
         )}
       </Container>
 
