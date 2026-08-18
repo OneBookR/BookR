@@ -12,9 +12,11 @@ import { initializeFirebase } from './firestore.js';
 import {
   addToWaitlist, createGroup, createInvitation, createUser, updateUserLastLogin,
   logDataAccess, createBookingSession, updateBookingSession,
-  saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail
+  saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail,
+  saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
+import { getAdminCalendarToken } from './token-refresh.js';
 import 'dotenv/config';
 
 // ===== APPLICATION SETUP =====
@@ -326,6 +328,129 @@ async function sendInviteEmail(toEmail, fromName, fromEmail, groupName, inviteLi
       stack: error.stack,
       response: error.response?.data || 'No response data'
     });
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== DEMO BOOKING EMAILS =====
+// Bekräftelse till besökaren som just bokat ett demo — mönster kopierat
+// från createInviteEmailHtml/sendInviteEmail ovan.
+function formatMeetingTimeSv(startIso, endIso) {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const dateStr = start.toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Stockholm' });
+  const startTime = start.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' });
+  const endTime = end.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' });
+  return `${dateStr}, ${startTime}–${endTime}`;
+}
+
+async function sendDemoConfirmationEmail(toEmail, contactName, companyName, startIso, endIso, meetLink) {
+  try {
+    if (!validateEmail(toEmail)) {
+      throw new BookRError('Invalid recipient email address', 400, 'INVALID_EMAIL');
+    }
+    if (!process.env.RESEND_API_KEY) {
+      console.error('❌ RESEND_API_KEY is missing from environment variables');
+      return { success: false, error: 'Email service not configured' };
+    }
+
+    const safeName = String(contactName || '').replace(/[<>]/g, '');
+    const safeCompany = String(companyName || '').replace(/[<>]/g, '');
+    const timeStr = formatMeetingTimeSv(startIso, endIso);
+
+    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Ditt BookR-demo är bokat</title></head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f7fa;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+      <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 300;">📅 BookR</h1>
+      <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Demo bokat</p>
+    </div>
+    <div style="padding: 40px 30px;">
+      <h2 style="color: #2c3e50; margin: 0 0 20px 0; font-size: 24px; font-weight: 400;">Tack${safeName ? `, ${safeName}` : ''}!</h2>
+      <p style="color: #34495e; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+        Ditt demo av BookR${safeCompany ? ` för <strong>${safeCompany}</strong>` : ''} är bokat och ligger redan i din kalender.
+      </p>
+      <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db; margin: 20px 0;">
+        <p style="margin: 0; color: #2c3e50; font-weight: 600; font-size: 16px;">${timeStr}</p>
+        ${meetLink ? `<p style="margin: 10px 0 0 0;"><a href="${meetLink}" style="color: #3498db;">${meetLink}</a></p>` : ''}
+      </div>
+      <p style="color: #7f8c8d; font-size: 14px; line-height: 1.5; margin: 25px 0 0 0;">
+        Vi ses då! Hör av dig till info@onebookr.se om du behöver ändra tiden.
+      </p>
+    </div>
+    <div style="background: #f8f9fa; padding: 20px 30px; text-align: center; border-top: 1px solid #ecf0f1;">
+      <p style="color: #95a5a6; font-size: 12px; margin: 0;">
+        BookR — <a href="https://www.onebookr.se" style="color: #3498db; text-decoration: none;">www.onebookr.se</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const text = `BookR — Demo bokat
+
+Tack${safeName ? `, ${safeName}` : ''}!
+
+Ditt demo av BookR${safeCompany ? ` för ${safeCompany}` : ''} är bokat: ${timeStr}
+${meetLink ? `\n${meetLink}\n` : ''}
+Vi ses då! Hör av dig till info@onebookr.se om du behöver ändra tiden.
+
+Mvh,
+BookR Team
+https://www.onebookr.se`;
+
+    const result = await resend.emails.send({
+      from: 'BookR <noreply@onebookr.se>',
+      to: [toEmail],
+      subject: `✅ Ditt BookR-demo är bokat — ${timeStr}`,
+      html,
+      text,
+      headers: { 'X-Entity-Ref-ID': `demo-confirm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` },
+    });
+
+    if (!result) throw new Error('No response from Resend API');
+    if (result.error) throw new Error(`Resend API error: ${result.error.message || JSON.stringify(result.error)}`);
+
+    return { success: true, id: result.data?.id || result.id };
+  } catch (error) {
+    console.error(`❌ Failed to send demo confirmation email to ${toEmail}:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Intern notis till BookR-teamet när någon bokar ett demo — enklare
+// text-only-mönster, ska ALDRIG få fela huvudrequesten (bokningen ska
+// lyckas oavsett om notismejlet går fram).
+async function sendDemoNotificationEmail(booking, startIso, endIso) {
+  try {
+    if (!process.env.RESEND_API_KEY) {
+      console.warn('⚠️ RESEND_API_KEY missing — skipping demo notification email');
+      return { success: false, error: 'Email service not configured' };
+    }
+
+    const timeStr = formatMeetingTimeSv(startIso, endIso);
+    const result = await resend.emails.send({
+      from: 'BookR <info@onebookr.se>',
+      to: 'info@onebookr.se',
+      subject: `🎉 Nytt demo bokat — ${booking.companyName}`,
+      text: `Nytt demo bokat via BookR!
+
+Företag: ${booking.companyName}
+Kontaktperson: ${booking.contactName}
+E-post: ${booking.email}
+Telefon: ${booking.phone || 'Ej angivet'}
+Adress: ${booking.address || 'Ej angivet'}
+
+Tid: ${timeStr}
+Bokat: ${new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' })}`,
+    });
+
+    if (result?.error) throw new Error(result.error.message || JSON.stringify(result.error));
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Failed to send demo notification email:', error);
     return { success: false, error: error.message };
   }
 }
@@ -1008,6 +1133,15 @@ const pollingLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Demo limiter — public lead-capture/booking endpoints, spam-känsliga
+const demoLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ===== PASSPORT CONFIGURATION - UPPDATERA CALLBACK URLs =====
 passport.serializeUser((user, done) => {
   const serialized = {
@@ -1566,6 +1700,70 @@ passport.use(new MicrosoftStrategy({
     return done(error, null);
   }
 }));
+
+// ===== ADMIN: KOPPLA BOOKRS EGEN KALENDER (engångssteg för demo-flödet) =====
+// Detta är INTE samma flöde som vanlig inloggning — det begär uttryckligen
+// access_type=offline + prompt=consent så Google faktiskt ger ut en
+// refresh_token (annars sker det bara vid appens allra första godkännande,
+// vilket redan kan ha passerat). Skyddat med en delad hemlighet, inte en
+// vanlig användarsession, eftersom det är en engångs-admin-åtgärd.
+app.get('/admin/connect-calendar', authLimiter, (req, res, next) => {
+  if (!process.env.ADMIN_SETUP_SECRET || req.query.secret !== process.env.ADMIN_SETUP_SECRET) {
+    return res.status(403).send('Forbidden');
+  }
+  const state = randomUUID();
+  req.session.adminConnectState = state;
+  req.session.save((err) => {
+    if (err) console.error('❌ Admin connect session save error:', err);
+    passport.authenticate('google', {
+      scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
+      accessType: 'offline',
+      prompt: 'consent',
+      state,
+    })(req, res, next);
+  });
+});
+
+app.get('/admin/connect-calendar/callback', (req, res, next) => {
+  const { state } = req.query;
+  if (!state || state !== req.session.adminConnectState) {
+    console.warn('⚠️ Admin connect-calendar CSRF state mismatch');
+    return res.status(403).send('Session expired — försök igen från /admin/connect-calendar?secret=...');
+  }
+  delete req.session.adminConnectState;
+
+  passport.authenticate('google', { session: false, failureRedirect: '/admin/connect-calendar-failed' }, async (err, user) => {
+    if (err || !user) {
+      console.error('❌ Admin connect-calendar auth error:', err);
+      return res.status(500).send('Kunde inte ansluta kalendern. Försök igen.');
+    }
+    if (!user.refreshToken) {
+      // Händer om appen redan haft samtycke sedan tidigare utan att
+      // prompt=consent tvingade fram en ny refresh_token.
+      return res.status(500).send(
+        'Google gav ingen refresh-token. Gå till myaccount.google.com/permissions, ' +
+        'ta bort BookRs åtkomst, och försök igen från /admin/connect-calendar?secret=...'
+      );
+    }
+
+    try {
+      await saveAdminCalendarToken({
+        provider: 'google',
+        email: user.email,
+        refreshToken: encryptToken(user.refreshToken)
+      });
+      console.log(`✅ Admin calendar connected: ${anonymizeEmail(user.email)}`);
+      res.send(`BookRs kalender kopplad: ${user.email}. Du kan stänga denna flik.`);
+    } catch (error) {
+      console.error('❌ Failed to save admin calendar token:', error);
+      res.status(500).send('Kunde inte spara kalenderkopplingen. Försök igen.');
+    }
+  })(req, res, next);
+});
+
+app.get('/admin/connect-calendar-failed', (req, res) => {
+  res.status(400).send('Google-inloggningen misslyckades. Gå tillbaka till /admin/connect-calendar?secret=... och försök igen.');
+});
 
 // ===== GDPR-SÄKER GRUPPLAGRING MED SYNLIG EMAIL FÖR DELTAGARE =====
 function createSecureGroup(groupData) {
@@ -2809,6 +3007,174 @@ async function createMeetingEvents(suggestion, group) {
     };
   }
 }
+
+// ===== BOKA DEMO — publikt lead-capture + live auto-bokningsflöde =====
+// Se plan i C:\Users\Användar\.claude\plans\fancy-orbiting-feather.md.
+// Tre steg: (1) formulär sparar ett lead, (2) besökaren loggar in med sin
+// egen kalender och jämförs mot BookRs fasta admin-kalender, (3) valt
+// slot bokas automatiskt i båda kalendrarna, utan manuellt godkännande.
+
+app.post('/api/book-demo/lead', demoLimiter, async (req, res) => {
+  try {
+    const { companyName, contactName, email, phone, address } = req.body;
+
+    if (!companyName || typeof companyName !== 'string' || !companyName.trim()) {
+      throw new BookRError('Företagsnamn krävs', 400, 'MISSING_COMPANY_NAME');
+    }
+    if (!contactName || typeof contactName !== 'string' || !contactName.trim()) {
+      throw new BookRError('Kontaktperson krävs', 400, 'MISSING_CONTACT_NAME');
+    }
+    if (!validateEmail(email)) {
+      throw new BookRError('Giltig e-postadress krävs', 400, 'INVALID_EMAIL');
+    }
+
+    const leadId = await createDemoBooking({ companyName, contactName, email, phone, address });
+
+    gdprLog('Demo lead created', { leadId, email: anonymizeEmail(email) });
+
+    res.json({ success: true, leadId });
+  } catch (error) {
+    console.error('❌ Demo lead error:', error);
+    if (error instanceof BookRError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
+    res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+app.get('/api/book-demo/availability', demoLimiter, async (req, res) => {
+  try {
+    if (!req.user?.email || !req.user?.accessToken) {
+      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+
+    const { leadId } = req.query;
+    if (!leadId) {
+      throw new BookRError('leadId is required', 400, 'MISSING_LEAD_ID');
+    }
+    const lead = await getDemoBooking(leadId);
+    if (!lead) {
+      throw new BookRError('Demo booking not found', 404, 'LEAD_NOT_FOUND');
+    }
+
+    const adminCalendar = await getAdminCalendarToken();
+    if (!adminCalendar) {
+      throw new BookRError('BookRs kalender är inte ansluten ännu', 503, 'ADMIN_CALENDAR_NOT_CONNECTED');
+    }
+
+    // ✅ Default-fönster: närmaste 5 arbetsdagar, 09:00-17:00 — samma
+    // defaults som huvudappens dayStart/dayEnd.
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 9); // täcker gott om marginal för 5 arbetsdagar över en helg
+    end.setHours(23, 59, 59, 999);
+
+    const visitorEmail = req.user.email;
+    const visitorProvider = req.user.provider || 'google';
+
+    const [visitorEvents, adminEvents] = await Promise.all([
+      fetchAllCalendarEvents(req.user.accessToken, start.toISOString(), end.toISOString(), visitorEmail, visitorProvider),
+      fetchAllCalendarEvents(adminCalendar.accessToken, start.toISOString(), end.toISOString(), 'bookr-admin', adminCalendar.provider)
+    ]);
+
+    const visitorBusy = processCalendarEvents(visitorEvents, visitorEmail, false).map(bt => ({ ...bt, email: visitorEmail }));
+    const adminBusy = processCalendarEvents(adminEvents, 'bookr-admin', false).map(bt => ({ ...bt, email: 'bookr-admin' }));
+
+    const freeSlots = findFreeTimeSlots(
+      start, end, [...visitorBusy, ...adminBusy], 30, '09:00', '17:00',
+      [visitorEmail, 'bookr-admin']
+    );
+
+    res.json({ success: true, slots: freeSlots });
+  } catch (error) {
+    console.error('❌ Demo availability error:', error);
+    if (error instanceof BookRError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
+    res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+app.post('/api/book-demo/confirm', demoLimiter, async (req, res) => {
+  try {
+    if (!req.user?.email || !req.user?.accessToken) {
+      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+
+    const { leadId, start, end } = req.body;
+    if (!leadId || !start || !end) {
+      throw new BookRError('leadId, start och end krävs', 400, 'MISSING_PARAMETERS');
+    }
+
+    const lead = await getDemoBooking(leadId);
+    if (!lead) {
+      throw new BookRError('Demo booking not found', 404, 'LEAD_NOT_FOUND');
+    }
+    if (lead.booked) {
+      throw new BookRError('Detta demo är redan bokat', 409, 'ALREADY_BOOKED');
+    }
+
+    const adminCalendar = await getAdminCalendarToken();
+    if (!adminCalendar) {
+      throw new BookRError('BookRs kalender är inte ansluten ännu', 503, 'ADMIN_CALENDAR_NOT_CONNECTED');
+    }
+
+    // ✅ Titel byggs server-side från leadets sparade företagsnamn — kan
+    // inte manipuleras av klienten, precis som avsett.
+    const title = `${lead.companyName} x BookR – Demo`;
+
+    // ✅ Återanvänder createMeetingEvents oförändrad genom att bygga ett
+    // minimalt group-liknande objekt med exakt två "medlemmar": besökaren
+    // (blir proposer, får eventet + attendee-inbjudan skickad till admin)
+    // och BookRs admin-kalender.
+    const fakeGroup = {
+      members: [
+        { email: req.user.email, token: req.user.accessToken, provider: req.user.provider || 'google', isCreator: true },
+        { email: adminCalendar.email || 'bookr-admin', token: adminCalendar.accessToken, provider: adminCalendar.provider }
+      ]
+    };
+    const suggestion = {
+      id: `demo_${leadId}_${Date.now()}`,
+      title,
+      start,
+      end,
+      withMeet: true,
+      suggestedBy: req.user.email
+    };
+
+    const eventResult = await createMeetingEvents(suggestion, fakeGroup);
+
+    if (!eventResult.success) {
+      throw new BookRError(`Kunde inte skapa mötet: ${eventResult.errors?.join(', ') || 'okänt fel'}`, 500, 'EVENT_CREATION_FAILED');
+    }
+
+    await updateDemoBooking(leadId, {
+      booked: true,
+      bookedAt: new Date().toISOString(),
+      meetingStart: start,
+      meetingEnd: end
+    });
+
+    // ✅ Mejl-fel ska aldrig fela huvudrequesten — bokningen är redan
+    // gjord i kalendrarna vid det här laget.
+    sendDemoConfirmationEmail(lead.email, lead.contactName, lead.companyName, start, end, eventResult.meetLink)
+      .catch(err => console.warn('⚠️ Demo confirmation email failed:', err.message));
+    sendDemoNotificationEmail(lead, start, end)
+      .catch(err => console.warn('⚠️ Demo notification email failed:', err.message));
+
+    gdprLog('Demo booking confirmed', { leadId, email: anonymizeEmail(lead.email) });
+
+    res.json({ success: true, meetLink: eventResult.meetLink || null });
+  } catch (error) {
+    console.error('❌ Demo confirm error:', error);
+    if (error instanceof BookRError) {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
+    res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
+  }
+});
 
 // ===== HEALTH CHECK =====
 app.get('/health', (req, res) => {

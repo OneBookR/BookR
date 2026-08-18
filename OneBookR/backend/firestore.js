@@ -488,6 +488,77 @@ async function getActiveGroupsByEmail(email) {
   return groups;
 }
 
+// ✅ ADMIN CALENDAR TOKEN (BookRs egen kalender för demo-flödet)
+// Enda dokumentet i collectionen — doc-id 'primary'. refreshToken lagras
+// redan krypterad av anroparen (server.js), denna modulen är bara ett
+// tunt Firestore-lager utan egen kryptologik.
+async function saveAdminCalendarToken(data) {
+  if (!data.refreshToken) {
+    throw new Error('refreshToken is required');
+  }
+  if (!data.provider || !['google', 'microsoft'].includes(data.provider)) {
+    throw new Error('provider must be "google" or "microsoft"');
+  }
+  const docRef = getDb().collection('admin_calendar').doc('primary');
+  await docRef.set({
+    provider: data.provider,
+    email: data.email || null,
+    refreshToken: data.refreshToken,
+    connectedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function getAdminCalendarToken() {
+  const docRef = getDb().collection('admin_calendar').doc('primary');
+  const docSnap = await docRef.get();
+  if (!docSnap.exists) return null;
+  return docSnap.data();
+}
+
+// ✅ DEMO BOOKINGS (leads från "Boka demo"-formuläret + bokningsstatus)
+async function createDemoBooking(data) {
+  if (!data.email || !data.email.includes('@')) {
+    throw new Error('Valid email is required');
+  }
+  if (!data.companyName || typeof data.companyName !== 'string' || !data.companyName.trim()) {
+    throw new Error('companyName is required');
+  }
+  if (!data.contactName || typeof data.contactName !== 'string' || !data.contactName.trim()) {
+    throw new Error('contactName is required');
+  }
+
+  const docRef = getDb().collection('demo_bookings').doc();
+  const sanitizedData = {
+    companyName: data.companyName.trim().substring(0, 200),
+    contactName: data.contactName.trim().substring(0, 200),
+    email: data.email.toLowerCase().trim(),
+    phone: data.phone?.trim().substring(0, 50) || null,
+    address: data.address?.trim().substring(0, 300) || null,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    booked: false,
+    bookedAt: null,
+    meetingStart: null,
+    meetingEnd: null
+  };
+  await docRef.set(sanitizedData);
+  return docRef.id;
+}
+
+async function getDemoBooking(leadId) {
+  if (!leadId || typeof leadId !== 'string') {
+    throw new Error('leadId is required');
+  }
+  const docRef = getDb().collection('demo_bookings').doc(leadId);
+  const docSnap = await docRef.get();
+  if (!docSnap.exists) return null;
+  return { id: docSnap.id, ...docSnap.data() };
+}
+
+async function updateDemoBooking(leadId, updateData) {
+  const docRef = getDb().collection('demo_bookings').doc(leadId);
+  await docRef.update(updateData);
+}
+
 // ✅ EXPORT ALL FUNCTIONS - ENDAST EN GÅNG!
 export {
   // Waitlist
@@ -539,5 +610,14 @@ export {
   saveActiveGroup,
   deleteActiveGroup,
   loadAllActiveGroups,
-  getActiveGroupsByEmail
+  getActiveGroupsByEmail,
+
+  // Admin Calendar Token (demo flow)
+  saveAdminCalendarToken,
+  getAdminCalendarToken,
+
+  // Demo Bookings
+  createDemoBooking,
+  getDemoBooking,
+  updateDemoBooking
 };

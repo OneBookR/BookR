@@ -13,11 +13,13 @@ import BusinessSignup from './pages/BusinessSignup.jsx';
 import BusinessAdmin from './pages/BusinessAdmin.jsx';
 import VenueAdmin from './pages/VenueAdmin.jsx';
 import VenueBooking from './pages/VenueBooking.jsx';
+import BokaDemo from './pages/BokaDemo.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
 import MobileNavigation from './components/MobileNavigation.jsx';
 import GoogleLogo from './assets/GoogleLogo.jsx';
 import MicrosoftLogo from './assets/MicrosoftLogo.jsx';
+import { GoogleIcon, MicrosoftIcon, SyncArrow } from './assets/ProviderIcons.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, CircularProgress } from '@mui/material';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import CookieBanner from './components/CookieBanner.jsx';
@@ -239,7 +241,7 @@ function App() {
 
   // ✅ SPECIAL ROUTES CHECK
   const path = window.location.pathname;
-  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy'].includes(path) || path.startsWith('/venue/');
+  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/boka-demo'].includes(path) || path.startsWith('/venue/');
 
   // ✅ RENDER SPECIAL ROUTES
   if (isSpecialRoute) {
@@ -253,7 +255,8 @@ function App() {
       '/waitlist': Waitlist,
       '/admin/waitlist': WaitlistAdmin,
       '/venue-admin': VenueAdmin,
-      '/integritetspolicy': Integritetspolicy
+      '/integritetspolicy': Integritetspolicy,
+      '/boka-demo': BokaDemo
     }[path] || (path.startsWith('/venue/') ? VenueBooking : null);
 
     if (RouteComponent) {
@@ -271,261 +274,305 @@ function App() {
     );
   }
 
-  // ✅ LOGIN SCREEN
+  // ✅ LANDNINGSSIDA (cold outreach) — matchar den godkända designen i
+  // designcanvasen (OptionA). Ersätter den gamla enklare login-vyn.
   if (!user) {
-    const featureItems = [
-      'Koppla kalender och se tillgänglighet direkt',
-      'Jämför tider med team eller kontaktpersoner',
-      'Skicka vidare en ren bokningsupplevelse utan onödigt brus'
-    ];
-
-    const previewItems = [
-      { label: 'Kalenderstatus', value: 'Synkad på 12 sek' },
-      { label: 'Tillgänglighet', value: '3 gemensamma luckor idag' },
-      { label: 'Mötestyp', value: '15, 30 eller 60 minuter' }
-    ];
+    const errorMessage = (() => {
+      if (!params.error) return null;
+      if (params.error === 'google_auth_failed') return 'Google-inloggning misslyckades. Försök igen.';
+      if (params.error === 'microsoft_auth_failed') return 'Microsoft-inloggning misslyckades. Försök igen.';
+      if (params.error === 'callback_failed') return 'Inloggning misslyckades. Försök igen.';
+      if (params.error === 'token_expired') return 'Din session har gått ut. Logga in igen för att fortsätta.';
+      if (params.error === 'oauth_state_mismatch') return 'Inloggningen avbröts av säkerhetsskäl. Försök igen.';
+      return 'Ett fel uppstod vid inloggning.';
+    })();
+    const logoutMessage = urlParams.get('logout') === 'success' ? 'Du har loggats ut. Logga in igen för att fortsätta.' : null;
 
     return (
-      <Box
-        sx={{
-          minHeight: '100vh',
-          px: { xs: 2, md: 4 },
-          py: { xs: 3, md: 5 },
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-      >
+      <Box sx={{ minHeight: '100vh', bgcolor: 'var(--background)' }}>
         <CookieBanner />
-        <Container maxWidth="lg">
-          <Box
-            sx={{
-              position: 'relative',
-              overflow: 'hidden',
-              border: '1px solid var(--border)',
-              borderRadius: { xs: 4, md: 8 },
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.62) 100%)',
-              boxShadow: 'var(--shadow-soft)',
-              backdropFilter: 'blur(26px)'
-            }}
-          >
+
+        <Box sx={{ maxWidth: 1280, mx: 'auto', px: { xs: 3, md: 8 }, pt: { xs: 6, md: 8 }, pb: { xs: 8, md: 12 } }}>
+
+          {/* Top bar */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: { xs: 6, md: 10 } }}>
+            <Typography sx={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>
+              BookR
+            </Typography>
             <Box
               sx={{
-                position: 'absolute',
-                inset: 0,
-                background: 'radial-gradient(circle at top left, rgba(17,24,39,0.08), transparent 32%), radial-gradient(circle at bottom right, rgba(17,24,39,0.06), transparent 28%)',
-                pointerEvents: 'none'
-              }}
-            />
-            <Box
-              sx={{
-                position: 'relative',
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', lg: '1.15fr 0.85fr' },
-                gap: { xs: 4, lg: 5 },
-                p: { xs: 3, sm: 4, md: 6 }
+                display: 'flex', alignItems: 'center', gap: 1, px: 1.75, py: 0.75,
+                borderRadius: 999, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.6)',
+                fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+                color: 'var(--text-secondary)'
               }}
             >
-              <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 4 }}>
-                <Box>
-                  <Box
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      px: 1.5,
-                      py: 0.75,
-                      mb: 3,
-                      borderRadius: 999,
-                      border: '1px solid var(--border)',
-                      bgcolor: 'rgba(255,255,255,0.66)',
-                      color: 'var(--text)',
-                      fontSize: 13,
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase'
-                    }}
-                  >
-                    BookR scheduling
-                  </Box>
-
-                  <Typography
-                    variant="h1"
-                    sx={{
-                      fontSize: { xs: '2.5rem', md: '4.6rem' },
-                      lineHeight: 1,
-                      letterSpacing: '-0.06em',
-                      fontWeight: 800,
-                      maxWidth: 680
-                    }}
-                  >
-                    En renare väg till rätt mötestid.
-                  </Typography>
-
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      mt: 3,
-                      maxWidth: 560,
-                      color: 'var(--text-secondary)',
-                      fontWeight: 500,
-                      lineHeight: 1.6,
-                      fontSize: { xs: '1rem', md: '1.15rem' }
-                    }}
-                  >
-                    BookR hjälper dig jämföra kalendrar, hitta gemensamma luckor och skicka vidare en bokningsupplevelse som känns snabb, tydlig och professionell.
-                  </Typography>
-                </Box>
-
-                <Box sx={{ display: 'grid', gap: 1.5, maxWidth: 560 }}>
-                  {featureItems.map((item) => (
-                    <Box
-                      key={item}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1.5,
-                        px: 2,
-                        py: 1.5,
-                        borderRadius: 3,
-                        border: '1px solid var(--border)',
-                        bgcolor: 'rgba(255,255,255,0.55)'
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: '50%',
-                          bgcolor: 'var(--text)'
-                        }}
-                      />
-                      <Typography sx={{ color: 'var(--text)', fontWeight: 600 }}>
-                        {item}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-              </Box>
-
-              <Paper
-                elevation={0}
-                sx={{
-                  p: { xs: 3, md: 4 },
-                  borderRadius: 6,
-                  border: '1px solid var(--border)',
-                  bgcolor: 'var(--surface)',
-                  backdropFilter: 'blur(18px)'
-                }}
-              >
-                <Typography variant="h5" gutterBottom sx={{ fontWeight: 800, letterSpacing: '-0.04em' }}>
-                  Fortsätt till ditt arbetsflöde
-                </Typography>
-
-                <Typography variant="body1" sx={{ mb: 3, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                  Logga in med din kalenderleverantör för att synka tillgänglighet och börja boka med ett mer avskalat gränssnitt.
-                </Typography>
-
-                {params.error && (
-                  <Alert
-                    severity={params.error === 'token_expired' ? 'warning' : 'error'}
-                    sx={{ mb: 3, borderRadius: 3 }}
-                  >
-                {params.error === 'google_auth_failed' && 'Google-inloggning misslyckades. Försök igen.'}
-                {params.error === 'microsoft_auth_failed' && 'Microsoft-inloggning misslyckades. Försök igen.'}
-                {params.error === 'callback_failed' && 'Inloggning misslyckades. Försök igen.'}
-                {params.error === 'token_expired' && 'Din session har gått ut. Logga in igen för att fortsätta.'}
-                {params.error === 'oauth_state_mismatch' && 'Inloggningen avbröts av säkerhetsskäl. Försök igen.'}
-                {!['google_auth_failed', 'microsoft_auth_failed', 'callback_failed', 'token_expired', 'oauth_state_mismatch'].includes(params.error) && 'Ett fel uppstod vid inloggning.'}
-                {urlParams.get('logout') === 'success' && 'Du har loggats ut. Logga in igen för att fortsätta.'}
-                  </Alert>
-                )}
-
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  <Button
-                    variant="contained"
-                    href={createApiUrl(`/auth/google?returnTo=${authReturnTo}`)}
-                    size="large"
-                    startIcon={<GoogleLogo size={20} />}
-                    fullWidth
-                    sx={{
-                      py: 1.7,
-                      borderRadius: 3,
-                      bgcolor: 'var(--text)',
-                      color: 'var(--surface-strong)',
-                      boxShadow: 'none',
-                      '&:hover': {
-                        bgcolor: '#000000',
-                        boxShadow: 'none'
-                      }
-                    }}
-                  >
-                    Fortsätt med Google
-                  </Button>
-
-                  <Button
-                    variant="outlined"
-                    href={createApiUrl(`/auth/microsoft?returnTo=${authReturnTo}`)}
-                    size="large"
-                    startIcon={<MicrosoftLogo size={20} />}
-                    fullWidth
-                    sx={{
-                      py: 1.7,
-                      borderRadius: 3,
-                      borderColor: 'var(--border)',
-                      color: 'var(--text)',
-                      '&:hover': {
-                        borderColor: 'rgba(17,24,39,0.22)',
-                        bgcolor: 'rgba(17,24,39,0.02)'
-                      }
-                    }}
-                  >
-                    Fortsätt med Microsoft
-                  </Button>
-                </Box>
-
-                <Box
-                  sx={{
-                    mt: 3,
-                    pt: 3,
-                    borderTop: '1px solid var(--border)',
-                    display: 'grid',
-                    gap: 1.25
-                  }}
-                >
-                  {previewItems.map((item) => (
-                    <Box
-                      key={item.label}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 2,
-                        px: 2,
-                        py: 1.5,
-                        borderRadius: 3,
-                        bgcolor: 'rgba(17,24,39,0.03)',
-                        border: '1px solid rgba(17,24,39,0.04)'
-                      }}
-                    >
-                      <Typography variant="body2" sx={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
-                        {item.label}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'var(--text)', fontWeight: 700 }}>
-                        {item.value}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-
-                {params.error === 'token_expired' && (
-                  <Typography variant="body2" sx={{ mt: 2, color: 'var(--text-secondary)' }}>
-                    Logga in igen för att komma tillbaka till din kalenderjämförelse.
-                  </Typography>
-                )}
-              </Paper>
+              Schemaläggning utan krångel
             </Box>
           </Box>
-        </Container>
+
+          {/* Hero */}
+          <Box sx={{ maxWidth: 760, mx: 'auto', textAlign: 'center', mb: 7 }}>
+            <Typography
+              variant="h1"
+              sx={{ fontSize: { xs: '2.4rem', md: '3.5rem' }, lineHeight: 1.02, letterSpacing: '-0.05em', fontWeight: 800, mb: 3, color: 'var(--text)' }}
+            >
+              Sluta fråga <Box component="span" sx={{ color: 'var(--text-secondary)' }}>&quot;funkar 14:00?&quot;</Box> i mejltråden.
+            </Typography>
+            <Typography sx={{ fontSize: { xs: 17, md: 19 }, lineHeight: 1.6, color: 'var(--text-secondary)', fontWeight: 500, mb: 2.5, maxWidth: 620, mx: 'auto' }}>
+              BookR jämför allas kalendrar direkt och visar de tider som faktiskt fungerar för alla — ingen mer fram-och-tillbaka i mejl eller Slack.
+            </Typography>
+            <Typography sx={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-secondary)', fontWeight: 600, mb: 4, maxWidth: 540, mx: 'auto' }}>
+              Ett snabbt avstämningsmöte, en stor gruppintervju eller en blockerad uppgiftstid — samma verktyg, samma enkla flöde.
+            </Typography>
+            <Button
+              href="/boka-demo"
+              variant="contained"
+              size="large"
+              sx={{
+                px: 4, py: 1.8, borderRadius: 3.5, bgcolor: 'var(--text)', color: 'var(--surface-strong)',
+                fontWeight: 700, fontSize: 16, boxShadow: 'none',
+                '&:hover': { bgcolor: '#000000', boxShadow: 'none' }
+              }}
+            >
+              Kom igång gratis →
+            </Button>
+          </Box>
+
+          {/* Product hero visual: real-looking calendar comparison */}
+          <Box
+            sx={{
+              maxWidth: 1040, mx: 'auto', borderRadius: 8, border: '1px solid var(--border)',
+              bgcolor: 'var(--surface)', backdropFilter: 'blur(20px)', boxShadow: '0 40px 120px rgba(15,23,42,0.14)',
+              p: 1, mb: 9, position: 'relative', overflow: 'hidden'
+            }}
+          >
+            <Box sx={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at top left, rgba(17,24,39,0.06), transparent 40%)', pointerEvents: 'none' }} />
+
+            <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 1, px: 2.5, pt: 1.75, pb: 1.25 }}>
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
+              <Typography sx={{ ml: 1.5, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>app.onebookr.se</Typography>
+            </Box>
+
+            <Box sx={{ position: 'relative', bgcolor: 'var(--surface-strong)', borderRadius: 6, border: '1px solid var(--border)', p: { xs: 2.5, md: '28px 32px 32px' }, m: '0 8px 8px' }}>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2.75 }}>
+                <Typography sx={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.03em' }}>Jämför kalendrar</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>Torsdag 21 augusti</Typography>
+              </Box>
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: '48px repeat(3, 1fr)', columnGap: 0 }}>
+                <Box />
+                {[
+                  { label: 'Du', provider: 'google' },
+                  { label: 'Kund A', provider: 'microsoft' },
+                  { label: 'Kund B', provider: 'google' }
+                ].map((col) => (
+                  <Box key={col.label} sx={{ textAlign: 'center', pb: 1.5 }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 800, mb: 0.5 }}>{col.label}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                      {col.provider === 'google' ? <GoogleIcon size={12} /> : <MicrosoftIcon size={12} />}
+                      <Typography sx={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        {col.provider === 'google' ? 'Google' : 'Microsoft'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+
+                {[
+                  { hour: '10', busy: [true, false, true] },
+                  { hour: '11', busy: [false, true, false] },
+                  { hour: '12', busy: [true, true, false] },
+                  { hour: '13', busy: [false, false, true] }
+                ].map((row) => (
+                  <React.Fragment key={row.hour}>
+                    <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 700, pt: 0.75 }}>{row.hour}</Typography>
+                    {row.busy.map((isBusy, i) => (
+                      <Box key={i} sx={{ height: 44, m: '2px 6px', borderRadius: 2, bgcolor: isBusy ? 'rgba(17,24,39,0.09)' : 'transparent' }} />
+                    ))}
+                  </React.Fragment>
+                ))}
+
+                <Typography sx={{ fontSize: 12, color: 'var(--text)', fontWeight: 800, pt: 1.5 }}>14</Typography>
+                <Box
+                  sx={{
+                    gridColumn: 'span 3', m: '4px 6px', borderRadius: 3, border: '2px solid var(--text)',
+                    bgcolor: '#fff', px: 2, py: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    boxShadow: '0 12px 28px rgba(17,24,39,0.1)'
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'var(--success)' }} />
+                    <Typography sx={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.01em' }}>Alla tre lediga — 14:00</Typography>
+                  </Box>
+                  <Box sx={{ fontSize: 12, fontWeight: 700, px: 1.75, py: 0.75, borderRadius: 999, bgcolor: 'var(--text)', color: '#fff' }}>Boka</Box>
+                </Box>
+
+                <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 700, pt: 0.75 }}>15</Typography>
+                {[true, false, true].map((isBusy, i) => (
+                  <Box key={i} sx={{ height: 44, m: '2px 6px', borderRadius: 2, bgcolor: isBusy ? 'rgba(17,24,39,0.09)' : 'transparent' }} />
+                ))}
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Cross-platform sync: Google <-> BookR <-> Microsoft */}
+          <Box
+            sx={{
+              maxWidth: 900, mx: 'auto', borderRadius: 6, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)',
+              boxShadow: 'var(--shadow-soft)', p: { xs: 3, md: '40px 44px' }, mb: 9
+            }}
+          >
+            <Box sx={{ textAlign: 'center', mb: 3.5 }}>
+              <Typography sx={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.03em', mb: 0.75 }}>
+                Spelar ingen roll vem som använder vad
+              </Typography>
+              <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.55, maxWidth: 480, mx: 'auto' }}>
+                Google Kalender och Microsoft Outlook läser varandra rakt igenom BookR — ingen part behöver byta system eller exportera något manuellt.
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, width: 160 }}>
+                <Box sx={{ width: 56, height: 56, borderRadius: 3, border: '1px solid var(--border)', bgcolor: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <GoogleIcon size={26} />
+                </Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 700 }}>Google Kalender</Typography>
+              </Box>
+
+              <SyncArrow direction="right" />
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, width: 160 }}>
+                <Box sx={{ width: 64, height: 64, borderRadius: 4, bgcolor: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography sx={{ fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em' }}>BookR</Typography>
+                </Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 700 }}>Jämför &amp; matchar</Typography>
+              </Box>
+
+              <SyncArrow direction="left" />
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, width: 160 }}>
+                <Box sx={{ width: 56, height: 56, borderRadius: 3, border: '1px solid var(--border)', bgcolor: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MicrosoftIcon size={24} />
+                </Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 700 }}>Microsoft Outlook</Typography>
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Value stats */}
+          <Box sx={{ maxWidth: 900, mx: 'auto', display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2.5, mb: 9 }}>
+            <Box sx={{ p: 4, borderRadius: 5, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)' }}>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, mb: 0.75 }}>Fler bokade möten</Typography>
+              <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                Varje extra mejl i tur och ordning är en chans att tappa kunden. En direkt bokningslänk höjer andelen som faktiskt landar ett möte.
+              </Typography>
+            </Box>
+            <Box sx={{ p: 4, borderRadius: 5, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)' }}>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, mb: 0.75 }}>Inget faller mellan stolarna</Typography>
+              <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                Ingen mer trådar som tystnar innan en tid är satt. Så länge alla svarat finns det alltid en tid kvar att välja.
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* 3-step how it works */}
+          <Box sx={{ maxWidth: 900, mx: 'auto', display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 3, mb: 9 }}>
+            {[
+              { n: '01', title: 'Koppla kalender', body: 'Google eller Microsoft, klart på tio sekunder.' },
+              { n: '02', title: 'Bjud in', body: 'Skicka en länk — mottagaren loggar in med Google, inget konto behövs.' },
+              { n: '03', title: 'Välj en tid', body: 'BookR visar bara luckorna som passar alla.' }
+            ].map((step) => (
+              <Box key={step.n} sx={{ textAlign: 'center' }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 800, color: 'var(--text-secondary)', mb: 1.25 }}>{step.n}</Typography>
+                <Typography sx={{ fontSize: 17, fontWeight: 700, mb: 0.75 }}>{step.title}</Typography>
+                <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{step.body}</Typography>
+              </Box>
+            ))}
+          </Box>
+
+          {/* Scales from 1:1 to group */}
+          <Box
+            sx={{
+              maxWidth: 900, mx: 'auto', borderRadius: 5, border: '1px solid var(--border)', bgcolor: 'var(--surface)',
+              backdropFilter: 'blur(18px)', p: { xs: 3, md: '32px 36px' }, mb: 8,
+              display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 4
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }}>
+              <Box sx={{ width: 44, height: 44, borderRadius: 3, bgcolor: 'var(--text)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>1:1</Box>
+              <Box sx={{ width: 24, height: 1, bgcolor: 'var(--border)' }} />
+              <Box sx={{ width: 44, height: 44, borderRadius: 3, bgcolor: 'var(--text)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>10:1</Box>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 16, fontWeight: 700, mb: 0.5 }}>Från snabbt avstämningsmöte till stor grupp</Typography>
+              <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                Fungerar lika bra för ett enda möte som för tio personer från olika företag utan synkade kalendrar. Alla loggar in med Google och går rakt in i samma jämförelse — inget konto att skapa, ingen väntan.
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Login card */}
+          <Paper
+            elevation={0}
+            sx={{
+              maxWidth: 460, mx: 'auto', borderRadius: 6, border: '1px solid var(--border)',
+              bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: 5
+            }}
+          >
+            <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1, textAlign: 'center' }}>
+              Kom igång
+            </Typography>
+            <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', mb: 3.5 }}>
+              Ingen kreditkort krävs.
+            </Typography>
+
+            {(errorMessage || logoutMessage) && (
+              <Alert
+                severity={params.error === 'token_expired' ? 'warning' : 'error'}
+                sx={{ mb: 3, borderRadius: 3 }}
+              >
+                {errorMessage || logoutMessage}
+              </Alert>
+            )}
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Button
+                variant="contained"
+                href={createApiUrl(`/auth/google?returnTo=${authReturnTo}`)}
+                size="large"
+                startIcon={<GoogleLogo size={20} />}
+                fullWidth
+                sx={{
+                  py: 1.7, borderRadius: 3, bgcolor: 'var(--text)', color: 'var(--surface-strong)',
+                  boxShadow: 'none', '&:hover': { bgcolor: '#000000', boxShadow: 'none' }
+                }}
+              >
+                Fortsätt med Google
+              </Button>
+
+              <Button
+                variant="outlined"
+                href={createApiUrl(`/auth/microsoft?returnTo=${authReturnTo}`)}
+                size="large"
+                startIcon={<MicrosoftLogo size={20} />}
+                fullWidth
+                sx={{
+                  py: 1.7, borderRadius: 3, borderColor: 'var(--border)', color: 'var(--text)',
+                  '&:hover': { borderColor: 'rgba(17,24,39,0.22)', bgcolor: 'rgba(17,24,39,0.02)' }
+                }}
+              >
+                Fortsätt med Microsoft
+              </Button>
+            </Box>
+
+            {params.error === 'token_expired' && (
+              <Typography variant="body2" sx={{ mt: 2, color: 'var(--text-secondary)', textAlign: 'center' }}>
+                Logga in igen för att komma tillbaka till din kalenderjämförelse.
+              </Typography>
+            )}
+          </Paper>
+        </Box>
       </Box>
     );
   }
