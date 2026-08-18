@@ -1676,6 +1676,36 @@ passport.use(new GoogleStrategy({
   }
 }));
 
+// ✅ ADMIN: EGEN GOOGLE-STRATEGI FÖR /admin/connect-calendar
+// KRITISKT: passport-google-oauth20 binder EN callbackURL per
+// strategi-instans. Att återanvända den vanliga 'google'-strategin här
+// (som vi först gjorde) betydde att Google ALLTID skickade tillbaka till
+// /auth/google/callback — aldrig till /admin/connect-calendar/callback —
+// oavsett vad vår egen route-kod förväntade sig. Admin-flödet nådde
+// därför aldrig sin egen callback-logik, och ingen refreshToken sparades
+// någonsin, helt tyst (inga fel, inga loggrader från den routen).
+// En egen namngiven strategi med egen callbackURL löser det roten.
+passport.use('google-admin', new GoogleStrategy({
+  clientID: process.env.CLIENT_ID,
+  clientSecret: process.env.CLIENT_SECRET,
+  callbackURL: process.env.GOOGLE_ADMIN_CALLBACK_URL || (
+    process.env.NODE_ENV === 'production'
+      ? 'https://www.onebookr.se/admin/connect-calendar/callback'
+      : '/admin/connect-calendar/callback'
+  )
+}, (accessToken, refreshToken, profile, done) => {
+  // Ingen Firebase-loggning/createUser här — detta är inte en vanlig
+  // användarinloggning, bara en engångskoppling av BookRs egen kalender.
+  done(null, {
+    id: profile.id,
+    email: profile.emails?.[0]?.value,
+    name: profile.displayName,
+    provider: 'google',
+    accessToken,
+    refreshToken
+  });
+}));
+
 // ✅ UPPDATERA MICROSOFT OAUTH MED FIREBASE LOGGING
 passport.use(new MicrosoftStrategy({
   clientID: process.env.MICROSOFT_CLIENT_ID,
@@ -1739,7 +1769,11 @@ app.get('/admin/connect-calendar', authLimiter, (req, res, next) => {
   req.session.adminConnectState = state;
   req.session.save((err) => {
     if (err) console.error('❌ Admin connect session save error:', err);
-    passport.authenticate('google', {
+    // ✅ 'google-admin' — egen strategi-instans med callbackURL som pekar
+    // på /admin/connect-calendar/callback (se registrering ovan). Den
+    // vanliga 'google'-strategin skulle alltid redirecta hit till
+    // /auth/google/callback istället, oavsett denna options-parameter.
+    passport.authenticate('google-admin', {
       scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
       accessType: 'offline',
       prompt: 'consent',
@@ -1756,7 +1790,7 @@ app.get('/admin/connect-calendar/callback', (req, res, next) => {
   }
   delete req.session.adminConnectState;
 
-  passport.authenticate('google', { session: false, failureRedirect: '/admin/connect-calendar-failed' }, async (err, user) => {
+  passport.authenticate('google-admin', { session: false, failureRedirect: '/admin/connect-calendar-failed' }, async (err, user) => {
     if (err || !user) {
       console.error('❌ Admin connect-calendar auth error:', err);
       return res.status(500).send('Kunde inte ansluta kalendern. Försök igen.');
