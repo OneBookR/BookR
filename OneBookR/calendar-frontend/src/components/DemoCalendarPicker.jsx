@@ -20,12 +20,22 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
   const [isLoading, setIsLoading] = useState(true);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [isBooking, setIsBooking] = useState(false);
+  // ✅ Fel som INTE ska trigga om hämtningen automatiskt — bara visas.
+  const [loadError, setLoadError] = useState(null);
 
+  // OBS: onError skickas in som en inline-funktion från BokaDemo.jsx och
+  // byter referens vid varje render (den beror på `toast`-state där). Om
+  // den stod i dependency-arrayen nedan skulle varje anrop av onError()
+  // trigga en re-render → ny onError-referens → effekten kör igen → onError
+  // anropas igen → oändlig loop (det här var exakt "snabb polling"-buggen:
+  // fetchAvailability kördes om och om igen tills demoLimiter slog till).
+  // onError anropas fortfarande, bara inte som ett skäl att köra om hämtningen.
   useEffect(() => {
     let cancelled = false;
 
     async function fetchAvailability() {
       setIsLoading(true);
+      setLoadError(null);
       try {
         const res = await apiRequest(`/api/book-demo/availability?leadId=${encodeURIComponent(leadId)}`);
         const data = await res.json().catch(() => ({}));
@@ -35,10 +45,15 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
         if (res.ok && Array.isArray(data.slots)) {
           setSlots(data.slots);
         } else {
-          onError(data.error || 'Kunde inte hämta lediga tider.');
+          const message = data.error || 'Kunde inte hämta lediga tider.';
+          setLoadError(message);
+          onError(message);
         }
       } catch (err) {
-        if (!cancelled) onError('Nätverksfel vid hämtning av lediga tider.');
+        if (!cancelled) {
+          setLoadError('Nätverksfel vid hämtning av lediga tider.');
+          onError('Nätverksfel vid hämtning av lediga tider.');
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -46,7 +61,8 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
 
     if (leadId) fetchAvailability();
     return () => { cancelled = true; };
-  }, [leadId, onError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId]);
 
   // ✅ Samma event-format som CompareCalendar.jsx: en ledig slot = ett
   // klickbart, grönt kalenderevent.
@@ -122,7 +138,13 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
           </Box>
         )}
 
-        {!isLoading && slots.length === 0 && (
+        {!isLoading && loadError && (
+          <Typography sx={{ fontSize: 14, color: 'var(--error)', textAlign: 'center', py: 6 }}>
+            Kunde inte hämta lediga tider just nu. Hör av dig till info@onebookr.se så bokar vi en tid manuellt.
+          </Typography>
+        )}
+
+        {!isLoading && !loadError && slots.length === 0 && (
           <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', py: 6 }}>
             Inga gemensamma lediga tider hittades den närmaste tiden. Hör av dig till info@onebookr.se så hittar vi en tid.
           </Typography>
