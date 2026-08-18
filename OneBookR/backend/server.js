@@ -1380,18 +1380,34 @@ app.get('/auth/google/callback', (req, res, next) => {
   }
   delete req.session.oauthState;
   delete req.session.oauthProvider;
-  passport.authenticate('google', {
-    failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed`,
-  })(req, res, next);
-}, (req, res) => {
+
+  // ✅ VIKTIGT: läs returnTo HÄR — innan passport.authenticate() körs och
+  // internt anropar req.login(), som kan REGENERERA sessionen som en
+  // säkerhetsåtgärd mot session fixation. Läste vi returnTo efter det (som
+  // koden gjorde tidigare, i en andra middleware efter authenticate) kunde
+  // det redan vara borta från den nya, regenererade sessionen — bekräftat i
+  // produktionsloggar: oauthState-kollen ovan passerade konsekvent, men
+  // session.returnTo var ändå tomt när det lästes i steget efter.
   const returnTo = req.session.returnTo || CONFIG.urls.frontend;
-
-  console.log(`🔐 [OAuth Google Callback]`);
-  console.log(`   Session returnTo: ${returnTo}`);
-  console.log(`   Redirecting to: ${returnTo}`);
-
   delete req.session.returnTo;
-  res.redirect(returnTo);
+
+  // ✅ Använder Passports dokumenterade custom-callback-form
+  // (strategy, options, callback) istället för att kedja två middlewares —
+  // ger full kontroll över req.login() och undviker att förlita sig på
+  // implicit next()-vidarebefordran mellan två separata handlers.
+  passport.authenticate('google', { failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed` }, (err, user) => {
+    if (err) return next(err);
+    if (!user) return res.redirect(`${CONFIG.urls.frontend}?error=google_auth_failed`);
+
+    req.login(user, (loginErr) => {
+      if (loginErr) return next(loginErr);
+
+      console.log(`🔐 [OAuth Google Callback]`);
+      console.log(`   Session returnTo: ${returnTo}`);
+      console.log(`   Redirecting to: ${returnTo}`);
+      res.redirect(returnTo);
+    });
+  })(req, res, next);
 });
 
 app.get('/auth/microsoft', authLimiter, (req, res, next) => {
@@ -1430,18 +1446,26 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
   }
   delete req.session.oauthState;
   delete req.session.oauthProvider;
-  passport.authenticate('microsoft', {
-    failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed`,
-  })(req, res, next);
-}, (req, res) => {
+
+  // ✅ Läs returnTo INNAN passport.authenticate()/req.login() körs — se
+  // utförlig förklaring vid Google-callbacken ovan (samma sessionsregenerering-
+  // race gäller här).
   const returnTo = req.session.returnTo || CONFIG.urls.frontend;
-
-  console.log(`🔐 [OAuth Microsoft Callback]`);
-  console.log(`   Session returnTo: ${returnTo}`);
-  console.log(`   Redirecting to: ${returnTo}`);
-
   delete req.session.returnTo;
-  res.redirect(returnTo);
+
+  passport.authenticate('microsoft', { failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed` }, (err, user) => {
+    if (err) return next(err);
+    if (!user) return res.redirect(`${CONFIG.urls.frontend}?error=microsoft_auth_failed`);
+
+    req.login(user, (loginErr) => {
+      if (loginErr) return next(loginErr);
+
+      console.log(`🔐 [OAuth Microsoft Callback]`);
+      console.log(`   Session returnTo: ${returnTo}`);
+      console.log(`   Redirecting to: ${returnTo}`);
+      res.redirect(returnTo);
+    });
+  })(req, res, next);
 });
 
 app.get('/auth/logout', (req, res) => {
