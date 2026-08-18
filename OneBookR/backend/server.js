@@ -1767,6 +1767,15 @@ app.get('/admin/connect-calendar', authLimiter, (req, res, next) => {
   }
   const state = randomUUID();
   req.session.adminConnectState = state;
+  // ✅ TILLFÄLLIG DEBUG-LOGG: visar exakt vilken callbackURL google-admin-
+  // strategin faktiskt använder — ta bort igen när redirect_uri_mismatch
+  // är löst.
+  console.log('🔍 [Admin Connect Debug] GOOGLE_ADMIN_CALLBACK_URL env:', process.env.GOOGLE_ADMIN_CALLBACK_URL || '(not set, using hardcoded fallback)');
+  console.log('🔍 [Admin Connect Debug] Effective callbackURL:', process.env.GOOGLE_ADMIN_CALLBACK_URL || (
+    process.env.NODE_ENV === 'production'
+      ? 'https://www.onebookr.se/admin/connect-calendar/callback'
+      : '/admin/connect-calendar/callback'
+  ));
   req.session.save((err) => {
     if (err) console.error('❌ Admin connect session save error:', err);
     // ✅ 'google-admin' — egen strategi-instans med callbackURL som pekar
