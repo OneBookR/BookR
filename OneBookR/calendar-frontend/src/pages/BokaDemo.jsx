@@ -5,6 +5,38 @@ import MicrosoftLogo from '../assets/MicrosoftLogo.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import DemoCalendarPicker from '../components/DemoCalendarPicker.jsx';
 
+// ✅ Animerad checkmark i cirkel — samma nål-formspråk som resten av
+// BookR (inline SVG, aldrig emoji). Ritas som en path som "ritas fram"
+// via stroke-dasharray/offset för en subtil, engångs entrance-känsla.
+function SuccessCheckIcon({ size = 64 }) {
+  return (
+    <Box
+      sx={{
+        width: size, height: size, borderRadius: '50%',
+        bgcolor: 'rgba(31,122,77,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        '@keyframes bookr-check-draw': { to: { strokeDashoffset: 0 } },
+        '@keyframes bookr-check-pop': { from: { transform: 'scale(0.7)', opacity: 0 }, to: { transform: 'scale(1)', opacity: 1 } }
+      }}
+    >
+      <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="none" style={{ animation: 'bookr-check-pop 320ms ease-out' }}>
+        <path
+          d="M4 12.5L9.5 18L20 6"
+          stroke="var(--success)"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          pathLength="1"
+          style={{
+            strokeDasharray: 1,
+            strokeDashoffset: 1,
+            animation: 'bookr-check-draw 500ms 200ms ease-out forwards'
+          }}
+        />
+      </svg>
+    </Box>
+  );
+}
+
 // ✅ "Boka demo": formulär -> logga in med egen kalender -> se en riktig
 // jämförelse mot BookRs kalender -> välj tid -> auto-bokat i båda
 // kalendrarna. Hela flödet sker på en och samma sida (tre interna steg),
@@ -191,19 +223,58 @@ export default function BokaDemo() {
 
         {confirmedMeeting && (
           <Box sx={{ textAlign: 'center' }}>
-            <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 4 }}>
-              Klar
+            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+              <SuccessCheckIcon />
+            </Box>
+
+            <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1 }}>
+              Klart!
             </Typography>
-            <Paper elevation={0} sx={{ borderRadius: 6, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, md: 5 } }}>
-              <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 2.5 }}>
+            <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', mb: 4, maxWidth: 420, mx: 'auto', lineHeight: 1.6 }}>
+              Ni ses redan i era kalendrar — ingen mer att göra från din sida.
+            </Typography>
+
+            <Paper elevation={0} sx={{ borderRadius: 6, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, md: 5 }, textAlign: 'left' }}>
+              {/* Mötesdetaljer som ett tydligt kort, samma mönster som
+                  bekräftelsedialogen i DemoCalendarPicker */}
+              <Box
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5, p: 2, mb: 3,
+                  borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)'
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 40, height: 40, borderRadius: 2.5, bgcolor: 'var(--text)', color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 800, fontSize: 13
+                  }}
+                >
+                  {new Date(confirmedMeeting.start).toLocaleDateString('sv-SE', { day: 'numeric', timeZone: 'Europe/Stockholm' })}
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: 14, fontWeight: 700, textTransform: 'capitalize' }}>
+                    {companyName} x BookR – Demo
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    {new Date(confirmedMeeting.start).toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Stockholm' })}
+                    {', '}
+                    {new Date(confirmedMeeting.start).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' })}
+                    {' – '}
+                    {new Date(confirmedMeeting.end).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' })}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 2 }}>
                 Nu har du gjort din första kalenderjämförelse med BookR.
               </Typography>
-              <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 2.5 }}>
-                Ganska skönt att inte behöva kolla i sin egna kalender innan du bokade något?
+              <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, mb: 2 }}>
+                Ganska skönt att slippa kolla i sin egen kalender innan man bokar något?
               </Typography>
-              <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 4 }}>
+              <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, mb: 4 }}>
                 Vi ser fram emot att prata mer med er.
               </Typography>
+
               <Button
                 href="/"
                 variant="outlined"

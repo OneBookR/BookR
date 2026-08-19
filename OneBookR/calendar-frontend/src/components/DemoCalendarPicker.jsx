@@ -3,8 +3,30 @@ import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'moment/locale/sv';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { Box, Paper, Typography, Button, CircularProgress } from '@mui/material';
+import { Box, Paper, Typography, Button, CircularProgress, Dialog } from '@mui/material';
 import { apiRequest } from '../utils/apiConfig.js';
+
+// ✅ Inline SVG-ikoner (aldrig emoji) — matchar BookRs formspråk.
+function CalendarCheckIcon({ size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3 9.5H21" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M8 3V6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M16 3V6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M8.5 14.2L11 16.5L15.5 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ClockIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 7V12L15.5 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
@@ -181,46 +203,83 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
         )}
       </Paper>
 
-      {/* ✅ Förifylld, icke-redigerbar bekräftelse — dyker upp under
-          kalendern när ett event klickas. Titeln byggs alltid server-side
-          från leadets sparade företagsnamn, aldrig redigerbar här. */}
-      {selectedSlot && (
-        <Paper elevation={0} sx={{ borderRadius: 6, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, md: 4 } }}>
-          <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>
-            Möte
-          </Typography>
-          <Typography sx={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', mb: 1.5 }}>
-            {companyName} x BookR – Demo
-          </Typography>
-          <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', mb: 3 }}>
-            {new Date(selectedSlot.start).toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Stockholm' })}
-            {', '}
-            {new Date(selectedSlot.start).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' })}
-            {' – '}
-            {new Date(selectedSlot.end).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' })}
-          </Typography>
+      {/* ✅ Förifylld, icke-redigerbar bekräftelse som en fokuserad modal —
+          titeln byggs alltid server-side från leadets sparade
+          företagsnamn, aldrig redigerbar här. */}
+      <Dialog
+        open={Boolean(selectedSlot)}
+        onClose={() => !isBooking && setSelectedSlot(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 6, border: '1px solid var(--border)', boxShadow: 'var(--shadow-soft)' }
+        }}
+      >
+        {selectedSlot && (
+          <Box sx={{ p: { xs: 3, md: 4 } }}>
+            <Box
+              sx={{
+                width: 52, height: 52, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.06)',
+                color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2.5
+              }}
+            >
+              <CalendarCheckIcon size={24} />
+            </Box>
 
-          <Box sx={{ display: 'flex', gap: 1.5 }}>
-            <Button
-              variant="outlined"
-              onClick={() => setSelectedSlot(null)}
-              disabled={isBooking}
-              sx={{ borderRadius: 3, borderColor: 'var(--border)', color: 'var(--text)' }}
+            <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 0.75 }}>
+              Bekräfta ditt möte
+            </Typography>
+            <Typography sx={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', mb: 2.5, lineHeight: 1.3 }}>
+              {companyName} x BookR – Demo
+            </Typography>
+
+            <Box
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 1.5, p: 2, mb: 3,
+                borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)'
+              }}
             >
-              Välj annan tid
-            </Button>
-            <Button
-              variant="contained"
-              onClick={confirmBooking}
-              disabled={isBooking}
-              fullWidth
-              sx={{ py: 1.6, borderRadius: 3, bgcolor: 'var(--text)', color: 'var(--surface-strong)', fontWeight: 700, boxShadow: 'none', '&:hover': { bgcolor: '#000', boxShadow: 'none' } }}
-            >
-              {isBooking ? 'Bokar...' : 'Bekräfta bokning'}
-            </Button>
+              <Box sx={{ color: 'var(--text-secondary)', display: 'flex', flexShrink: 0 }}>
+                <ClockIcon />
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: 14, fontWeight: 700, textTransform: 'capitalize' }}>
+                  {new Date(selectedSlot.start).toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Stockholm' })}
+                </Typography>
+                <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  {new Date(selectedSlot.start).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' })}
+                  {' – '}
+                  {new Date(selectedSlot.end).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' })}
+                </Typography>
+              </Box>
+            </Box>
+
+            <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, mb: 3 }}>
+              Mötet bokas direkt i både din och BookRs kalender — ingen ytterligare bekräftelse behövs.
+            </Typography>
+
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
+              <Button
+                variant="outlined"
+                onClick={() => setSelectedSlot(null)}
+                disabled={isBooking}
+                sx={{ borderRadius: 3, borderColor: 'var(--border)', color: 'var(--text)' }}
+              >
+                Välj annan tid
+              </Button>
+              <Button
+                variant="contained"
+                onClick={confirmBooking}
+                disabled={isBooking}
+                fullWidth
+                sx={{ py: 1.6, borderRadius: 3, bgcolor: 'var(--text)', color: 'var(--surface-strong)', fontWeight: 700, boxShadow: 'none', '&:hover': { bgcolor: '#000', boxShadow: 'none' } }}
+              >
+                {isBooking ? 'Bokar...' : 'Bekräfta bokning'}
+              </Button>
+            </Box>
           </Box>
-        </Paper>
-      )}
+        )}
+      </Dialog>
     </Box>
   );
 }
