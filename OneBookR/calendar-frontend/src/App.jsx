@@ -305,6 +305,7 @@ function App() {
       if (params.error === 'callback_failed') return 'Inloggning misslyckades. Försök igen.';
       if (params.error === 'token_expired') return 'Din session har gått ut. Logga in igen för att fortsätta.';
       if (params.error === 'oauth_state_mismatch') return 'Inloggningen avbröts av säkerhetsskäl. Försök igen.';
+      if (params.error === 'access_restricted') return 'BookR är just nu under privat beta. Vill du testa produkten? Boka ett demo istället.';
       return 'Ett fel uppstod vid inloggning.';
     })();
     const logoutMessage = urlParams.get('logout') === 'success' ? 'Du har loggats ut. Logga in igen för att fortsätta.' : null;

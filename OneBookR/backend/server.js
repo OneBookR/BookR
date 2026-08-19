@@ -112,8 +112,27 @@ const CONFIG = {
   email: {
     from: process.env.RESEND_FROM || 'noreply@onebookr.se',
     maxRecipients: 50
+  },
+  access: {
+    // ✅ PRIVAT BETA: den "riktiga" delen av BookR (vanlig inloggning →
+    // dashboard/gruppflöde) är stängd för allmänheten under cold outreach-
+    // fasen — vi vill inte att företag vi kontaktar kan klicka sig in i det
+    // riktiga verktyget, bara se det via det styrda /boka-demo-flödet.
+    // Tom lista = ingen begränsning (t.ex. lokal utveckling utan env-var).
+    allowedLoginEmails: (process.env.ALLOWED_LOGIN_EMAILS || 'info@onebookr.se,av.goransson@gmail.com')
+      .split(',')
+      .map(e => e.trim().toLowerCase())
+      .filter(Boolean)
   }
 };
+
+// ✅ Är denna e-post tillåten att logga in i den riktiga (icke-demo) delen
+// av BookR? Tom whitelist betyder "ingen begränsning".
+function isAllowedLoginEmail(email) {
+  if (CONFIG.access.allowedLoginEmails.length === 0) return true;
+  if (!email) return false;
+  return CONFIG.access.allowedLoginEmails.includes(email.toLowerCase());
+}
 
 console.log(`🔧 Environment: ${IS_PRODUCTION ? 'PRODUCTION' : 'LOCALHOST'}`);
 console.log(`🌐 Frontend URL: ${CONFIG.urls.frontend}`);
@@ -1399,6 +1418,17 @@ app.get('/auth/google/callback', (req, res, next) => {
     if (err) return next(err);
     if (!user) return res.redirect(`${CONFIG.urls.frontend}?error=google_auth_failed`);
 
+    // ✅ PRIVAT BETA: /boka-demo ska vara öppet för alla besökare (det är
+    // hela poängen — de loggar in med sin egen kalender för att se demot).
+    // Alla ANDRA vägar in (vanlig dashboard/gruppflöde) kräver att e-posten
+    // finns i whitelisten — annars kan vem som helst vi skickar ett kallt
+    // mejl till klicka sig vidare in i det riktiga verktyget.
+    const isDemoFlow = returnTo.startsWith('/boka-demo');
+    if (!isDemoFlow && !isAllowedLoginEmail(user.email)) {
+      console.warn(`⛔ Inloggning nekad (ej whitelistad): ${anonymizeEmail(user.email)}`);
+      return res.redirect(`${CONFIG.urls.frontend}?error=access_restricted`);
+    }
+
     req.login(user, (loginErr) => {
       if (loginErr) return next(loginErr);
 
@@ -1456,6 +1486,13 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
   passport.authenticate('microsoft', { failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed` }, (err, user) => {
     if (err) return next(err);
     if (!user) return res.redirect(`${CONFIG.urls.frontend}?error=microsoft_auth_failed`);
+
+    // ✅ PRIVAT BETA: se identisk kommentar vid Google-callbacken ovan.
+    const isDemoFlow = returnTo.startsWith('/boka-demo');
+    if (!isDemoFlow && !isAllowedLoginEmail(user.email)) {
+      console.warn(`⛔ Inloggning nekad (ej whitelistad): ${anonymizeEmail(user.email)}`);
+      return res.redirect(`${CONFIG.urls.frontend}?error=access_restricted`);
+    }
 
     req.login(user, (loginErr) => {
       if (loginErr) return next(loginErr);
