@@ -3,7 +3,7 @@ import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'moment/locale/sv';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { Box, Paper, Typography, Button, CircularProgress, Dialog } from '@mui/material';
+import { Box, Paper, Typography, Button, CircularProgress, Dialog, useMediaQuery } from '@mui/material';
 import { apiRequest } from '../utils/apiConfig.js';
 
 // ✅ Inline SVG-ikoner (aldrig emoji) — matchar BookRs formspråk.
@@ -31,6 +31,116 @@ function ClockIcon({ size = 16 }) {
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
 
+// ✅ Mobil slot-väljare ("Riktning A" i designcanvasen, godkänd av
+// användaren) — react-big-calendars 7-kolumners veckovy blir oläslig på
+// mobilbredd (kolumner ~40px, "9:00 AM Ledig" radbryts kaotiskt). Under
+// sm-brytpunkten ersätts kalendergridden av: horisontellt scrollbara
+// dag-flikar + en enkel enkolumns tidslista för bara den valda dagen.
+// Desktop (sm+) rör vi inte — samma react-big-calendar-veckovy som förut.
+function MobileDayPicker({ slots, onSelectSlot }) {
+  // Gruppera slots per kalenderdag (lokal Europe/Stockholm-dag, inte UTC).
+  const dayGroups = useMemo(() => {
+    const groups = new Map();
+    slots.forEach((slot) => {
+      const start = new Date(slot.start);
+      const dayKey = start.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' });
+      if (!groups.has(dayKey)) {
+        groups.set(dayKey, { dayKey, date: start, slots: [] });
+      }
+      groups.get(dayKey).slots.push(slot);
+    });
+    return Array.from(groups.values()).sort((a, b) => a.date - b.date);
+  }, [slots]);
+
+  const [selectedDayKey, setSelectedDayKey] = useState(dayGroups[0]?.dayKey ?? null);
+
+  // Om slots laddas om (t.ex. första hämtningen landar efter mount) och
+  // ingen dag är vald än, eller den tidigare valda dagen inte längre finns
+  // (inga lediga tider kvar den dagen) — hoppa till första tillgängliga dag.
+  useEffect(() => {
+    if (dayGroups.length === 0) return;
+    if (!dayGroups.some((g) => g.dayKey === selectedDayKey)) {
+      setSelectedDayKey(dayGroups[0].dayKey);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayGroups]);
+
+  const activeGroup = dayGroups.find((g) => g.dayKey === selectedDayKey) ?? dayGroups[0];
+
+  if (dayGroups.length === 0) return null;
+
+  return (
+    <Box>
+      {/* Dag-flikar — horisontellt scrollbara, dölj scrollbaren men behåll funktionen */}
+      <Box
+        sx={{
+          display: 'flex', gap: 1, overflowX: 'auto', pb: 1.75, mb: 1.75,
+          borderBottom: '1px solid var(--border)',
+          scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' }
+        }}
+      >
+        {dayGroups.map((group) => {
+          const isActive = group.dayKey === activeGroup?.dayKey;
+          return (
+            <Box
+              key={group.dayKey}
+              onClick={() => setSelectedDayKey(group.dayKey)}
+              sx={{
+                flexShrink: 0, minWidth: 60, textAlign: 'center', cursor: 'pointer',
+                borderRadius: 3.5, px: 2, py: 1.25,
+                bgcolor: isActive ? 'var(--text)' : 'var(--background)',
+                border: isActive ? 'none' : '1px solid var(--border)',
+                color: isActive ? '#fff' : 'var(--text)',
+                transition: 'background-color 120ms ease'
+              }}
+            >
+              <Typography sx={{ fontSize: 12, fontWeight: 700, lineHeight: 1.3, opacity: isActive ? 0.85 : 0.65 }}>
+                {group.date.toLocaleDateString('sv-SE', { weekday: 'short', timeZone: 'Europe/Stockholm' })}
+              </Typography>
+              <Typography sx={{ fontSize: 15, fontWeight: 800, lineHeight: 1.3 }}>
+                {group.date.toLocaleDateString('sv-SE', { day: 'numeric', timeZone: 'Europe/Stockholm' })}
+              </Typography>
+            </Box>
+          );
+        })}
+      </Box>
+
+      {/* Vald dags lediga tider — enkolumns lista, gott om plats för texten */}
+      {activeGroup && (
+        <Box>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', mb: 1.25 }}>
+            {activeGroup.date.toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Stockholm' })}
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {activeGroup.slots.map((slot, i) => (
+              <Box
+                key={i}
+                onClick={() => onSelectSlot(slot)}
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.75,
+                  borderRadius: 3.5, bgcolor: 'rgba(31,122,77,0.08)', border: '1.5px solid rgba(31,122,77,0.3)',
+                  cursor: 'pointer', transition: 'background-color 120ms ease',
+                  '&:active': { bgcolor: 'rgba(31,122,77,0.15)' }
+                }}
+              >
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'var(--success)', flexShrink: 0 }} />
+                <Typography sx={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                  {new Date(slot.start).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' })}
+                  {' – '}
+                  {new Date(slot.end).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' })}
+                </Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--success)', ml: 'auto' }}>
+                  Ledigt
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 // ✅ Kompakt kalenderjämförelse för demo-flödet — en riktig veckokalender,
 // avskalad version av huvudappens "Kalendervy" (samma react-big-calendar-
 // komponent och gröna "Ledig tid"-events som CompareCalendar.jsx), inte
@@ -38,6 +148,9 @@ const localizer = momentLocalizer(moment);
 // admin-kalender, låter besökaren klicka ett event, visar en låst
 // bekräftelseruta, och bokar automatiskt utan manuellt godkännande.
 export default function DemoCalendarPicker({ leadId, companyName, onBooked, onError }) {
+  // ✅ Under 600px (MUI:s "sm") används MobileDayPicker istället för
+  // react-big-calendars veckogrid — se motivering vid MobileDayPicker ovan.
+  const isMobile = useMediaQuery('(max-width:599.95px)');
   const [slots, setSlots] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedSlot, setSelectedSlot] = useState(null);
@@ -172,7 +285,11 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
           </Typography>
         )}
 
-        {!isLoading && slots.length > 0 && (
+        {!isLoading && slots.length > 0 && isMobile && (
+          <MobileDayPicker slots={slots} onSelectSlot={setSelectedSlot} />
+        )}
+
+        {!isLoading && slots.length > 0 && !isMobile && (
           <Box
             sx={{
               height: 500,
