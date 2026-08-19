@@ -323,7 +323,7 @@ function App() {
             </Typography>
             <Box
               sx={{
-                display: 'flex', alignItems: 'center', gap: 1, px: 1.75, py: 0.75,
+                display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, px: 1.75, py: 0.75,
                 borderRadius: 999, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.6)',
                 fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
                 color: 'var(--text-secondary)'
@@ -337,7 +337,7 @@ function App() {
           <Box sx={{ maxWidth: 760, mx: 'auto', textAlign: 'center', mb: 7 }}>
             <Typography
               variant="h1"
-              sx={{ fontSize: { xs: '2.4rem', md: '3.5rem' }, lineHeight: 1.02, letterSpacing: '-0.05em', fontWeight: 800, mb: 3, color: 'var(--text)' }}
+              sx={{ fontSize: { xs: '1.9rem', sm: '2.4rem', md: '3.5rem' }, lineHeight: 1.08, letterSpacing: '-0.04em', fontWeight: 800, mb: 3, color: 'var(--text)' }}
             >
               Sluta fråga <Box component="span" sx={{ color: 'var(--text-secondary)' }}>&quot;funkar 14:00?&quot;</Box> i mejltråden.
             </Typography>
@@ -364,38 +364,38 @@ function App() {
           {/* Product hero visual: real-looking calendar comparison */}
           <Box
             sx={{
-              maxWidth: 1040, mx: 'auto', borderRadius: 8, border: '1px solid var(--border)',
+              maxWidth: 1040, mx: 'auto', borderRadius: { xs: 5, md: 8 }, border: '1px solid var(--border)',
               bgcolor: 'var(--surface)', backdropFilter: 'blur(20px)', boxShadow: '0 40px 120px rgba(15,23,42,0.14)',
               p: 1, mb: 9, position: 'relative', overflow: 'hidden'
             }}
           >
             <Box sx={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at top left, rgba(17,24,39,0.06), transparent 40%)', pointerEvents: 'none' }} />
 
-            <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 1, px: 2.5, pt: 1.75, pb: 1.25 }}>
+            <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 1, px: { xs: 1.75, md: 2.5 }, pt: 1.75, pb: 1.25 }}>
               <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
               <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
               <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
               <Typography sx={{ ml: 1.5, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>app.onebookr.se</Typography>
             </Box>
 
-            <Box sx={{ position: 'relative', bgcolor: 'var(--surface-strong)', borderRadius: 6, border: '1px solid var(--border)', p: { xs: 2.5, md: '28px 32px 32px' }, m: '0 8px 8px' }}>
-              <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2.75 }}>
-                <Typography sx={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.03em' }}>Jämför kalendrar</Typography>
-                <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>Torsdag 21 augusti</Typography>
+            <Box sx={{ position: 'relative', bgcolor: 'var(--surface-strong)', borderRadius: { xs: 4, md: 6 }, border: '1px solid var(--border)', p: { xs: '18px 12px 20px', md: '28px 32px 32px' }, m: { xs: '0 6px 6px', md: '0 8px 8px' } }}>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: { xs: 2, md: 2.75 }, flexWrap: 'wrap', gap: 0.5 }}>
+                <Typography sx={{ fontSize: { xs: 16, md: 19 }, fontWeight: 800, letterSpacing: '-0.03em' }}>Jämför kalendrar</Typography>
+                <Typography sx={{ fontSize: { xs: 11, md: 13 }, fontWeight: 700, color: 'var(--text-secondary)' }}>Torsdag 21 augusti</Typography>
               </Box>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: '48px repeat(3, 1fr)', columnGap: 0 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '28px repeat(3, 1fr)', md: '48px repeat(3, 1fr)' }, columnGap: 0 }}>
                 <Box />
                 {[
                   { label: 'Du', provider: 'google' },
                   { label: 'Kund A', provider: 'microsoft' },
                   { label: 'Kund B', provider: 'google' }
                 ].map((col) => (
-                  <Box key={col.label} sx={{ textAlign: 'center', pb: 1.5 }}>
-                    <Typography sx={{ fontSize: 13, fontWeight: 800, mb: 0.5 }}>{col.label}</Typography>
+                  <Box key={col.label} sx={{ textAlign: 'center', pb: 1.5, px: 0.25 }}>
+                    <Typography sx={{ fontSize: { xs: 11, md: 13 }, fontWeight: 800, mb: 0.5, whiteSpace: 'nowrap' }}>{col.label}</Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
                       {col.provider === 'google' ? <GoogleIcon size={12} /> : <MicrosoftIcon size={12} />}
-                      <Typography sx={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      <Typography sx={{ fontSize: { xs: 0, md: 10 }, display: { xs: 'none', md: 'block' }, fontWeight: 700, color: 'var(--text-secondary)' }}>
                         {col.provider === 'google' ? 'Google' : 'Microsoft'}
                       </Typography>
                     </Box>
@@ -409,31 +409,33 @@ function App() {
                   { hour: '13', busy: [false, false, true] }
                 ].map((row) => (
                   <React.Fragment key={row.hour}>
-                    <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 700, pt: 0.75 }}>{row.hour}</Typography>
+                    <Typography sx={{ fontSize: { xs: 10, md: 12 }, color: 'var(--text-secondary)', fontWeight: 700, pt: 0.75 }}>{row.hour}</Typography>
                     {row.busy.map((isBusy, i) => (
-                      <Box key={i} sx={{ height: 44, m: '2px 6px', borderRadius: 2, bgcolor: isBusy ? 'rgba(17,24,39,0.09)' : 'transparent' }} />
+                      <Box key={i} sx={{ height: { xs: 32, md: 44 }, m: { xs: '2px 3px', md: '2px 6px' }, borderRadius: 2, bgcolor: isBusy ? 'rgba(17,24,39,0.09)' : 'transparent' }} />
                     ))}
                   </React.Fragment>
                 ))}
 
-                <Typography sx={{ fontSize: 12, color: 'var(--text)', fontWeight: 800, pt: 1.5 }}>14</Typography>
+                <Typography sx={{ fontSize: { xs: 10, md: 12 }, color: 'var(--text)', fontWeight: 800, pt: 1.5 }}>14</Typography>
                 <Box
                   sx={{
-                    gridColumn: 'span 3', m: '4px 6px', borderRadius: 3, border: '2px solid var(--text)',
-                    bgcolor: '#fff', px: 2, py: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    boxShadow: '0 12px 28px rgba(17,24,39,0.1)'
+                    gridColumn: 'span 3', m: { xs: '4px 3px', md: '4px 6px' }, borderRadius: 3, border: '2px solid var(--text)',
+                    bgcolor: '#fff', px: { xs: 1.25, md: 2 }, py: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    flexWrap: 'wrap', gap: 0.75, boxShadow: '0 12px 28px rgba(17,24,39,0.1)'
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'var(--success)' }} />
-                    <Typography sx={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.01em' }}>Alla tre lediga — 14:00</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'var(--success)', flexShrink: 0 }} />
+                    <Typography sx={{ fontSize: { xs: 12, sm: 14 }, fontWeight: 800, letterSpacing: '-0.01em', whiteSpace: { xs: 'normal', sm: 'nowrap' } }}>
+                      Alla tre lediga — 14:00
+                    </Typography>
                   </Box>
-                  <Box sx={{ fontSize: 12, fontWeight: 700, px: 1.75, py: 0.75, borderRadius: 999, bgcolor: 'var(--text)', color: '#fff' }}>Boka</Box>
+                  <Box sx={{ fontSize: 12, fontWeight: 700, px: 1.75, py: 0.75, borderRadius: 999, bgcolor: 'var(--text)', color: '#fff', flexShrink: 0 }}>Boka</Box>
                 </Box>
 
-                <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 700, pt: 0.75 }}>15</Typography>
+                <Typography sx={{ fontSize: { xs: 10, md: 12 }, color: 'var(--text-secondary)', fontWeight: 700, pt: 0.75 }}>15</Typography>
                 {[true, false, true].map((isBusy, i) => (
-                  <Box key={i} sx={{ height: 44, m: '2px 6px', borderRadius: 2, bgcolor: isBusy ? 'rgba(17,24,39,0.09)' : 'transparent' }} />
+                  <Box key={i} sx={{ height: { xs: 32, md: 44 }, m: { xs: '2px 3px', md: '2px 6px' }, borderRadius: 2, bgcolor: isBusy ? 'rgba(17,24,39,0.09)' : 'transparent' }} />
                 ))}
               </Box>
             </Box>
@@ -454,7 +456,10 @@ function App() {
                 Google Kalender och Microsoft Outlook läser varandra rakt igenom BookR — ingen part behöver byta system eller exportera något manuellt.
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
+            {/* xs: vertikal stack med nedåtpekande pilar (in mot BookR-kortet i mitten).
+                sm+: horisontell rad som tidigare — tre 160px-kort + två 40px-pilar
+                (≈560px) får inte plats på en 320–375px mobilskärm utan att wrap:a trasigt. */}
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', justifyContent: 'center', gap: { xs: 0, sm: 3 } }}>
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, width: 160 }}>
                 <Box sx={{ width: 56, height: 56, borderRadius: 3, border: '1px solid var(--border)', bgcolor: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <GoogleIcon size={26} />
@@ -462,7 +467,8 @@ function App() {
                 <Typography sx={{ fontSize: 13, fontWeight: 700 }}>Google Kalender</Typography>
               </Box>
 
-              <SyncArrow direction="right" />
+              <Box sx={{ display: { xs: 'block', sm: 'none' } }}><SyncArrow vertical /></Box>
+              <Box sx={{ display: { xs: 'none', sm: 'block' } }}><SyncArrow direction="right" /></Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, width: 160 }}>
                 <Box sx={{ width: 64, height: 64, borderRadius: 4, bgcolor: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -471,7 +477,8 @@ function App() {
                 <Typography sx={{ fontSize: 13, fontWeight: 700 }}>Jämför &amp; matchar</Typography>
               </Box>
 
-              <SyncArrow direction="left" />
+              <Box sx={{ display: { xs: 'block', sm: 'none' } }}><SyncArrow vertical /></Box>
+              <Box sx={{ display: { xs: 'none', sm: 'block' } }}><SyncArrow direction="left" /></Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, width: 160 }}>
                 <Box sx={{ width: 56, height: 56, borderRadius: 3, border: '1px solid var(--border)', bgcolor: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -539,7 +546,7 @@ function App() {
             elevation={0}
             sx={{
               maxWidth: 460, mx: 'auto', borderRadius: 6, border: '1px solid var(--border)',
-              bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: 5
+              bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, sm: 5 }
             }}
           >
             <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1, textAlign: 'center' }}>

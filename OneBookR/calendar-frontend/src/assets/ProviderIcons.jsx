@@ -29,7 +29,22 @@ export function MicrosoftIcon({ size = 20 }) {
 // direction="right": pilen pekar höger (används till vänster om BookR, flödar IN mot BookR).
 // direction="left": pilen pekar vänster (används till höger om BookR, flödar IN mot BookR).
 // Båda pekar alltså MOT mitten — aldrig genom varandra.
-export function SyncArrow({ direction = 'right' }) {
+//
+// vertical=true: samma "pekar in mot BookR"-logik men roterad 90° för att
+// användas när layouten staplas vertikalt på mobil (se cross-platform-
+// sync-sektionen i App.jsx) — annars wrap:ar tre 160px-kort + två 40px-
+// horisontella pilar trasigt på smala skärmar (en ensam vågrät pil på egen
+// rad ser trasigt ut).
+export function SyncArrow({ direction = 'right', vertical = false }) {
+  if (vertical) {
+    // Pekar alltid NEDÅT — dvs in mot BookR-kortet som ligger i mitten av stacken.
+    return (
+      <svg width="16" height="32" viewBox="0 0 16 32" style={{ flexShrink: 0, color: 'var(--text-secondary)' }}>
+        <line x1="8" y1="0" x2="8" y2="26" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M2 20 L8 26 L14 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
   if (direction === 'left') {
     return (
       <svg width="40" height="16" viewBox="0 0 40 16" style={{ flexShrink: 0, color: 'var(--text-secondary)' }}>
