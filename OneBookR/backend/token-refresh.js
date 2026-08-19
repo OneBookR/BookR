@@ -15,6 +15,7 @@ import { decryptToken, encryptToken } from './gdpr-utils.js';
 let cachedAccessToken = null;
 let cachedExpiresAt = 0;
 let cachedProvider = null;
+let cachedEmail = null;
 
 export async function refreshGoogleAccessToken(refreshToken) {
   const response = await fetch('https://oauth2.googleapis.com/token', {
@@ -76,7 +77,7 @@ export async function refreshMicrosoftAccessToken(refreshToken) {
 export async function getAdminCalendarToken() {
   // Cache-hit: token finns kvar med minst 2 minuters marginal.
   if (cachedAccessToken && Date.now() < cachedExpiresAt - 120_000) {
-    return { accessToken: cachedAccessToken, provider: cachedProvider };
+    return { accessToken: cachedAccessToken, provider: cachedProvider, email: cachedEmail };
   }
 
   const stored = await fetchStoredAdminCalendarToken();
@@ -96,6 +97,12 @@ export async function getAdminCalendarToken() {
   cachedAccessToken = refreshed.accessToken;
   cachedExpiresAt = refreshed.expiresAt;
   cachedProvider = stored.provider;
+  // ✅ BUGFIX: email saknades tidigare i returvärdet helt, trots att den
+  // finns i Firestore-dokumentet. Konsekvensen: koden som bygger
+  // kalenderevent för demo-bokningar föll tillbaka på strängen
+  // 'bookr-admin' som attendee-email — en ogiltig adress utan @ — vilket
+  // Google Calendar API avvisade med 400 Bad Request vid varje bokning.
+  cachedEmail = stored.email || null;
 
   // Om Microsoft roterade refresh_token, spara den nya krypterad så nästa
   // förnyelse inte misslyckas med en föråldrad token. Görs fire-and-forget
@@ -108,5 +115,5 @@ export async function getAdminCalendarToken() {
     }).catch(err => console.warn('⚠️ Kunde inte spara roterad Microsoft refresh-token:', err.message));
   }
 
-  return { accessToken: cachedAccessToken, provider: cachedProvider };
+  return { accessToken: cachedAccessToken, provider: cachedProvider, email: cachedEmail };
 }

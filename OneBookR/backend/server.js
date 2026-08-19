@@ -1767,15 +1767,6 @@ app.get('/admin/connect-calendar', authLimiter, (req, res, next) => {
   }
   const state = randomUUID();
   req.session.adminConnectState = state;
-  // ✅ TILLFÄLLIG DEBUG-LOGG: visar exakt vilken callbackURL google-admin-
-  // strategin faktiskt använder — ta bort igen när redirect_uri_mismatch
-  // är löst.
-  console.log('🔍 [Admin Connect Debug] GOOGLE_ADMIN_CALLBACK_URL env:', process.env.GOOGLE_ADMIN_CALLBACK_URL || '(not set, using hardcoded fallback)');
-  console.log('🔍 [Admin Connect Debug] Effective callbackURL:', process.env.GOOGLE_ADMIN_CALLBACK_URL || (
-    process.env.NODE_ENV === 'production'
-      ? 'https://www.onebookr.se/admin/connect-calendar/callback'
-      : '/admin/connect-calendar/callback'
-  ));
   req.session.save((err) => {
     if (err) console.error('❌ Admin connect session save error:', err);
     // ✅ 'google-admin' — egen strategi-instans med callbackURL som pekar
@@ -3188,6 +3179,16 @@ app.post('/api/book-demo/confirm', demoLimiter, async (req, res) => {
       throw new BookRError('BookRs kalender är inte ansluten ännu', 503, 'ADMIN_CALENDAR_NOT_CONNECTED');
     }
 
+    // ✅ Admin-kalenderns email MÅSTE vara en riktig adress — den blir en
+    // Google/Microsoft-attendee nedan, och båda API:erna avvisar
+    // godtyckliga strängar (t.ex. det tidigare 'bookr-admin'-fallbacket)
+    // med 400 Bad Request. Om den saknas är kopplingen trasig på ett sätt
+    // som kräver att admin kopplar om kalendern, inte något vi kan gissa
+    // oss förbi här.
+    if (!adminCalendar.email) {
+      throw new BookRError('BookRs kalenderkoppling saknar en giltig e-postadress — koppla om via /admin/connect-calendar', 503, 'ADMIN_CALENDAR_MISSING_EMAIL');
+    }
+
     // ✅ Titel byggs server-side från leadets sparade företagsnamn — kan
     // inte manipuleras av klienten, precis som avsett.
     const title = `${lead.companyName} x BookR – Demo`;
@@ -3199,7 +3200,7 @@ app.post('/api/book-demo/confirm', demoLimiter, async (req, res) => {
     const fakeGroup = {
       members: [
         { email: req.user.email, token: req.user.accessToken, provider: req.user.provider || 'google', isCreator: true },
-        { email: adminCalendar.email || 'bookr-admin', token: adminCalendar.accessToken, provider: adminCalendar.provider }
+        { email: adminCalendar.email, token: adminCalendar.accessToken, provider: adminCalendar.provider }
       ]
     };
     const suggestion = {
