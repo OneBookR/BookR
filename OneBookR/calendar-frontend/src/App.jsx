@@ -375,7 +375,7 @@ function App() {
               <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
               <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
               <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'rgba(17,24,39,0.14)' }} />
-              <Typography sx={{ ml: 1.5, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>app.onebookr.se</Typography>
+              <Typography sx={{ ml: 1.5, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>onebookr.se</Typography>
             </Box>
 
             <Box sx={{ position: 'relative', bgcolor: 'var(--surface-strong)', borderRadius: { xs: 4, md: 6 }, border: '1px solid var(--border)', p: { xs: '18px 12px 20px', md: '28px 32px 32px' }, m: { xs: '0 6px 6px', md: '0 8px 8px' } }}>
