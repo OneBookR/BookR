@@ -134,6 +134,9 @@ const Integritetspolicy = () => {
             OneBookR<br />
             E-post: <a href="mailto:info@onebookr.se" style={{ color: '#635bff' }}>info@onebookr.se</a>
           </P>
+          <P>
+            Se även våra <a href="/anvandarvillkor" style={{ color: '#635bff' }}>användarvillkor</a>.
+          </P>
         </Section>
 
         <Divider sx={{ my: 3 }} />
