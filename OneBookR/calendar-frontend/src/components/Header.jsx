@@ -22,6 +22,7 @@ import {
 } from '@mui/icons-material';
 import { LOGOUT_URL, HOME_URL } from '../config';
 import GDPRNotice from './GDPRNotice';
+import { Logo } from '../assets/Logo.jsx';
 
 export default function Header({ user, onNavigate, onLeaveGroup }) {
   const [anchorEl, setAnchorEl] = useState(null);
@@ -110,19 +111,8 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
         <Toolbar sx={{ justifyContent: 'space-between', minHeight: 72, px: '0 !important' }}>
           {/* ✅ LOGO OCH TITEL */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography 
-              variant="h6" 
-              sx={{ 
-                fontWeight: 800,
-                cursor: 'pointer',
-                fontSize: 24,
-                letterSpacing: '-0.06em'
-              }}
-              onClick={handleGoHome}
-            >
-              BookR
-            </Typography>
-            
+            <Logo iconSize={26} fontSize={22} onClick={handleGoHome} />
+
             {isInGroup && (
               <Chip
                 label="I grupp"

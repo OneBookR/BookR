@@ -20,6 +20,7 @@ import MobileNavigation from './components/MobileNavigation.jsx';
 import GoogleLogo from './assets/GoogleLogo.jsx';
 import MicrosoftLogo from './assets/MicrosoftLogo.jsx';
 import { GoogleIcon, MicrosoftIcon, SyncArrow } from './assets/ProviderIcons.jsx';
+import { Logo } from './assets/Logo.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, CircularProgress } from '@mui/material';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import CookieBanner from './components/CookieBanner.jsx';
@@ -318,9 +319,7 @@ function App() {
 
           {/* Top bar */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: { xs: 6, md: 10 } }}>
-            <Typography sx={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>
-              BookR
-            </Typography>
+            <Logo iconSize={26} fontSize={21} />
             <Box
               sx={{
                 display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, px: 1.75, py: 0.75,
