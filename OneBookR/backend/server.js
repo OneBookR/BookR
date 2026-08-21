@@ -1331,7 +1331,13 @@ app.get('/api/auth/me', async (req, res) => {
     });
     return;
   }
-  res.json(req.user);
+  // ✅ demoOnly: sessionen kommer från /boka-demo-inloggningen och tillhör
+  // INTE en whitelistad användare — App.jsx måste vägra visa den riktiga
+  // dashboarden för denna session (se req.session.demoOnly-kommentaren vid
+  // OAuth-callbacken). Skickas alltid med när sant, oavsett vilken sida
+  // som frågar — /boka-demo ignorerar fältet och använder resten av
+  // svaret som vanligt.
+  res.json({ ...req.user, demoOnly: Boolean(req.session.demoOnly) });
 });
 
 app.get('/api/user', async (req, res) => {
@@ -1432,6 +1438,19 @@ app.get('/auth/google/callback', (req, res, next) => {
     req.login(user, (loginErr) => {
       if (loginErr) return next(loginErr);
 
+      // ✅ BUGFIX: en demo-besökare som loggade in via /boka-demo fick en
+      // fullt giltig session — identisk ur backendens synvinkel med en
+      // riktig BookR-inloggning. De kunde alltså gå till "/" (t.ex. klicka
+      // "Tillbaka till startsidan" efter bokning, googla "BookR", eller
+      // bara skriva in onebookr.se igen) och /api/auth/me svarade OK, så
+      // App.jsx visade dem den riktiga inloggade dashboarden. Stämpla
+      // sessionen som demo-scoped (bara om användaren INTE redan är
+      // whitelistad — annars skulle en admin som testar demoflödet bli
+      // felaktigt utelåst ur sin egen riktiga session efteråt).
+      if (isDemoFlow && !isAllowedLoginEmail(user.email)) {
+        req.session.demoOnly = true;
+      }
+
       console.log(`🔐 [OAuth Google Callback]`);
       console.log(`   Session returnTo: ${returnTo}`);
       console.log(`   Redirecting to: ${returnTo}`);
@@ -1496,6 +1515,11 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
 
     req.login(user, (loginErr) => {
       if (loginErr) return next(loginErr);
+
+      // ✅ Se identisk kommentar vid Google-callbacken ovan.
+      if (isDemoFlow && !isAllowedLoginEmail(user.email)) {
+        req.session.demoOnly = true;
+      }
 
       console.log(`🔐 [OAuth Microsoft Callback]`);
       console.log(`   Session returnTo: ${returnTo}`);
@@ -3103,6 +3127,65 @@ async function createMeetingEvents(suggestion, group) {
   }
 }
 
+// ✅ BUGFIX: createMeetingEvents skapar bara ETT event (hos "proposer",
+// alltid besökaren i demo-flödet) och lägger till den andra parten som
+// attendee via providerns API — den förlitar sig på att providern
+// synkroniserar in inbjudan i mottagarens kalender automatiskt. Det
+// fungerar oberäkneligt cross-provider: en Microsoft-besökare som bokar
+// skapar eventet i sin egen Outlook-kalender och Microsoft Graph skickar
+// en vanlig MEJL-inbjudan till admin-kalenderns Google-adress (Graph kan
+// inte skriva direkt i en extern Google-kalender) — den kräver ett manuellt
+// godkännande-klick för att synas som ett riktigt event, vilket i
+// praktiken innebar att BookRs kalender (info@onebookr.se) aldrig fick
+// eventet, bara ett mejl. Lösningen: skapa eventet EXPLICIT i
+// admin-kalenderns egen Google-kalender också, oavsett besökarens
+// provider — sluta lita på attendee-notifiering för admin-sidan.
+async function createAdminCalendarEvent(suggestion, adminCalendar, visitorEmail) {
+  if (adminCalendar.provider !== 'google') {
+    // Admin-kalendern är idag alltid Google (enda providern
+    // /admin/connect-calendar stödjer i praktiken) — om det någon gång
+    // ändras till Microsoft har vi redan attendee-inbjudan från
+    // createMeetingEvents som fallback, så vi failar inte requesten här.
+    console.warn(`⚠️ Admin-kalenderns provider är "${adminCalendar.provider}", inte google — skapar inget separat admin-event (förlitar sig på attendee-inbjudan).`);
+    return null;
+  }
+
+  const eventData = {
+    summary: suggestion.title,
+    description: `Demo bokat via BookR — motpart: ${visitorEmail}\n\nSkapad via BookRs demo-bokningsflöde`,
+    start: { dateTime: suggestion.start, timeZone: 'Europe/Stockholm' },
+    end: { dateTime: suggestion.end, timeZone: 'Europe/Stockholm' },
+    attendees: [{ email: visitorEmail }],
+    reminders: { useDefault: true },
+    status: 'confirmed'
+  };
+  if (suggestion.meetLink) {
+    eventData.description += `\n\nGoogle Meet: ${suggestion.meetLink}`;
+    eventData.location = suggestion.meetLink;
+  }
+
+  const response = await fetchWithRetry(
+    'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${adminCalendar.accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(eventData)
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Admin calendar event creation failed: HTTP ${response.status}: ${errorText}`);
+  }
+
+  const event = await response.json();
+  console.log(`✅ Created event directly in admin (BookR) calendar: ${event.id}`);
+  return event.id;
+}
+
 // ===== BOKA DEMO — publikt lead-capture + live auto-bokningsflöde =====
 // Se plan i C:\Users\Användar\.claude\plans\fancy-orbiting-feather.md.
 // Tre steg: (1) formulär sparar ett lead, (2) besökaren loggar in med sin
@@ -3182,7 +3265,17 @@ app.get('/api/book-demo/availability', demoLimiter, async (req, res) => {
       [visitorEmail, 'bookr-admin']
     );
 
-    res.json({ success: true, slots: freeSlots });
+    // ✅ BUGFIX: findFreeTimeSlots kollar bara om en slot krockar med bokade
+    // events — den vet inget om vad klockan är just nu. Om varken besökaren
+    // eller admin-kalendern hade något bokat tidigare samma dag dök redan
+    // passerade tider (t.ex. 09:00 en dag där det nu är 14:00) upp som
+    // "lediga" och gick att boka. Filtrera bort dem här (inte i den delade
+    // findFreeTimeSlots, som även huvudappens gruppflöde använder och vars
+    // beteende vi inte vill ändra).
+    const nowMs = Date.now();
+    const upcomingSlots = freeSlots.filter(slot => new Date(slot.start).getTime() > nowMs);
+
+    res.json({ success: true, slots: upcomingSlots });
   } catch (error) {
     console.error('❌ Demo availability error:', error);
     if (error instanceof BookRError) {
@@ -3201,6 +3294,16 @@ app.post('/api/book-demo/confirm', demoLimiter, async (req, res) => {
     const { leadId, start, end } = req.body;
     if (!leadId || !start || !end) {
       throw new BookRError('leadId, start och end krävs', 400, 'MISSING_PARAMETERS');
+    }
+
+    // ✅ BUGFIX: /api/book-demo/availability filtrerar redan bort passerade
+    // tider (se kommentar där), men denna endpoint tog start/end rakt från
+    // request body utan att kontrollera dem mot klockan — en klient kunde
+    // (avsiktligt eller via en cachad/gammal sida) posta en tid bakåt i
+    // tiden och få den bokad. Detta är den faktiska skrivpunkten, så
+    // kontrollen måste sitta här, inte bara i listnings-endpointen.
+    if (new Date(start).getTime() <= Date.now()) {
+      throw new BookRError('Den valda tiden har redan passerat — välj en tid längre fram.', 400, 'SLOT_IN_PAST');
     }
 
     const lead = await getDemoBooking(leadId);
@@ -3253,6 +3356,27 @@ app.post('/api/book-demo/confirm', demoLimiter, async (req, res) => {
 
     if (!eventResult.success) {
       throw new BookRError(`Kunde inte skapa mötet: ${eventResult.errors?.join(', ') || 'okänt fel'}`, 500, 'EVENT_CREATION_FAILED');
+    }
+
+    // ✅ Skapa eventet explicit i admin-kalendern också — men BARA när
+    // besökaren är Microsoft-användare. Google-fallet fungerar redan idag
+    // (Google auto-synkar attendee-inbjudan in i admin-kalendern), så att
+    // även skapa ett explicit event där skulle ge admin TVÅ events för
+    // samma möte. Se kommentar vid createAdminCalendarEvent för varför
+    // Microsoft-fallet behöver detta separat. Om detta fallerar ska det
+    // INTE fela hela bokningen — besökarens event finns redan och
+    // admin-kalenderns mejl-inbjudan (från createMeetingEvents ovan) är
+    // en fallback, om än otillförlitlig.
+    if ((req.user.provider || 'google') === 'microsoft') {
+      try {
+        await createAdminCalendarEvent(
+          { ...suggestion, meetLink: eventResult.meetLink },
+          adminCalendar,
+          req.user.email
+        );
+      } catch (adminEventError) {
+        console.error('❌ Kunde inte skapa event direkt i admin-kalendern (fortsätter ändå, besökarens event finns):', adminEventError.message);
+      }
     }
 
     await updateDemoBooking(leadId, {

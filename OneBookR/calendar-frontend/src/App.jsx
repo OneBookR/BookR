@@ -141,6 +141,24 @@ function App() {
 
         if (res.ok) {
           const data = await res.json();
+
+          // ✅ BUGFIX: en session som skapades genom /boka-demo-inloggningen
+          // (icke-whitelistad användare) fick tidigare full tillgång till
+          // den riktiga dashboarden bara genom att gå till "/" — t.ex. via
+          // "Tillbaka till startsidan"-knappen efter en demo-bokning, en
+          // Google-sökning på BookR, eller att manuellt skriva onebookr.se
+          // igen. Backend flaggar nu sådana sessioner (demoOnly) — här
+          // behandlas de som ej inloggade UTANFÖR /boka-demo, så
+          // landningssidan visas istället för dashboarden. /boka-demo gör
+          // sin egen /api/auth/me-koll (se BokaDemo.jsx) och bryr sig inte
+          // om detta state, så demo-flödet fungerar precis som förut.
+          if (data.demoOnly && window.location.pathname !== '/boka-demo') {
+            console.log('ℹ️ Demo-scoped session utanför /boka-demo — visar landningssidan');
+            setUser(null);
+            setLoading(false);
+            return;
+          }
+
           setUser(data);
           console.log('✅ User authenticated:', data.email);
 
