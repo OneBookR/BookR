@@ -1387,7 +1387,20 @@ app.get('/auth/google', authLimiter, (req, res, next) => {
       if (err) console.error('❌ Session save error:', err);
 
       passport.authenticate('google', {
-        scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
+        // ✅ TILLFÄLLIGT SCOPE-BYTE (se commit-meddelande för fullständig
+        // motivering): bytt från fullt 'auth/calendar' till de två snävare
+        // scopes 'calendar.events' + 'calendar.readonly' tillsammans.
+        // Verifierat mot koden att dessa två tillsammans täcker ALLA
+        // Google Calendar-anrop appen gör (events läs/skriv/radera via
+        // calendar.events, calendarList via calendar.readonly) — ingen
+        // funktionalitet ska tappas. Orsak: Google Cloud-projektets
+        // OAuth-klient hade bara calendar.readonly + calendar.events
+        // godkända i Data Access, INTE det fulla 'auth/calendar' som
+        // koden begärde — det gav "Google har inte verifierat den här
+        // appen"-varningen för alla användare utom projektägaren.
+        // ROLLBACK: git revert denna commit, eller
+        // `git checkout a9cf7ca -- OneBookR/backend/server.js`.
+        scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly'],
         state,
       })(req, res, next);
     });
@@ -1835,7 +1848,9 @@ app.get('/admin/connect-calendar', authLimiter, (req, res, next) => {
     // vanliga 'google'-strategin skulle alltid redirecta hit till
     // /auth/google/callback istället, oavsett denna options-parameter.
     passport.authenticate('google-admin', {
-      scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar'],
+      // ✅ Se identisk kommentar vid /auth/google ovan — samma tillfälliga
+      // scope-byte, av samma skäl, för admin-kalenderanslutningen.
+      scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly'],
       accessType: 'offline',
       prompt: 'consent',
       state,
