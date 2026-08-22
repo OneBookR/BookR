@@ -2,8 +2,8 @@ import React from 'react';
 import { Container, Typography, Box, Paper, Button, Divider } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
-const Section = ({ title, children }) => (
-  <Box sx={{ mb: 4 }}>
+const Section = ({ title, children, id }) => (
+  <Box id={id} sx={{ mb: 4, scrollMarginTop: 24 }}>
     <Typography variant="h6" sx={{ fontWeight: 700, color: '#0a2540', mb: 1.5 }}>
       {title}
     </Typography>
@@ -114,18 +114,11 @@ const Integritetspolicy = () => {
           </P>
         </Section>
 
-        <Section title="8. Cookies">
+        <Section title="8. Cookies" id="cookies">
           <P>
             Vi använder en nödvändig sessions-cookie (<code>bookr_session</code>) för att hålla dig inloggad.
             Med ditt samtycke använder vi även Google Analytics för att förstå hur tjänsten används.
             Du kan hantera dina val i cookiebannern eller i din webbläsares inställningar.
-          </P>
-          <P>
-            Läs vår fullständiga{' '}
-            <a href="https://www.iubenda.com/privacy-policy/71871656/cookie-policy" target="_blank" rel="noopener noreferrer" style={{ color: '#635bff' }}>
-              cookiepolicy
-            </a>{' '}
-            för mer information.
           </P>
         </Section>
 
