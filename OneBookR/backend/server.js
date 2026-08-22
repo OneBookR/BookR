@@ -1237,7 +1237,17 @@ passport.use(new MicrosoftStrategy({
       ? 'https://www.onebookr.se/auth/microsoft/callback'
       : '/auth/microsoft/callback'
   ),
-  scope: ['user.read', 'calendars.read']
+  // ✅ BUGFIX: calendars.read gav bara läsbehörighet, men koden POSTar
+  // events (skapar möten) mot Microsoft Graph — det kräver
+  // Calendars.ReadWrite (som redan täcker läsning också, ingen anledning
+  // att begära calendars.read separat). Utan detta fick nya
+  // Microsoft-användare (som bara samtyckte till det som faktiskt
+  // begärdes vid inloggning) ett 403 Forbidden vid bokning — bekräftat i
+  // produktion 2026-08-22 med ett fristående testkonto
+  // (gustavtest01@outlook.com). Ägarens eget konto (onebookr@outlook.com)
+  // hade redan bredare samtycke sedan tidigare och märkte aldrig
+  // problemet.
+  scope: ['user.read', 'calendars.readwrite']
 }, async (accessToken, refreshToken, profile, done) => {
   try {
     const user = {
@@ -1490,7 +1500,17 @@ app.get('/auth/microsoft', authLimiter, (req, res, next) => {
       if (err) console.error('❌ Session save error:', err);
 
       passport.authenticate('microsoft', {
-        scope: ['user.read', 'calendars.read'],
+        // ✅ BUGFIX: calendars.read gav bara läsbehörighet, men koden
+        // POSTar events (skapar möten) mot Microsoft Graph — det kräver
+        // Calendars.ReadWrite (som redan täcker läsning också, ingen
+        // anledning att begära calendars.read separat). Utan detta fick
+        // nya Microsoft-användare (som bara samtyckte till det som
+        // faktiskt begärdes vid inloggning) ett 403 Forbidden vid
+        // bokning — bekräftat i produktion 2026-08-22 med ett
+        // fristående testkonto (gustavtest01@outlook.com). Ägarens eget
+        // konto (onebookr@outlook.com) hade redan bredare samtycke
+        // sedan tidigare och märkte aldrig problemet.
+        scope: ['user.read', 'calendars.readwrite'],
         state,
       })(req, res, next);
     });
@@ -1789,7 +1809,17 @@ passport.use(new MicrosoftStrategy({
       ? 'https://www.onebookr.se/auth/microsoft/callback'
       : '/auth/microsoft/callback'
   ),
-  scope: ['user.read', 'calendars.read']
+  // ✅ BUGFIX: calendars.read gav bara läsbehörighet, men koden POSTar
+  // events (skapar möten) mot Microsoft Graph — det kräver
+  // Calendars.ReadWrite (som redan täcker läsning också, ingen anledning
+  // att begära calendars.read separat). Utan detta fick nya
+  // Microsoft-användare (som bara samtyckte till det som faktiskt
+  // begärdes vid inloggning) ett 403 Forbidden vid bokning — bekräftat i
+  // produktion 2026-08-22 med ett fristående testkonto
+  // (gustavtest01@outlook.com). Ägarens eget konto (onebookr@outlook.com)
+  // hade redan bredare samtycke sedan tidigare och märkte aldrig
+  // problemet.
+  scope: ['user.read', 'calendars.readwrite']
 }, async (accessToken, refreshToken, profile, done) => {
   try {
     const user = {
