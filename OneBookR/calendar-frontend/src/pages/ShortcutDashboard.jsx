@@ -585,7 +585,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
   return (
     <>
-      <Container maxWidth="sm" sx={{ mt: { xs: 11, md: 13 }, mb: 6, px: { xs: 2, sm: 3 } }}>
+      {/* ✅ BUGFIX: maxWidth="sm" är MUI:s breakpoint-namn för 600px, inte
+          mockupens ~800px-kolumn — gav för smala kort (nästan kvadratiska
+          istället för liggande/rektangulära). sx maxWidth skriver över med
+          ett explicit pixelvärde. */}
+      <Container maxWidth={false} sx={{ maxWidth: 800, mt: { xs: 11, md: 13 }, mb: 6, px: { xs: 2, sm: 3 }, mx: 'auto' }}>
         <Box sx={{ mb: 4 }}>
           <Typography sx={{ fontSize: { xs: 26, md: 30 }, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--text)' }}>
             Hej{greetingName ? `, ${greetingName}` : ''}
