@@ -1469,21 +1469,170 @@ export default function CompareCalendar({
   const renderMobileAvailableSlots = renderAvailableSlots;
 
   // ✅ MAIN RETURN STATEMENT
-  // ✅ BUGFIX: "Panelvy" visade tidigare bara den gamla vertikala stacken
-  // (formulär → fullbredds kortlista → kalender under varandra) — inte
-  // alls CompareTogglePanel-mockupens faktiska layout (smal dockad
-  // sidopanel till vänster + kalender i full bredd till höger).
-  // Bekräftat med skärmdump från användaren. Nu: innan man sökt visas
-  // fortfarande hela renderComparisonForm (behövs — gruppinfo, InviteFriend
-  // m.m.). Efter sökning, i Panelvy, byts layouten till den riktiga
-  // sidopanel-strukturen (renderSidebarPanel + kalender till höger).
-  const showSidebarLayout = hasSearched && !isMobile && viewMode === 'panel' && futureSlots.length > 0;
+  // ✅ REDESIGN v2 (efter feedback med skärmdump): Gruppinformation ska
+  // vara komprimerad men ALLTID synlig, oavsett Kortvy/Panelvy och
+  // oavsett om man sökt än. Båda vyerna delar nu samma vänsterspalt
+  // (inställningar: möteslängd/arbetstid/datum + sök-knapp) — tidigare
+  // fanns spalten bara i Panelvy, Kortvy saknade den helt.
+  const showDesktopLayout = !isMobile && hasSearched;
+
+  // Kompakt, alltid synlig gruppinfo-rad — ersätter den gamla stora
+  // gruppinfo-boxen som satt inbäddad i renderComparisonForm och
+  // försvann helt så fort man lämnade "innan sökning"-läget.
+  const renderCompactGroupInfo = () => {
+    if (!propGroupId || !groupInfo) return null;
+    return (
+      <Box
+        sx={{
+          display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap',
+          p: 2, mb: 2.5, borderRadius: 4, border: '1px solid var(--border)',
+          bgcolor: 'var(--surface-strong)', boxShadow: '0 18px 40px rgba(15,23,42,0.05)'
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexShrink: 0 }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>
+            {groupInfo.name || 'Namnlös grupp'}
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            · {groupInfo.memberCount} anslutna
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+          {groupInfo.members?.map((member, index) => (
+            <Box
+              key={index}
+              sx={{
+                px: 1.25, py: 0.5, borderRadius: 999, fontSize: 11, fontWeight: 700, color: 'var(--text)',
+                bgcolor: member.isCreator ? 'rgba(17,24,39,0.08)' : 'rgba(17,24,39,0.04)',
+                border: '1px solid rgba(17,24,39,0.08)'
+              }}
+            >
+              {member.isCreator ? 'Skapare • ' : ''}{member.email}
+            </Box>
+          ))}
+        </Box>
+        {groupInfo.pendingMembers?.length > 0 && (
+          <Typography sx={{ fontSize: 11, color: 'var(--text-secondary)', fontStyle: 'italic', ml: 'auto' }}>
+            Väntar på {groupInfo.pendingMembers.length} till
+          </Typography>
+        )}
+      </Box>
+    );
+  };
+
+  // Delad inställningsspalt — samma innehåll för både Kortvy och Panelvy,
+  // så Kortvy inte längre saknar möjligheten att ändra möteslängd/
+  // arbetstid/datum efter att man sökt.
+  const renderSettingsSidebar = () => (
+    <Box
+      sx={{
+        width: 280, flexShrink: 0, p: 3, borderRadius: 5.5,
+        border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)',
+        boxShadow: '0 24px 80px rgba(15,23,42,0.08)', display: 'flex', flexDirection: 'column', gap: 2.5,
+        alignSelf: 'flex-start'
+      }}
+    >
+      <Box>
+        <Typography sx={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>
+          {propGroupId ? (groupInfo?.name || 'Grupp') : 'Jämförelse'}
+        </Typography>
+        {myToken && (
+          <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', mt: 0.5 }}>
+            Din kalender ({userData.email || 'okänd'})
+          </Typography>
+        )}
+      </Box>
+
+      <Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 0.75 }}>Möteslängd (minuter)</Typography>
+        <input
+          type="number"
+          value={meetingDuration}
+          onChange={e => setMeetingDuration(Number(e.target.value))}
+          min={15} max={480} step={15}
+          style={fieldInputSx}
+        />
+      </Box>
+      <Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 0.75 }}>Arbetstid</Typography>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <input type="time" value={dayStart} onChange={e => setDayStart(e.target.value)} style={{ ...fieldInputSx, width: 0, flex: 1 }} />
+          <input type="time" value={dayEnd} onChange={e => setDayEnd(e.target.value)} style={{ ...fieldInputSx, width: 0, flex: 1 }} />
+        </Box>
+      </Box>
+      <Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 0.75 }}>Från datum</Typography>
+        <input
+          type="date"
+          value={timeMin ? timeMin.split('T')[0] : ''}
+          onChange={e => setTimeMin(e.target.value ? `${e.target.value}T00:00` : '')}
+          style={fieldInputSx}
+        />
+      </Box>
+      <Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 0.75 }}>Till datum</Typography>
+        <input
+          type="date"
+          value={timeMax ? timeMax.split('T')[0] : ''}
+          onChange={e => setTimeMax(e.target.value ? `${e.target.value}T23:59` : '')}
+          style={fieldInputSx}
+        />
+      </Box>
+
+      <Box
+        onClick={isLoading ? undefined : fetchAvailability}
+        sx={{
+          textAlign: 'center', px: 2, py: 1.4, borderRadius: 2.5, bgcolor: 'var(--text)', color: '#fff',
+          fontWeight: 700, fontSize: 13, cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.6 : 1,
+          '&:hover': { bgcolor: '#000' }
+        }}
+      >
+        {isLoading ? 'Uppdaterar...' : 'Uppdatera'}
+      </Box>
+
+      {hasSearched && (
+        <Box sx={{ pt: 2, borderTop: '1px solid var(--border)' }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 1 }}>
+            Lediga tider ({futureSlots.length})
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 260, overflowY: 'auto' }}>
+            {futureSlots.slice(0, 12).map((slot, i) => {
+              const start = new Date(slot.start);
+              const end = new Date(slot.end);
+              return (
+                <Box
+                  key={i}
+                  onClick={propGroupId ? () => handleSuggest(slot) : undefined}
+                  sx={{
+                    px: 1.5, py: 1, borderRadius: 2.25, fontSize: 12, fontWeight: 700, color: 'var(--text)',
+                    bgcolor: 'rgba(31,122,77,0.08)', border: '1px solid rgba(31,122,77,0.25)',
+                    cursor: propGroupId ? 'pointer' : 'default'
+                  }}
+                >
+                  {start.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })} – {end.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
+                </Box>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
+    </Box>
+  );
 
   return (
     <Box sx={{ maxWidth: 1280, mx: 'auto', p: { xs: 2, sm: 3, lg: 4 } }}>
-      {/* ✅ RENDER MOBILE OR DESKTOP VERSION — döljs i desktop-Panelvy efter
-          sökning, eftersom sidopanelen tar över dess plats. */}
-      {(isMobile || !showSidebarLayout) && (isMobile ? renderMobileComparisonForm() : renderComparisonForm())}
+      {/* ✅ Kompakt gruppinfo-rad — ALLTID synlig efter sökning (Kortvy och
+          Panelvy), oavsett vald vy. Innan man sökt visas den INTE här,
+          eftersom renderComparisonForm redan har en fullständig
+          gruppinfo-box (med väntande medlemmar + <2 medlemmar-varning,
+          som den kompakta raden inte täcker) — att visa båda samtidigt
+          hade varit en dubblering. */}
+      {showDesktopLayout && renderCompactGroupInfo()}
+
+      {/* ✅ På mobil, och på desktop innan man sökt: den befintliga stora
+          renderComparisonForm (InviteFriend, gruppinfo, avancerade
+          alternativ, formulär). */}
+      {(isMobile || !showDesktopLayout) && (isMobile ? renderMobileComparisonForm() : renderComparisonForm())}
 
       {/* ✅ ERROR HANDLING */}
       {error && (
@@ -1496,9 +1645,9 @@ export default function CompareCalendar({
       )}
 
       {/* ✅ VY-TOGGLE: Panelvy (dockad sidopanel + kalender) vs Kortvy
-          (stora tidskort i fokus, kalendern togglingsbar). Bara på
-          desktop, bara efter sökning. */}
-      {hasSearched && !isMobile && (
+          (dockad sidopanel + stora tidskort). Bara på desktop, bara
+          efter sökning. */}
+      {showDesktopLayout && (
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
           <Box sx={{ display: 'inline-flex', p: 0.5, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.05)', border: '1px solid rgba(17,24,39,0.08)' }}>
             <Box
@@ -1527,161 +1676,90 @@ export default function CompareCalendar({
         </Box>
       )}
 
-      {/* ✅ PANELVY (efter sökning, desktop): dockad sidopanel + kalender
-          i full bredd, sida vid sida — matchar CompareTogglePanel. */}
-      {showSidebarLayout ? (
+      {/* ✅ DESKTOP, EFTER SÖKNING: delad vänsterspalt (samma i båda
+          vyerna) + huvudinnehåll som växlar mellan kalender (Panelvy)
+          och kortgrid (Kortvy). */}
+      {showDesktopLayout ? (
         <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
-          <Box
-            sx={{
-              width: 280, flexShrink: 0, p: 3, borderRadius: 5.5,
-              border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)',
-              boxShadow: '0 24px 80px rgba(15,23,42,0.08)', display: 'flex', flexDirection: 'column', gap: 2.5
-            }}
-          >
-            <Box>
-              <Typography sx={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>
-                {propGroupId ? (groupInfo?.name || 'Grupp') : 'Jämförelse'}
-              </Typography>
-              {myToken && (
-                <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', mt: 0.5 }}>
-                  Din kalender ({userData.email || 'okänd'})
+          {renderSettingsSidebar()}
+
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            {viewMode === 'panel' ? (
+              <Box sx={{ p: 3, borderRadius: 5.5, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: '0 24px 80px rgba(15,23,42,0.08)' }}>
+                <Typography sx={{ fontSize: 21, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em', mb: 2 }}>
+                  Kalendervy
                 </Typography>
-              )}
-            </Box>
-
-            <Box>
-              <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 0.75 }}>Möteslängd</Typography>
-              <input
-                type="number"
-                value={meetingDuration}
-                onChange={e => setMeetingDuration(Number(e.target.value))}
-                min={15} max={480} step={15}
-                style={fieldInputSx}
-              />
-            </Box>
-            <Box>
-              <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 0.75 }}>Arbetstid</Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <input type="time" value={dayStart} onChange={e => setDayStart(e.target.value)} style={{ ...fieldInputSx, width: 0, flex: 1 }} />
-                <input type="time" value={dayEnd} onChange={e => setDayEnd(e.target.value)} style={{ ...fieldInputSx, width: 0, flex: 1 }} />
+                <Box sx={styles.calendar}>
+                  <Calendar
+                    localizer={localizer}
+                    events={calendarEvents}
+                    startAccessor="start"
+                    endAccessor="end"
+                    style={{ height: 560 }}
+                    eventPropGetter={eventPropGetter}
+                    views={['month', 'week', 'day']}
+                    defaultView="week"
+                    messages={{
+                      next: 'Nästa', previous: 'Föregående', today: 'Idag',
+                      month: 'Månad', week: 'Vecka', day: 'Dag'
+                    }}
+                  />
+                </Box>
               </Box>
-            </Box>
-
-            <Box
-              onClick={isLoading ? undefined : fetchAvailability}
-              sx={{
-                textAlign: 'center', px: 2, py: 1.4, borderRadius: 2.5, bgcolor: 'var(--text)', color: '#fff',
-                fontWeight: 700, fontSize: 13, cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.6 : 1,
-                '&:hover': { bgcolor: '#000' }
-              }}
-            >
-              {isLoading ? 'Uppdaterar...' : 'Uppdatera'}
-            </Box>
-
-            <Box sx={{ pt: 2, borderTop: '1px solid var(--border)' }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 1 }}>
-                Lediga tider ({futureSlots.length})
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 260, overflowY: 'auto' }}>
-                {futureSlots.slice(0, 12).map((slot, i) => {
-                  const start = new Date(slot.start);
-                  const end = new Date(slot.end);
-                  return (
+            ) : (
+              <>
+                {renderSlotCards}
+                {showCalendarInCardsView ? (
+                  <Paper elevation={0} sx={{ p: 3, mt: 3, borderRadius: 5.5, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: '0 24px 80px rgba(15,23,42,0.08)' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                      <Typography variant="h5" sx={{ fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
+                        Kalendervy
+                      </Typography>
+                      <Box
+                        onClick={() => setShowCalendarInCardsView(false)}
+                        sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Dölj kalender
+                      </Box>
+                    </Box>
+                    <Box sx={styles.calendar}>
+                      <Calendar
+                        localizer={localizer}
+                        events={calendarEvents}
+                        startAccessor="start"
+                        endAccessor="end"
+                        style={{ height: 500 }}
+                        eventPropGetter={eventPropGetter}
+                        views={['month', 'week', 'day']}
+                        defaultView="week"
+                        messages={{
+                          next: 'Nästa', previous: 'Föregående', today: 'Idag',
+                          month: 'Månad', week: 'Vecka', day: 'Dag'
+                        }}
+                      />
+                    </Box>
+                  </Paper>
+                ) : (
+                  futureSlots.length > 0 && (
                     <Box
-                      key={i}
-                      onClick={propGroupId ? () => handleSuggest(slot) : undefined}
+                      onClick={() => setShowCalendarInCardsView(true)}
                       sx={{
-                        px: 1.5, py: 1, borderRadius: 2.25, fontSize: 12, fontWeight: 700, color: 'var(--text)',
-                        bgcolor: 'rgba(31,122,77,0.08)', border: '1px solid rgba(31,122,77,0.25)',
-                        cursor: propGroupId ? 'pointer' : 'default'
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, py: 2, mt: 3,
+                        borderRadius: 4, border: '1px dashed rgba(17,24,39,0.14)', cursor: 'pointer',
+                        color: 'var(--text-secondary)', fontSize: 13, fontWeight: 700
                       }}
                     >
-                      {start.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })} – {end.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
+                      Visa kalendervy
                     </Box>
-                  );
-                })}
-              </Box>
-            </Box>
-          </Box>
-
-          <Box sx={{ flex: 1, minWidth: 0, p: 3, borderRadius: 5.5, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: '0 24px 80px rgba(15,23,42,0.08)' }}>
-            <Typography sx={{ fontSize: 21, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em', mb: 2 }}>
-              Kalendervy
-            </Typography>
-            <Box sx={styles.calendar}>
-              <Calendar
-                localizer={localizer}
-                events={calendarEvents}
-                startAccessor="start"
-                endAccessor="end"
-                style={{ height: 560 }}
-                eventPropGetter={eventPropGetter}
-                views={['month', 'week', 'day']}
-                defaultView="week"
-                messages={{
-                  next: 'Nästa', previous: 'Föregående', today: 'Idag',
-                  month: 'Månad', week: 'Vecka', day: 'Dag'
-                }}
-              />
-            </Box>
+                  )
+                )}
+              </>
+            )}
           </Box>
         </Box>
       ) : (
-        <>
-          {/* ✅ RENDER MOBILE OR DESKTOP SLOTS — på desktop styrs valet av
-              viewMode; på mobil alltid den befintliga kort-listan. */}
-          {isMobile ? renderMobileAvailableSlots : (viewMode === 'cards' ? renderSlotCards : renderAvailableSlots)}
-
-          {/* ✅ CALENDAR VIEW — i Kortvy bara efter att användaren aktivt
-              bett om den, så kort-vyn faktiskt förblir det primära
-              innehållet. */}
-          {hasSearched && futureSlots.length > 0 && !isMobile && showCalendarInCardsView && (
-            <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 5.5, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: '0 24px 80px rgba(15,23,42,0.08)' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="h5" sx={{ fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
-                  Kalendervy
-                </Typography>
-                <Box
-                  onClick={() => setShowCalendarInCardsView(false)}
-                  sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                  Dölj kalender
-                </Box>
-              </Box>
-              <Box sx={styles.calendar}>
-                <Calendar
-                  localizer={localizer}
-                  events={calendarEvents}
-                  startAccessor="start"
-                  endAccessor="end"
-                  style={{ height: 500 }}
-                  eventPropGetter={eventPropGetter}
-                  views={['month', 'week', 'day']}
-                  defaultView="week"
-                  messages={{
-                    next: 'Nästa', previous: 'Föregående', today: 'Idag',
-                    month: 'Månad', week: 'Vecka', day: 'Dag'
-                  }}
-                />
-              </Box>
-            </Paper>
-          )}
-
-          {/* ✅ I Kortvy, om kalendern är dold, visa en liten togglingsknapp
-              istället för att kalendern försvinner helt utan förklaring. */}
-          {hasSearched && futureSlots.length > 0 && !isMobile && viewMode === 'cards' && !showCalendarInCardsView && (
-            <Box
-              onClick={() => setShowCalendarInCardsView(true)}
-              sx={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, py: 2,
-                borderRadius: 4, border: '1px dashed rgba(17,24,39,0.14)', cursor: 'pointer',
-                color: 'var(--text-secondary)', fontSize: 13, fontWeight: 700, mb: 3
-              }}
-            >
-              Visa kalendervy
-            </Box>
-          )}
-        </>
+        /* ✅ MOBIL: oförändrad, alltid kort-baserad layout. */
+        isMobile && renderMobileAvailableSlots
       )}
 
       {/* ✅ SUGGESTIONS - alltid synligt oavsett layout */}
