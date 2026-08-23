@@ -19,6 +19,25 @@ import { useNotifications } from '../hooks/useNotifications.js';
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
 
+// ✅ REDESIGN: hjälpkomponent + delad inline-stil för formulärets
+// labeled-input-fält (datum, möteslängd, arbetstid) — på modulnivå så de
+// inte återskapas som nya referenser vid varje render av CompareCalendar.
+const FieldBox = ({ label, children }) => (
+  <Box sx={{ flex: 1, minWidth: 140 }}>
+    <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', mb: 0.75 }}>
+      {label}
+    </Typography>
+    {children}
+  </Box>
+);
+
+const fieldInputSx = {
+  width: '100%', padding: '11px 12px', borderRadius: '10px',
+  border: '1px solid rgba(17,24,39,0.14)', background: '#fff',
+  fontSize: 13, fontWeight: 700, color: '#111827',
+  fontFamily: "'Manrope', 'Segoe UI', sans-serif", boxSizing: 'border-box'
+};
+
 export default function CompareCalendar({
   myToken,
   invitedTokens = [],
@@ -769,316 +788,298 @@ export default function CompareCalendar({
   }, [propGroupId, timeMin, timeMax]);
 
   // ✅ ROBUST RENDERING FUNCTIONS - FLYTTA FÖRE MAIN RETURN
+  // ✅ REDESIGN: hela formulär-sektionen skrevs om från MUI-standard-
+  // komponenter (TextField/Chip/Alert med sitt fabriksutseende) till egna
+  // BookR-stilade element — matchar nu resten av appen istället för att
+  // sticka ut som en annan produkt. Ingen logik ändrad, bara markup/style.
   const renderComparisonForm = useCallback(() => (
     <Paper
       elevation={0}
       sx={{
         p: { xs: 3, md: 4 },
         mb: 3,
-        borderRadius: 4,
+        borderRadius: 5.5,
         border: '1px solid var(--border)',
-        bgcolor: 'rgba(255,255,255,0.76)',
-        backdropFilter: 'blur(18px)',
-        boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)'
+        bgcolor: 'var(--surface-strong)',
+        boxShadow: '0 24px 80px rgba(15,23,42,0.08)'
       }}
     >
-      <Chip
-        label="Compare Calendar"
+      <Box
         sx={{
-          mb: 2,
-          bgcolor: 'rgba(17,24,39,0.04)',
-          border: '1px solid rgba(17,24,39,0.06)',
-          color: 'var(--text)',
-          fontWeight: 800,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase'
+          display: 'inline-flex', mb: 2, px: 1.75, py: 0.75, borderRadius: 999,
+          bgcolor: 'rgba(17,24,39,0.05)', border: '1px solid rgba(17,24,39,0.08)'
         }}
-      />
-      <Typography variant="h3" sx={{ mb: 1.25, fontWeight: 800, letterSpacing: '-0.05em', color: 'var(--text)', fontSize: { xs: '2rem', md: '3rem' }, lineHeight: 0.98 }}>
-        Hitta en gemensam tid utan att lämna flödet.
+      >
+        <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+          Kalenderjämförelse
+        </Typography>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, mb: 1.25 }}>
+        <Typography sx={{ fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--text)', fontSize: { xs: 26, md: 34 }, lineHeight: 1.05 }}>
+          Hitta en gemensam tid utan att lämna flödet.
+        </Typography>
         {propGroupId && (
-          <Chip 
-            label={`Grupp: ${groupInfo?.name || 'Laddar...'}`} 
-            size="small"
-            sx={{ ml: 2, bgcolor: 'rgba(17,24,39,0.05)', color: 'var(--text)', fontWeight: 700, border: '1px solid rgba(17,24,39,0.06)' }}
-          />
+          <Box sx={{ px: 1.5, py: 0.6, borderRadius: 999, bgcolor: 'rgba(17,24,39,0.05)', border: '1px solid rgba(17,24,39,0.08)' }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
+              Grupp: {groupInfo?.name || 'Laddar...'}
+            </Typography>
+          </Box>
         )}
-      </Typography>
-      <Typography sx={{ color: 'var(--text-secondary)', maxWidth: 760, mb: 3, lineHeight: 1.7 }}>
+      </Box>
+      <Typography sx={{ color: 'var(--text-secondary)', maxWidth: 760, mb: 3, lineHeight: 1.7, fontSize: 14 }}>
         Jämför tillgänglighet, se vilka som redan är inne och skicka ett mötesförslag i samma lugna gränssnitt som resten av BookR.
       </Typography>
 
-      {/* ✅ BJUD IN-FORMULÄR: visas bara innan man är i en grupp. Detta
-          tappades bort i en tidigare refaktorisering (InviteFriend
-          slutade renderas här), vilket gjorde att den här vyn bara visade
-          "Behöver minst 2 kalendrar" utan något sätt att faktiskt bjuda
-          in någon. */}
+      {/* ✅ BJUD IN-FORMULÄR: visas bara innan man är i en grupp. */}
       {!propGroupId && (
         <InviteFriend fromUser={user} embedded />
       )}
 
       {/* ✅ AUTO-REFRESH STATUS */}
       {propGroupId && groupInfo && groupInfo.pendingMembers?.length === 0 && groupInfo.memberCount >= 2 && (
-        <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(31,122,77,0.08)', borderRadius: 3, border: '1px solid rgba(31,122,77,0.16)' }}>
-          <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--success)', fontWeight: 700 }}>
+        <Box sx={{ mb: 3, p: 2.25, bgcolor: 'rgba(31,122,77,0.08)', borderRadius: 3.5, border: '1px solid rgba(31,122,77,0.2)' }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 800, color: 'var(--success)', mb: 0.5 }}>
             Alla medlemmar är anslutna
           </Typography>
-          <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+          <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)' }}>
             Nu kan du jämföra alla kalendrar för att hitta gemensamma lediga tider.
           </Typography>
         </Box>
       )}
-      
+
       {/* ✅ GRUPPINFORMATION */}
       {groupInfo && (
-        <Box sx={{ mb: 3, p: 2.25, bgcolor: 'rgba(17,24,39,0.03)', borderRadius: 3, border: '1px solid rgba(17,24,39,0.05)' }}>
-          <Typography variant="subtitle2" sx={{ mb: 1.5, color: 'var(--text)', fontWeight: 700 }}>
+        <Box sx={{ mb: 3, p: 2.5, bgcolor: 'rgba(17,24,39,0.03)', borderRadius: 3.5, border: '1px solid rgba(17,24,39,0.06)' }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', mb: 1.25 }}>
             Gruppinformation
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1, color: 'var(--text-secondary)' }}>
-            <strong>Namn:</strong> {groupInfo.name}
+          <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', mb: 0.5 }}>
+            <strong style={{ color: 'var(--text)' }}>Namn:</strong> {groupInfo.name}
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1.5, color: 'var(--text-secondary)' }}>
-            <strong>Anslutna medlemmar:</strong> {groupInfo.memberCount}
+          <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', mb: 1.5 }}>
+            <strong style={{ color: 'var(--text)' }}>Anslutna medlemmar:</strong> {groupInfo.memberCount}
           </Typography>
-          
-          {/* ✅ VISA ANSLUTNA MEDLEMMAR MED EMAILS */}
+
           <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontWeight: 700, display: 'block', mb: 1 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', mb: 1 }}>
               Anslutna ({groupInfo.members?.length || 0})
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
               {groupInfo.members?.map((member, index) => (
-                <Chip
+                <Box
                   key={index}
-                  label={`${member.isCreator ? 'Skapare • ' : ''}${member.email}`}
-                  size="small"
-                  sx={{ fontSize: '0.75rem', bgcolor: member.isCreator ? 'rgba(17,24,39,0.08)' : 'rgba(17,24,39,0.04)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }}
-                />
+                  sx={{
+                    px: 1.5, py: 0.6, borderRadius: 999, fontSize: 12, fontWeight: 700, color: 'var(--text)',
+                    bgcolor: member.isCreator ? 'rgba(17,24,39,0.08)' : 'rgba(17,24,39,0.04)',
+                    border: '1px solid rgba(17,24,39,0.08)'
+                  }}
+                >
+                  {member.isCreator ? 'Skapare • ' : ''}{member.email}
+                </Box>
               ))}
             </Box>
           </Box>
 
-          {/* ✅ VISA VÄNTANDE MEDLEMMAR MED EMAILS */}
           {groupInfo.pendingMembers && groupInfo.pendingMembers.length > 0 && (
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" sx={{ color: 'var(--text-secondary)', fontWeight: 700, display: 'block', mb: 1 }}>
+            <Box sx={{ mb: 1 }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', mb: 1 }}>
                 Väntar på ({groupInfo.pendingMembers.length})
               </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
                 {groupInfo.pendingMembers.map((email, index) => (
-                  <Chip
+                  <Box
                     key={index}
-                    label={email}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: '0.75rem', borderColor: 'rgba(17,24,39,0.08)', color: 'var(--text-secondary)' }}
-                  />
+                    sx={{ px: 1.5, py: 0.6, borderRadius: 999, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', border: '1px solid rgba(17,24,39,0.12)' }}
+                  >
+                    {email}
+                  </Box>
                 ))}
               </Box>
-              <Typography variant="caption" sx={{ color: 'var(--text-secondary)', display: 'block', mt: 1, fontStyle: 'italic' }}>
+              <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', mt: 1, fontStyle: 'italic' }}>
                 Dessa personer har fått inbjudningar men har inte anslutit än.
               </Typography>
             </Box>
           )}
-          
+
           {groupInfo.memberCount < 2 && (
-            <Alert severity="warning" sx={{ mt: 1 }}>
-              <Typography variant="caption">
-                ⚠️ Väntar på att fler medlemmar ska ansluta för att kunna jämföra kalendrar...
+            <Box sx={{ mt: 1.5, p: 1.75, borderRadius: 3, bgcolor: 'rgba(181,71,8,0.08)', border: '1px solid rgba(181,71,8,0.18)' }}>
+              <Typography sx={{ fontSize: 12, color: 'var(--warning)', fontWeight: 700 }}>
+                Väntar på att fler medlemmar ska ansluta för att kunna jämföra kalendrar...
               </Typography>
-            </Alert>
+            </Box>
           )}
         </Box>
       )}
-      
-      {/* ✅ VISA STATUS FÖR KALENDRAR - ANVÄND userData KORREKT */}
-      <Box sx={{ mb: 3, p: 2.25, bgcolor: 'rgba(17,24,39,0.025)', borderRadius: 3, border: '1px solid rgba(17,24,39,0.05)' }}>
-        <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--text)', fontWeight: 700 }}>
+
+      {/* ✅ VISA STATUS FÖR KALENDRAR */}
+      <Box sx={{ mb: 3, p: 2.5, bgcolor: 'rgba(17,24,39,0.025)', borderRadius: 3.5, border: '1px solid rgba(17,24,39,0.06)' }}>
+        <Typography sx={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', mb: 1.25 }}>
           Kalendrar som jämförs
         </Typography>
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
           {myToken && (
-            <Chip 
-              label={`Din kalender (${userData.email || 'okänd'})`} 
-              size="small" 
-              sx={{ bgcolor: 'rgba(17,24,39,0.08)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }}
-            />
+            <Box sx={{ px: 1.5, py: 0.6, borderRadius: 999, fontSize: 12, fontWeight: 700, color: 'var(--text)', bgcolor: 'rgba(17,24,39,0.08)', border: '1px solid rgba(17,24,39,0.08)' }}>
+              Din kalender ({userData.email || 'okänd'})
+            </Box>
           )}
           {propGroupId && groupInfo?.members && groupInfo.members
             .filter(member => member.email !== userData.email)
             .map((member, index) => (
-              <Chip 
-                key={index}
-                label={`${member.email} ${member.isCreator ? '(skapare)' : ''}`}
-                size="small" 
-                sx={{ bgcolor: 'rgba(17,24,39,0.04)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }}
-              />
+              <Box key={index} sx={{ px: 1.5, py: 0.6, borderRadius: 999, fontSize: 12, fontWeight: 700, color: 'var(--text)', bgcolor: 'rgba(17,24,39,0.04)', border: '1px solid rgba(17,24,39,0.08)' }}>
+                {member.email} {member.isCreator ? '(skapare)' : ''}
+              </Box>
             ))}
           {contactEmail && (
-            <Chip 
-              label={contactEmail} 
-              size="small" 
-              sx={{ bgcolor: 'rgba(17,24,39,0.04)', color: 'var(--text)', border: '1px solid rgba(17,24,39,0.06)' }}
-            />
+            <Box sx={{ px: 1.5, py: 0.6, borderRadius: 999, fontSize: 12, fontWeight: 700, color: 'var(--text)', bgcolor: 'rgba(17,24,39,0.04)', border: '1px solid rgba(17,24,39,0.08)' }}>
+              {contactEmail}
+            </Box>
           )}
         </Box>
-        
-        {/* ✅ FÖRBÄTTRADE STATUSMEDDELANDEN */}
+
         {!propGroupId && [myToken, ...invitedTokens].filter(Boolean).length < 2 && (
-          <Alert severity="warning" sx={{ mt: 1 }}>
-            ⚠️ Behöver minst 2 kalendrar för jämförelse
-          </Alert>
+          <Box sx={{ mt: 1.5, p: 1.75, borderRadius: 3, bgcolor: 'rgba(181,71,8,0.08)', border: '1px solid rgba(181,71,8,0.18)' }}>
+            <Typography sx={{ fontSize: 12, color: 'var(--warning)', fontWeight: 700 }}>
+              Behöver minst 2 kalendrar för jämförelse
+            </Typography>
+          </Box>
         )}
-        
+
         {propGroupId && (!groupInfo || groupInfo.memberCount < 2) && (
-          <Alert severity="info" sx={{ mt: 1 }}>
-            <Typography variant="body2">
-              ⏳ Väntar på att fler medlemmar ska ansluta gruppen
+          <Box sx={{ mt: 1.5, p: 1.75, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.05)', border: '1px solid rgba(17,24,39,0.09)' }}>
+            <Typography sx={{ fontSize: 12, color: 'var(--text)', fontWeight: 700 }}>
+              Väntar på att fler medlemmar ska ansluta gruppen
             </Typography>
             {groupInfo?.pendingMembers && groupInfo.pendingMembers.length > 0 && (
-              <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+              <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', mt: 0.5 }}>
                 Inbjudningar skickade till: {groupInfo.pendingMembers.join(', ')}
               </Typography>
             )}
-          </Alert>
+          </Box>
         )}
       </Box>
-      
-      {/* ✅ NYA AVANCERADE ALTERNATIV */}
-      <Box sx={{ mb: 3, p: 2.25, bgcolor: 'rgba(17,24,39,0.025)', borderRadius: 3, border: '1px solid rgba(17,24,39,0.05)' }}>
-        <Typography variant="subtitle2" sx={{ mb: 2, color: 'var(--text)', fontWeight: 700 }}>
+
+      {/* ✅ AVANCERADE ALTERNATIV */}
+      <Box sx={{ mb: 3, p: 2.5, bgcolor: 'rgba(17,24,39,0.025)', borderRadius: 3.5, border: '1px solid rgba(17,24,39,0.06)' }}>
+        <Typography sx={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', mb: 1.75 }}>
           Avancerade alternativ
         </Typography>
-        
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <input 
-              type="checkbox" 
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <input
+              type="checkbox"
               id="includeAllEvents"
               checked={includeAllEvents}
               onChange={(e) => setIncludeAllEvents(e.target.checked)}
+              style={{ width: 16, height: 16, accentColor: '#111827' }}
             />
             <label htmlFor="includeAllEvents" style={{ cursor: 'pointer' }}>
-              <Typography variant="body2">
-                <strong>Inkludera alla events</strong> - Även tentativa, transparenta och heldagsevent
+              <Typography sx={{ fontSize: 13, color: 'var(--text)' }}>
+                <strong>Inkludera alla events</strong> — Även tentativa, transparenta och heldagsevent
               </Typography>
             </label>
           </Box>
-          
+
           {process.env.NODE_ENV === 'development' && propGroupId && (
-            <Button
-              variant="outlined"
-              size="small"
+            <Box
               onClick={fetchDebugEvents}
-              sx={{ alignSelf: 'flex-start', borderColor: 'var(--border)', color: 'var(--text)' }}
+              sx={{ alignSelf: 'flex-start', px: 1.75, py: 0.75, borderRadius: 2.5, border: '1px solid rgba(17,24,39,0.14)', fontSize: 12, fontWeight: 700, color: 'var(--text)', cursor: 'pointer' }}
             >
               Debug Events
-            </Button>
+            </Box>
           )}
         </Box>
-        
-        <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-secondary)', mt: 1 }}>
+
+        <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', mt: 1.25 }}>
           Om du inte ser alla kalenderevent kan du aktivera "Inkludera alla events".
         </Typography>
       </Box>
-      
+
       {/* ✅ FÖRENKLAD FORM */}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <TextField
-            label="Från datum"
-            type="date"
-            value={timeMin ? timeMin.split('T')[0] : ''}
-            onChange={e => setTimeMin(e.target.value ? `${e.target.value}T00:00` : '')}
-            InputLabelProps={{ shrink: true }}
-            sx={{ flex: 1, minWidth: 200 }}
-            helperText="Lämna tom för imorgon"
-          />
-          <TextField
-            label="Till datum"
-            type="date"
-            value={timeMax ? timeMax.split('T')[0] : ''}
-            onChange={e => setTimeMax(e.target.value ? `${e.target.value}T23:59` : '')}
-            InputLabelProps={{ shrink: true }}
-            sx={{ flex: 1, minWidth: 200 }}
-            helperText="Lämna tom för +2 veckor"
-          />
+          <FieldBox label="Från datum">
+            <input
+              type="date"
+              value={timeMin ? timeMin.split('T')[0] : ''}
+              onChange={e => setTimeMin(e.target.value ? `${e.target.value}T00:00` : '')}
+              style={fieldInputSx}
+            />
+            <Typography sx={{ fontSize: 11, color: 'var(--text-secondary)', mt: 0.5 }}>Lämna tom för imorgon</Typography>
+          </FieldBox>
+          <FieldBox label="Till datum">
+            <input
+              type="date"
+              value={timeMax ? timeMax.split('T')[0] : ''}
+              onChange={e => setTimeMax(e.target.value ? `${e.target.value}T23:59` : '')}
+              style={fieldInputSx}
+            />
+            <Typography sx={{ fontSize: 11, color: 'var(--text-secondary)', mt: 0.5 }}>Lämna tom för +2 veckor</Typography>
+          </FieldBox>
         </Box>
-        
+
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <TextField
-            label="Möteslängd (minuter)"
-            type="number"
-            value={meetingDuration}
-            onChange={e => setMeetingDuration(Number(e.target.value))}
-            inputProps={{ min: 15, max: 480, step: 15 }}
-            sx={{ width: 180 }}
-          />
-          <TextField
-            label="Arbetsdag start"
-            type="time"
-            value={dayStart}
-            onChange={e => setDayStart(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 140 }}
-          />
-          <TextField
-            label="Arbetsdag slut"
-            type="time"
-            value={dayEnd}
-            onChange={e => setDayEnd(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 140 }}
-          />
+          <FieldBox label="Möteslängd (minuter)">
+            <input
+              type="number"
+              value={meetingDuration}
+              onChange={e => setMeetingDuration(Number(e.target.value))}
+              min={15} max={480} step={15}
+              style={fieldInputSx}
+            />
+          </FieldBox>
+          <FieldBox label="Arbetsdag start">
+            <input type="time" value={dayStart} onChange={e => setDayStart(e.target.value)} style={fieldInputSx} />
+          </FieldBox>
+          <FieldBox label="Arbetsdag slut">
+            <input type="time" value={dayEnd} onChange={e => setDayEnd(e.target.value)} style={fieldInputSx} />
+          </FieldBox>
         </Box>
       </Box>
-      
-      <Button 
-        onClick={fetchAvailability}
-        variant="contained"
-        disabled={
-          isLoading || 
-          (propGroupId ? (!groupInfo || groupInfo.memberCount < 2) : [myToken, ...invitedTokens].filter(Boolean).length < 2)
+
+      <Box
+        onClick={
+          isLoading || (propGroupId ? (!groupInfo || groupInfo.memberCount < 2) : [myToken, ...invitedTokens].filter(Boolean).length < 2)
+            ? undefined
+            : fetchAvailability
         }
-        sx={{ px: 4, py: 1.35, fontWeight: 700, borderRadius: 3, bgcolor: 'var(--text)', '&:hover': { bgcolor: '#000' } }}
-        size="large"
+        sx={{
+          display: 'inline-flex', alignItems: 'center', gap: 1.25, px: 3.5, py: 1.6, borderRadius: 3,
+          bgcolor: 'var(--text)', color: '#fff', fontWeight: 700, fontSize: 14,
+          cursor: (isLoading || (propGroupId ? (!groupInfo || groupInfo.memberCount < 2) : [myToken, ...invitedTokens].filter(Boolean).length < 2)) ? 'not-allowed' : 'pointer',
+          opacity: (isLoading || (propGroupId ? (!groupInfo || groupInfo.memberCount < 2) : [myToken, ...invitedTokens].filter(Boolean).length < 2)) ? 0.5 : 1,
+          transition: 'background-color 150ms ease',
+          '&:hover': { bgcolor: '#000' }
+        }}
       >
-        {isLoading ? (
-          <>
-            <CircularProgress size={20} sx={{ mr: 1 }} />
-            {propGroupId ? 'Jämför gruppkalendrar...' : 'Jämför kalendrar...'}
-          </>
-        ) : (
-          <>
-            {propGroupId ? 'Jämför gruppkalendrar' : 'Jämför kalendrar'}
-            {includeAllEvents && ' (Alla events)'}
-          </>
-        )}
-      </Button>
-      
+        {isLoading && <CircularProgress size={16} sx={{ color: '#fff' }} />}
+        {isLoading
+          ? (propGroupId ? 'Jämför gruppkalendrar...' : 'Jämför kalendrar...')
+          : `${propGroupId ? 'Jämför gruppkalendrar' : 'Jämför kalendrar'}${includeAllEvents ? ' (Alla events)' : ''}`}
+      </Box>
+
       {includeAllEvents && (
-        <Typography variant="caption" sx={{ display: 'block', color: 'var(--text-secondary)', mt: 1 }}>
+        <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', mt: 1.25 }}>
           "Inkludera alla events" är aktivt. Även tentativa och transparenta events räknas som upptagna.
         </Typography>
       )}
     </Paper>
   ), [
-    theme, 
-    propGroupId, 
-    groupInfo, 
+    theme,
+    propGroupId,
+    groupInfo,
     userData,
-    myToken, 
-    invitedTokens, 
-    contactEmail, 
-    includeAllEvents, 
-    fetchDebugEvents, 
-    timeMin, 
-    timeMax, 
-    meetingDuration, 
-    dayStart, 
-    dayEnd, 
-    fetchAvailability, 
+    myToken,
+    invitedTokens,
+    contactEmail,
+    includeAllEvents,
+    fetchDebugEvents,
+    timeMin,
+    timeMax,
+    meetingDuration,
+    dayStart,
+    dayEnd,
+    fetchAvailability,
     isLoading
   ]);
 
@@ -1340,11 +1341,11 @@ export default function CompareCalendar({
     }
 
     return (
-      <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
+      <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 5.5, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: '0 24px 80px rgba(15,23,42,0.08)' }}>
         <Typography variant="h5" sx={{ mb: 2, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
           Mötesförslag ({suggestions.length})
         </Typography>
-        
+
         {suggestions.map(suggestion => {
           const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
           const userVote = suggestion.votes?.[userEmail];
@@ -1355,7 +1356,7 @@ export default function CompareCalendar({
           };
 
           return (
-            <Card key={suggestion.id} sx={{ p: 3, mb: 2, border: '1px solid rgba(17,24,39,0.06)', borderRadius: 3, bgcolor: 'rgba(17,24,39,0.025)', boxShadow: 'none' }}>
+            <Card key={suggestion.id} sx={{ p: 3, mb: 2, border: '1px solid rgba(17,24,39,0.06)', borderRadius: 4, bgcolor: 'rgba(17,24,39,0.025)', boxShadow: 'none' }}>
               {/* ✅ TITEL OCH FÖRSLAGS INFO */}
               <Box sx={{ mb: 2 }}>
                 <Typography variant="h6" sx={{ fontWeight: 800, color: 'var(--text)', mb: 0.5 }}>
@@ -1396,22 +1397,16 @@ export default function CompareCalendar({
                 <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, color: 'var(--text)' }}>
                   Röstningsresultat:
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                  <Chip
-                    label={`✅ ${voteCount.accepted} accepterat`}
-                    color={voteCount.accepted > 0 ? 'success' : 'default'}
-                    size="small"
-                  />
-                  <Chip
-                    label={`❌ ${voteCount.rejected} nekat`}
-                    color={voteCount.rejected > 0 ? 'error' : 'default'}
-                    size="small"
-                  />
-                  <Chip
-                    label={`⏳ ${voteCount.pending} väntar`}
-                    color={voteCount.pending > 0 ? 'warning' : 'default'}
-                    size="small"
-                  />
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Box sx={{ px: 1.5, py: 0.6, borderRadius: 999, fontSize: 12, fontWeight: 700, color: voteCount.accepted > 0 ? 'var(--success)' : 'var(--text-secondary)', bgcolor: voteCount.accepted > 0 ? 'rgba(31,122,77,0.1)' : 'rgba(17,24,39,0.04)', border: `1px solid ${voteCount.accepted > 0 ? 'rgba(31,122,77,0.25)' : 'rgba(17,24,39,0.08)'}` }}>
+                    {voteCount.accepted} accepterat
+                  </Box>
+                  <Box sx={{ px: 1.5, py: 0.6, borderRadius: 999, fontSize: 12, fontWeight: 700, color: voteCount.rejected > 0 ? 'var(--error)' : 'var(--text-secondary)', bgcolor: voteCount.rejected > 0 ? 'rgba(180,35,24,0.08)' : 'rgba(17,24,39,0.04)', border: `1px solid ${voteCount.rejected > 0 ? 'rgba(180,35,24,0.22)' : 'rgba(17,24,39,0.08)'}` }}>
+                    {voteCount.rejected} nekat
+                  </Box>
+                  <Box sx={{ px: 1.5, py: 0.6, borderRadius: 999, fontSize: 12, fontWeight: 700, color: voteCount.pending > 0 ? 'var(--warning)' : 'var(--text-secondary)', bgcolor: voteCount.pending > 0 ? 'rgba(181,71,8,0.08)' : 'rgba(17,24,39,0.04)', border: `1px solid ${voteCount.pending > 0 ? 'rgba(181,71,8,0.22)' : 'rgba(17,24,39,0.08)'}` }}>
+                    {voteCount.pending} väntar
+                  </Box>
                 </Box>
               </Box>
 
@@ -1437,25 +1432,30 @@ export default function CompareCalendar({
 
               {/* ✅ VISAR DIN RÖST */}
               {userVote !== 'pending' && (
-                <Alert severity={userVote === 'accepted' ? 'success' : 'error'} sx={{ mb: 0 }}>
-                  {userVote === 'accepted' 
-                    ? '✅ Du accepterade detta förslag' 
-                    : '❌ Du nekade detta förslag'}
-                </Alert>
+                <Box
+                  sx={{
+                    p: 1.75, borderRadius: 3, fontSize: 13, fontWeight: 700,
+                    color: userVote === 'accepted' ? 'var(--success)' : 'var(--error)',
+                    bgcolor: userVote === 'accepted' ? 'rgba(31,122,77,0.08)' : 'rgba(180,35,24,0.06)',
+                    border: `1px solid ${userVote === 'accepted' ? 'rgba(31,122,77,0.2)' : 'rgba(180,35,24,0.18)'}`
+                  }}
+                >
+                  {userVote === 'accepted' ? 'Du accepterade detta förslag' : 'Du nekade detta förslag'}
+                </Box>
               )}
 
               {/* ✅ SUCCESMEDDELANDE */}
               {suggestion.status === 'accepted' && (
-                <Alert severity="success">
-                  🎉 Alla accepterade! Kalendereventen har skapats för alla deltagare.
-                </Alert>
+                <Box sx={{ p: 1.75, borderRadius: 3, fontSize: 13, fontWeight: 700, color: 'var(--success)', bgcolor: 'rgba(31,122,77,0.08)', border: '1px solid rgba(31,122,77,0.2)' }}>
+                  Alla accepterade! Kalendereventen har skapats för alla deltagare.
+                </Box>
               )}
 
               {/* ✅ REJECTED MEDDELANDE */}
               {suggestion.status === 'rejected' && (
-                <Alert severity="warning">
+                <Box sx={{ p: 1.75, borderRadius: 3, fontSize: 13, fontWeight: 700, color: 'var(--warning)', bgcolor: 'rgba(181,71,8,0.08)', border: '1px solid rgba(181,71,8,0.2)' }}>
                   Förslaget avvisades av en eller flera deltagare.
-                </Alert>
+                </Box>
               )}
             </Card>
           );

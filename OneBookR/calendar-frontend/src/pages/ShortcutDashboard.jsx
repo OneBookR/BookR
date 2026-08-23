@@ -5,13 +5,11 @@ import GroupIcon from '@mui/icons-material/Group';
 import EventIcon from '@mui/icons-material/Event';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import LogoutIcon from '@mui/icons-material/Logout';
-import TaskIcon from '@mui/icons-material/Task';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import CloseIcon from '@mui/icons-material/Close';
 import ContactsIcon from '@mui/icons-material/Contacts';
 import AddIcon from '@mui/icons-material/Add';
-import GroupsIcon from '@mui/icons-material/Groups';
 import { Dialog, DialogTitle, DialogContent, DialogActions, TextField } from '@mui/material';
 import InvitationSidebar from './InvitationSidebar.jsx';
 import ContactSettings from '../components/ContactSettings.jsx';
@@ -23,6 +21,47 @@ import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 export const getStoredContacts = () => {
   return JSON.parse(localStorage.getItem('bookr_contacts') || '[]');
 };
+
+// ✅ REDESIGN: egna stroke-baserade SVG-ikoner för "Starta något nytt"-
+// korten — matchar mockupen i designcanvasen och resten av appens
+// formspråk (Logo.jsx, ProviderIcons.jsx). Ersätter MUI:s fyllda
+// Material-ikoner (PersonIcon/GroupIcon/TaskIcon/GroupsIcon) bara här —
+// samma ikoner i sidebar-tabbar/notiser rörs inte.
+function OneOnOneIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+function GroupMeetingIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <circle cx="8" cy="9" r="3" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="16" cy="9" r="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M2.5 20c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5M10.5 20c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+function TaskTimeIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M8.5 12L11 14.5L15.5 9.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function TeamIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="4" width="18" height="16" rx="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M3 9.5H21" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="8" cy="14" r="1.4" fill="currentColor" />
+      <circle cx="12" cy="14" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
 
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [invites, setInvites] = useState([]);
@@ -499,28 +538,28 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       title: '1:1-möte',
       description: 'Jämför två kalendrar och hitta en ren, tydlig mötestid.',
       accent: 'Snabbast väg till ett beslut',
-      icon: <PersonIcon sx={{ fontSize: 22 }} />,
+      icon: <OneOnOneIcon size={22} />,
       onClick: () => handleNavigateToMeeting('1v1')
     },
     {
       title: 'Gruppmöte',
       description: 'Bjud in flera deltagare och hitta gemensamma luckor utan brus.',
       accent: 'Bra för team och workshops',
-      icon: <GroupIcon sx={{ fontSize: 22 }} />,
+      icon: <GroupMeetingIcon size={22} />,
       onClick: () => handleNavigateToMeeting('group')
     },
     {
       title: 'Uppgiftstid',
       description: 'Blockera fokustid för uppgifter och planerade arbetsblock.',
       accent: 'För egen planering',
-      icon: <TaskIcon sx={{ fontSize: 22 }} />,
+      icon: <TaskTimeIcon size={22} />,
       onClick: () => handleNavigateToMeeting('task')
     },
     {
       title: 'Team',
       description: 'Hantera kontakter, direktåtkomst och återkommande gruppflöden.',
       accent: hasDirectAccessTeam ? 'Direktåtkomst aktiv' : 'Bygg ett återanvändbart teamflöde',
-      icon: <GroupsIcon sx={{ fontSize: 22 }} />,
+      icon: <TeamIcon size={22} />,
       onClick: () => handleNavigateToMeeting('team')
     }
   ];
