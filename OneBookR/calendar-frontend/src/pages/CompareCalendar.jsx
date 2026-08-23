@@ -29,28 +29,44 @@ export default function CompareCalendar({
   contactName,
   autoCompare = false
 }) {
-  const theme = { 
-    colors: { surface: '#fff', border: '#e0e3e7', text: '#222', bg: '#f7f9fb' } 
+  const theme = {
+    colors: { surface: '#fff', border: '#e0e3e7', text: '#222', bg: '#f7f9fb' }
   };
-  
+
   // ✅ INLINE STYLES - NO HOOKS
+  // ✅ BUGFIX: bar med gamla varumärkesvärden (#1976d2-blått, Inter) som
+  // aldrig migrerades när resten av appen bytte till dagens tokens
+  // (Manrope, --text, --border, --success). Bytt till samma system som
+  // landningssidan/demo-flödet redan använder.
   const styles = {
     calendar: {
-      fontFamily: "'Inter', 'Segoe UI', 'Roboto', 'Arial', sans-serif",
-      background: theme.colors.surface,
-      borderRadius: '8px',
-      border: `1px solid ${theme.colors.border}`,
+      fontFamily: "'Manrope', 'Segoe UI', sans-serif",
+      background: 'var(--surface-strong)',
+      borderRadius: '16px',
+      border: '1px solid var(--border)',
       height: '500px'
     },
     eventProps: (event) => ({
       style: {
-        backgroundColor: '#e3f2fd',
-        color: '#1976d2',
-        border: '1px solid #1976d2',
-        borderRadius: '4px'
+        backgroundColor: 'rgba(31,122,77,0.12)',
+        color: 'var(--success)',
+        border: '1px solid rgba(31,122,77,0.35)',
+        borderRadius: '8px',
+        fontFamily: "'Manrope', 'Segoe UI', sans-serif",
+        fontWeight: 700
       }
     })
   };
+
+  // ✅ REDESIGN: vy-toggle mellan "Panelvy" (nuvarande formulär + slots +
+  // inbäddad kalender, allt alltid synligt) och "Kortvy" (lediga tider som
+  // stora, tappbara kort i fokus — riktning vald ur designcanvasen
+  // https://claude.ai/code/artifact/28a4696a-6797-4c4c-b79f-68b3091477b5,
+  // "Compare Toggle"). Ingen fetch-/state-logik ändras — bara vilken
+  // sektion som visas som huvudinnehåll.
+  const [viewMode, setViewMode] = useState('panel');
+  // I Kortvy är kalendern en togglingsbar sekundär vy, avstängd som default.
+  const [showCalendarInCardsView, setShowCalendarInCardsView] = useState(false);
 
   // ✅ LÄGG TILL SAKNAD userData DEFINITION
   const userData = useMemo(() => ({
@@ -1226,6 +1242,95 @@ export default function CompareCalendar({
     );
   }, [hasSearched, isLoading, futureSlots, propGroupId, handleSuggest, meetingDuration]);
 
+  // ✅ KORTVY: samma futureSlots/slotsByDay-logik som ovan, men stora,
+  // tydligt gröna kort i grid — riktning C ur designcanvasen. Bara en
+  // sektion visas åt gången beroende på viewMode, ingen dubblad fetch.
+  const renderSlotCards = useMemo(() => {
+    if (!hasSearched) return null;
+
+    if (isLoading) {
+      return (
+        <Paper elevation={0} sx={{ p: 4, borderRadius: 5.5, textAlign: 'center', border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: '0 24px 80px rgba(15,23,42,0.08)' }}>
+          <CircularProgress sx={{ mb: 2 }} />
+          <Typography>Jämför kalendrar...</Typography>
+        </Paper>
+      );
+    }
+
+    const safeFutureSlots = Array.isArray(futureSlots) ? futureSlots : [];
+
+    if (safeFutureSlots.length === 0) {
+      return (
+        <Paper elevation={0} sx={{ p: 4, borderRadius: 5.5, textAlign: 'center', bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.06)' }}>
+          <Typography variant="h6" sx={{ mb: 1, color: 'var(--text)' }}>Inga gemensamma lediga tider</Typography>
+          <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>Försök utöka tidsintervallet eller justera arbetstider.</Typography>
+        </Paper>
+      );
+    }
+
+    const slotsByDay = safeFutureSlots.reduce((acc, slot) => {
+      if (!slot?.start || !slot?.end) return acc;
+      try {
+        const date = new Date(slot.start).toDateString();
+        if (!acc[date]) acc[date] = [];
+        acc[date].push(slot);
+        return acc;
+      } catch {
+        return acc;
+      }
+    }, {});
+
+    return (
+      <Box>
+        {Object.entries(slotsByDay).slice(0, 7).map(([dateString, daySlots]) => {
+          const date = new Date(dateString);
+          const isToday = date.toDateString() === new Date().toDateString();
+          const isTomorrow = date.toDateString() === new Date(Date.now() + 24 * 60 * 60 * 1000).toDateString();
+
+          return (
+            <Box key={dateString} sx={{ mb: 4 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1.75 }}>
+                {isToday ? 'Idag' : isTomorrow ? 'Imorgon' : date.toLocaleDateString('sv-SE', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(4, 1fr)' }, gap: 1.5 }}>
+                {daySlots.map((slot, slotIndex) => {
+                  try {
+                    const start = new Date(slot.start);
+                    const end = new Date(slot.end);
+                    if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+
+                    return (
+                      <Box
+                        key={`${dateString}-${slotIndex}`}
+                        onClick={propGroupId ? () => handleSuggest(slot) : undefined}
+                        sx={{
+                          p: 2.25, borderRadius: 4.5, textAlign: 'center',
+                          bgcolor: 'rgba(31,122,77,0.08)', border: '1.5px solid rgba(31,122,77,0.3)',
+                          cursor: propGroupId ? 'pointer' : 'default',
+                          transition: 'transform 150ms ease, box-shadow 150ms ease',
+                          '&:hover': propGroupId ? { transform: 'translateY(-2px)', boxShadow: '0 14px 34px rgba(31,122,77,0.16)' } : {}
+                        }}
+                      >
+                        <Typography sx={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>
+                          {start.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--success)', mt: 0.5 }}>
+                          Ledigt
+                        </Typography>
+                      </Box>
+                    );
+                  } catch {
+                    return null;
+                  }
+                })}
+              </Box>
+            </Box>
+          );
+        })}
+      </Box>
+    );
+  }, [hasSearched, isLoading, futureSlots, propGroupId, handleSuggest]);
+
 
 
   // ✅ LÄGG TILL SAKNAD SUGGESTIONS RENDERING
@@ -1379,18 +1484,64 @@ export default function CompareCalendar({
         </Alert>
       )}
 
-      {/* ✅ RENDER MOBILE OR DESKTOP SLOTS */}
-      {isMobile ? renderMobileAvailableSlots : renderAvailableSlots}
+      {/* ✅ VY-TOGGLE: Panelvy (formulär → kort-lista → inbäddad kalender,
+          allt alltid synligt) vs Kortvy (stora tidskort i fokus, kalendern
+          togglingsbar). Bara på desktop — mobilen har redan sin egen
+          dedikerade, alltid kort-baserade layout. */}
+      {hasSearched && !isMobile && (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+          <Box sx={{ display: 'inline-flex', p: 0.5, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.05)', border: '1px solid rgba(17,24,39,0.08)' }}>
+            <Box
+              onClick={() => setViewMode('cards')}
+              sx={{
+                px: 2.25, py: 1.1, borderRadius: 2.25, cursor: 'pointer',
+                fontSize: 13, fontWeight: 700,
+                bgcolor: viewMode === 'cards' ? 'var(--text)' : 'transparent',
+                color: viewMode === 'cards' ? '#fff' : 'var(--text-secondary)'
+              }}
+            >
+              Kortvy
+            </Box>
+            <Box
+              onClick={() => setViewMode('panel')}
+              sx={{
+                px: 2.25, py: 1.1, borderRadius: 2.25, cursor: 'pointer',
+                fontSize: 13, fontWeight: 700,
+                bgcolor: viewMode === 'panel' ? 'var(--text)' : 'transparent',
+                color: viewMode === 'panel' ? '#fff' : 'var(--text-secondary)'
+              }}
+            >
+              Panelvy
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      {/* ✅ RENDER MOBILE OR DESKTOP SLOTS — på desktop styrs valet av
+          viewMode; på mobil alltid den befintliga kort-listan. */}
+      {isMobile ? renderMobileAvailableSlots : (viewMode === 'cards' ? renderSlotCards : renderAvailableSlots)}
 
       {/* ✅ SUGGESTIONS - MOBILE OPTIMIZED */}
       {renderSuggestions()}
 
-      {/* ✅ CALENDAR VIEW - HIDDEN ON MOBILE */}
-      {hasSearched && futureSlots.length > 0 && !isMobile && (
+      {/* ✅ CALENDAR VIEW — alltid synlig i Panelvy (som tidigare); i
+          Kortvy bara efter att användaren aktivt bett om den, så kort-vyn
+          faktiskt förblir det primära innehållet. */}
+      {hasSearched && futureSlots.length > 0 && !isMobile && (viewMode === 'panel' || showCalendarInCardsView) && (
         <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
-          <Typography variant="h5" sx={{ mb: 2, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
-            Kalendervy
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
+              Kalendervy
+            </Typography>
+            {viewMode === 'cards' && (
+              <Box
+                onClick={() => setShowCalendarInCardsView(false)}
+                sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Dölj kalender
+              </Box>
+            )}
+          </Box>
           <Box sx={styles.calendar}>
             <Calendar
               localizer={localizer}
@@ -1412,6 +1563,21 @@ export default function CompareCalendar({
             />
           </Box>
         </Paper>
+      )}
+
+      {/* ✅ I Kortvy, om kalendern är dold, visa en liten togglingsknapp
+          istället för att kalendern försvinner helt utan förklaring. */}
+      {hasSearched && futureSlots.length > 0 && !isMobile && viewMode === 'cards' && !showCalendarInCardsView && (
+        <Box
+          onClick={() => setShowCalendarInCardsView(true)}
+          sx={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, py: 2,
+            borderRadius: 4, border: '1px dashed rgba(17,24,39,0.14)', cursor: 'pointer',
+            color: 'var(--text-secondary)', fontSize: 13, fontWeight: 700, mb: 3
+          }}
+        >
+          Visa kalendervy
+        </Box>
       )}
 
       {/* ✅ MOBILE-OPTIMIZED SUGGEST DIALOG */}
