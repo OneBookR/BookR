@@ -4,6 +4,7 @@ import GoogleLogo from '../assets/GoogleLogo.jsx';
 import MicrosoftLogo from '../assets/MicrosoftLogo.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import DemoCalendarPicker from '../components/DemoCalendarPicker.jsx';
+import { trackEvent } from '../utils/analytics.js';
 
 // ✅ Animerad checkmark i cirkel — samma nål-formspråk som resten av
 // BookR (inline SVG, aldrig emoji). Ritas som en path som "ritas fram"
@@ -58,10 +59,21 @@ export default function BokaDemo() {
     let cancelled = false;
     apiRequest('/api/auth/me')
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => { if (!cancelled) setUser(data); })
+      .then((data) => {
+        if (cancelled) return;
+        setUser(data);
+        // ✅ leadIdFromUrl betyder att vi precis kom tillbaka från en
+        // OAuth-redirect (se returnTo i login-steget nedan) — logga
+        // "inloggning klar" bara då, inte vid varje sidladdning med en
+        // redan aktiv session.
+        if (data && leadIdFromUrl) {
+          trackEvent('demo_login_completed');
+        }
+      })
       .catch(() => { if (!cancelled) setUser(null); })
       .finally(() => { if (!cancelled) setCheckingSession(false); });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Om vi kommer tillbaka från OAuth med leadId i URL:en och redan är
@@ -98,6 +110,7 @@ export default function BokaDemo() {
         sessionStorage.setItem('bookr_demo_company', form.companyName.trim());
         setCompanyName(form.companyName.trim());
         setStep('login');
+        trackEvent('demo_form_submitted');
       } else {
         setToast({ open: true, message: data.error || 'Något gick fel. Försök igen.', severity: 'error' });
       }
@@ -191,6 +204,7 @@ export default function BokaDemo() {
               <Button
                 variant="contained"
                 href={createApiUrl(`/auth/google?returnTo=${returnTo}`)}
+                onClick={() => trackEvent('demo_login_started', { provider: 'google' })}
                 size="large"
                 startIcon={<GoogleLogo size={20} />}
                 fullWidth
@@ -201,6 +215,7 @@ export default function BokaDemo() {
               <Button
                 variant="outlined"
                 href={createApiUrl(`/auth/microsoft?returnTo=${returnTo}`)}
+                onClick={() => trackEvent('demo_login_started', { provider: 'microsoft' })}
                 size="large"
                 startIcon={<MicrosoftLogo size={20} />}
                 fullWidth

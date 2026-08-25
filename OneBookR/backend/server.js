@@ -13,10 +13,12 @@ import {
   addToWaitlist, createGroup, createInvitation, createUser, updateUserLastLogin,
   logDataAccess, createBookingSession, updateBookingSession,
   saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail,
-  saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking
+  saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking,
+  markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken } from './token-refresh.js';
+import { upsertHubspotContact } from './hubspot.js';
 import 'dotenv/config';
 
 // ===== APPLICATION SETUP =====
@@ -1388,6 +1390,16 @@ app.get('/auth/google', authLimiter, (req, res, next) => {
     console.log(`   Query returnTo: ${req.query.returnTo}`);
     console.log(`   Storing in session: ${returnTo}`);
 
+    // ✅ LEAD-TRATT: om detta är demo-flödet (returnTo pekar mot
+    // /boka-demo?leadId=...) markerar vi att inloggning påbörjades, med
+    // vilken provider. Fire-and-forget — får aldrig fördröja redirecten.
+    if (returnTo.startsWith('/boka-demo')) {
+      try {
+        const leadId = new URL(returnTo, 'https://x').searchParams.get('leadId');
+        if (leadId) markDemoLoginStarted(leadId, 'google').catch(() => {});
+      } catch {}
+    }
+
     req.session.oauthState = state;
     req.session.oauthProvider = 'google';
     req.session.returnTo = returnTo;
@@ -1490,6 +1502,14 @@ app.get('/auth/microsoft', authLimiter, (req, res, next) => {
     console.log(`🔐 [OAuth Microsoft Init]`);
     console.log(`   Query returnTo: ${req.query.returnTo}`);
     console.log(`   Storing in session: ${returnTo}`);
+
+    // ✅ LEAD-TRATT: se identisk kommentar vid /auth/google ovan.
+    if (returnTo.startsWith('/boka-demo')) {
+      try {
+        const leadId = new URL(returnTo, 'https://x').searchParams.get('leadId');
+        if (leadId) markDemoLoginStarted(leadId, 'microsoft').catch(() => {});
+      } catch {}
+    }
 
     req.session.oauthState = state;
     req.session.oauthProvider = 'microsoft';
@@ -1704,9 +1724,25 @@ app.delete('/api/gdpr/delete', (req, res) => {
 });
 
 // ===== FIREBASE LOGGING MIDDLEWARE =====
+// ✅ BUGFIX: loggade tidigare VARJE /api/*-anrop till audit_logs — inklusive
+// den 1-sekunders pollingen i CompareCalendar.jsx (fetchGroupStatus +
+// fetchSuggestions), vilket ensamt genererade tusentals Firestore-
+// skrivningar per timme och öppen flik utan att ge något användbart (ingen
+// kod läser audit_logs tillbaka). Bekräftat i produktion: bidrog till att
+// Firestores dagliga 20k-skrivningskvot (Spark-nivå) nåddes, vilket fick
+// /api/book-demo/lead och andra Firestore-beroende endpoints att hänga i
+// upp till 10 minuter innan timeout. Loggar nu bara meningsfulla, GDPR-
+// relevanta händelser — inte varje enskilt anrop. Ingen påverkan på
+// polling-hastigheten eller UX: detta är fire-and-forget bakgrundsloggning
+// som aldrig blockerat svaret till klienten.
+const AUDIT_LOGGED_PATHS = new Set([
+  '/api/book-demo/lead',
+  '/api/book-demo/confirm',
+  '/api/gdpr/export',
+  '/api/gdpr/delete'
+]);
 app.use(async (req, res, next) => {
-  // ✅ LOGGA ALLA API-ANROP TILL FIREBASE
-  if (db && req.path.startsWith('/api/')) {
+  if (db && AUDIT_LOGGED_PATHS.has(req.path)) {
     try {
       await logDataAccess(
         'api_request',
@@ -3255,6 +3291,12 @@ app.post('/api/book-demo/lead', demoLimiter, async (req, res) => {
 
     gdprLog('Demo lead created', { leadId, email: anonymizeEmail(email) });
 
+    // ✅ HUBSPOT: skickar leaden till CRM direkt vid formulär-ifyllning —
+    // inte bara vid faktisk bokning — så ni kan följa upp manuellt även de
+    // som avbryter innan de loggar in. Fire-and-forget, no-op om
+    // HUBSPOT_ACCESS_TOKEN inte är konfigurerad, får aldrig fördröja svaret.
+    upsertHubspotContact({ email, contactName, companyName, phone, leadId }).catch(() => {});
+
     res.json({ success: true, leadId });
   } catch (error) {
     console.error('❌ Demo lead error:', error);
@@ -3279,6 +3321,12 @@ app.get('/api/book-demo/availability', demoLimiter, async (req, res) => {
     if (!lead) {
       throw new BookRError('Demo booking not found', 404, 'LEAD_NOT_FOUND');
     }
+
+    // ✅ LEAD-TRATT: vi vet nu säkert att inloggningen lyckades (req.user
+    // finns, vi kom hit) och att kalenderjämförelsen faktiskt visas för
+    // besökaren. Fire-and-forget, ska aldrig fördröja eller fela requesten.
+    markDemoLoginCompleted(leadId).catch(() => {});
+    markDemoCalendarViewed(leadId).catch(() => {});
 
     const adminCalendar = await getAdminCalendarToken();
     if (!adminCalendar) {
@@ -3430,6 +3478,18 @@ app.post('/api/book-demo/confirm', demoLimiter, async (req, res) => {
       meetingStart: start,
       meetingEnd: end
     });
+
+    // ✅ HUBSPOT: markera leaden som bokad (upsert by email uppdaterar
+    // samma kontakt som skapades vid formulär-ifyllning, skapar ingen
+    // dubblett). Fire-and-forget, ska aldrig fördröja bokningssvaret.
+    upsertHubspotContact({
+      email: lead.email,
+      contactName: lead.contactName,
+      companyName: lead.companyName,
+      phone: lead.phone,
+      leadId,
+      provider: req.user.provider || 'google'
+    }).catch(() => {});
 
     // ✅ Mejl-fel ska aldrig fela huvudrequesten — bokningen är redan
     // gjord i kalendrarna vid det här laget.

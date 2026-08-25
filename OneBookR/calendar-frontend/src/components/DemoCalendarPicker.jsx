@@ -5,6 +5,7 @@ import 'moment/locale/sv';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { Box, Paper, Typography, Button, CircularProgress, Dialog, useMediaQuery } from '@mui/material';
 import { apiRequest } from '../utils/apiConfig.js';
+import { trackEvent } from '../utils/analytics.js';
 
 // ✅ Inline SVG-ikoner (aldrig emoji) — matchar BookRs formspråk.
 function CalendarCheckIcon({ size = 22 }) {
@@ -179,6 +180,7 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
 
         if (res.ok && Array.isArray(data.slots)) {
           setSlots(data.slots);
+          trackEvent('demo_calendar_viewed', { slot_count: data.slots.length });
         } else {
           const message = data.error || 'Kunde inte hämta lediga tider.';
           setLoadError(message);
@@ -198,6 +200,14 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadId]);
+
+  // ✅ Delad handler för både desktop (react-big-calendar onSelectEvent)
+  // och mobil (MobileDayPicker) — sätter valet OCH spårar det på samma
+  // ställe, så vi inte missar mobila slot-val i analytics.
+  const handleSelectSlot = useCallback((slot) => {
+    setSelectedSlot(slot);
+    trackEvent('demo_slot_selected');
+  }, []);
 
   // ✅ Samma event-format som CompareCalendar.jsx: en ledig slot = ett
   // klickbart, grönt kalenderevent.
@@ -238,6 +248,7 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success) {
+        trackEvent('demo_booking_confirmed');
         onBooked({ start: selectedSlot.start, end: selectedSlot.end, meetLink: data.meetLink });
       } else {
         onError(data.error || 'Kunde inte boka mötet. Försök igen.');
@@ -286,7 +297,7 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
         )}
 
         {!isLoading && slots.length > 0 && isMobile && (
-          <MobileDayPicker slots={slots} onSelectSlot={setSelectedSlot} />
+          <MobileDayPicker slots={slots} onSelectSlot={handleSelectSlot} />
         )}
 
         {!isLoading && slots.length > 0 && !isMobile && (
@@ -310,7 +321,7 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
               eventPropGetter={eventPropGetter}
               views={['week', 'day']}
               defaultView="week"
-              onSelectEvent={(event) => setSelectedSlot(event.slot)}
+              onSelectEvent={(event) => handleSelectSlot(event.slot)}
               messages={{
                 next: 'Nästa', previous: 'Föregående', today: 'Idag',
                 month: 'Månad', week: 'Vecka', day: 'Dag'

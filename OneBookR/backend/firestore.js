@@ -538,10 +538,56 @@ async function createDemoBooking(data) {
     booked: false,
     bookedAt: null,
     meetingStart: null,
-    meetingEnd: null
+    meetingEnd: null,
+    // ✅ LEAD-TRATT: spårar var i flödet varje lead befinner sig, så man
+    // kan se avhoppspunkter (t.ex. "många fyller i formuläret men avbryter
+    // vid inloggning" vs. "loggar in men gillar inte det de ser i
+    // kalenderjämförelsen") istället för bara ett binärt bokad/ej bokad.
+    // loginProvider sätts av markDemoLoginStarted, resten av respektive
+    // markDemo*-funktion nedan.
+    loginProvider: null,
+    loginStartedAt: null,
+    loginCompletedAt: null,
+    calendarViewedAt: null
   };
   await docRef.set(sanitizedData);
   return docRef.id;
+}
+
+// ✅ LEAD-TRATT: uppdaterar ett steg i tratten. Best-effort — fel här ska
+// aldrig stoppa det faktiska bokningsflödet, bara ge sämre analytics.
+async function markDemoLoginStarted(leadId, provider) {
+  try {
+    const docRef = getDb().collection('demo_bookings').doc(leadId);
+    await docRef.update({
+      loginProvider: provider,
+      loginStartedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('⚠️ markDemoLoginStarted failed:', err.message);
+  }
+}
+
+async function markDemoLoginCompleted(leadId) {
+  try {
+    const docRef = getDb().collection('demo_bookings').doc(leadId);
+    await docRef.update({
+      loginCompletedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('⚠️ markDemoLoginCompleted failed:', err.message);
+  }
+}
+
+async function markDemoCalendarViewed(leadId) {
+  try {
+    const docRef = getDb().collection('demo_bookings').doc(leadId);
+    await docRef.update({
+      calendarViewedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('⚠️ markDemoCalendarViewed failed:', err.message);
+  }
 }
 
 async function getDemoBooking(leadId) {
@@ -619,5 +665,8 @@ export {
   // Demo Bookings
   createDemoBooking,
   getDemoBooking,
-  updateDemoBooking
+  updateDemoBooking,
+  markDemoLoginStarted,
+  markDemoLoginCompleted,
+  markDemoCalendarViewed
 };
