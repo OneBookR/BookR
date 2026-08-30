@@ -6,6 +6,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { Box, Paper, Typography, Button, CircularProgress, Dialog, useMediaQuery } from '@mui/material';
 import { apiRequest } from '../utils/apiConfig.js';
 import { trackEvent } from '../utils/analytics.js';
+import CalendarPrivacyNote from './CalendarPrivacyNote.jsx';
 
 // ✅ Inline SVG-ikoner (aldrig emoji) — matchar BookRs formspråk.
 function CalendarCheckIcon({ size = 22 }) {
@@ -262,13 +263,17 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
 
   return (
     <Box sx={{ display: 'grid', gap: 3 }}>
-      <Box sx={{ textAlign: 'center' }}>
-        <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1 }}>
-          Välj den tid som passar dig bäst
+      <Box sx={{ textAlign: 'center', display: 'grid', gap: 1.75, justifyItems: 'center' }}>
+        <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em' }}>
+          Nu är era gemensamma lediga tider hittade
         </Typography>
-        <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-          Alla tider du ser här fungerar både för oss och dig!
+        <Typography sx={{ fontSize: 14.5, color: 'var(--text-secondary)', lineHeight: 1.65, maxWidth: 468 }}>
+          Det här är din första kalenderjämförelse med BookR. Varje grön tid nedan
+          är ledig hos <Box component="span" sx={{ color: 'var(--text)', fontWeight: 700 }}>både dig och oss</Box> — ingen
+          mejltråd, inga förslag fram och tillbaka. Välj en tid, så bokas den direkt
+          i båda kalendrarna.
         </Typography>
+        <CalendarPrivacyNote phase="after" />
       </Box>
 
       <Paper

@@ -5,6 +5,7 @@ import MicrosoftLogo from '../assets/MicrosoftLogo.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import DemoCalendarPicker from '../components/DemoCalendarPicker.jsx';
 import LandingHeader from '../components/LandingHeader.jsx';
+import CalendarPrivacyNote from '../components/CalendarPrivacyNote.jsx';
 import { trackEvent } from '../utils/analytics.js';
 
 // ✅ Delad fältstil så formulärets inputs matchar BookRs formspråk
@@ -228,9 +229,11 @@ export default function BokaDemo() {
             <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1 }}>
               Koppla din kalender
             </Typography>
-            <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, mb: 3.5 }}>
+            <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, mb: 2.5 }}>
               Vi jämför direkt mot BookRs kalender så du kan se — inte bara höra om — hur det fungerar.
             </Typography>
+
+            <CalendarPrivacyNote phase="before" maxWidth="100%" sx={{ mb: 3.5 }} />
 
             {authError && (
               <Alert severity="error" sx={{ mb: 3, borderRadius: 3 }}>
