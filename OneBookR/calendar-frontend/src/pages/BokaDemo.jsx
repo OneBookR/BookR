@@ -4,7 +4,43 @@ import GoogleLogo from '../assets/GoogleLogo.jsx';
 import MicrosoftLogo from '../assets/MicrosoftLogo.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import DemoCalendarPicker from '../components/DemoCalendarPicker.jsx';
+import LandingHeader from '../components/LandingHeader.jsx';
 import { trackEvent } from '../utils/analytics.js';
+
+// ✅ Delad fältstil så formulärets inputs matchar BookRs formspråk
+// (mjuka hörn, border-token, svart fokus) istället för MUI-default.
+const fieldSx = {
+  '& .MuiOutlinedInput-root': {
+    borderRadius: 2.5,
+    bgcolor: 'var(--surface)',
+    fontSize: 15,
+    '& fieldset': { borderColor: 'var(--border)' },
+    '&:hover fieldset': { borderColor: 'rgba(17,24,39,0.22)' },
+    '&.Mui-focused fieldset': { borderColor: 'var(--text)', borderWidth: 1 },
+  },
+  '& .MuiInputLabel-root': { color: 'var(--text-secondary)', fontWeight: 600 },
+  '& .MuiInputLabel-root.Mui-focused': { color: 'var(--text)' },
+};
+
+// ✅ Tre-stegs progress: formulär -> koppla kalender -> välj tid.
+function StepDots({ active }) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 4 }}>
+      {[0, 1, 2].map((i) => (
+        <Box
+          key={i}
+          sx={{
+            width: i === active ? 22 : 7,
+            height: 7,
+            borderRadius: 999,
+            bgcolor: i === active ? 'var(--text)' : 'rgba(17,24,39,0.16)',
+            transition: 'all .3s ease',
+          }}
+        />
+      ))}
+    </Box>
+  );
+}
 
 // ✅ Animerad checkmark i cirkel — samma nål-formspråk som resten av
 // BookR (inline SVG, aldrig emoji). Ritas som en path som "ritas fram"
@@ -149,12 +185,14 @@ export default function BokaDemo() {
   // korten, som ska förbli smala och centrerade.
   const containerWidth = step === 'calendar' ? 'md' : 'sm';
 
+  const activeStep = step === 'form' ? 0 : step === 'login' ? 1 : 2;
+
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'var(--background)' }}>
-      <Container maxWidth={containerWidth} sx={{ pt: { xs: 6, md: 10 }, pb: 8 }}>
-        <Typography sx={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', textAlign: 'center', mb: 5 }}>
-          BookR
-        </Typography>
+      <LandingHeader showLogin={false} showDemo={false} />
+
+      <Container maxWidth={containerWidth} sx={{ pt: { xs: 5, md: 8 }, pb: 8 }}>
+        {!confirmedMeeting && <StepDots active={activeStep} />}
 
         {step === 'form' && (
           <Paper elevation={0} sx={{ borderRadius: 6, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, md: 5 } }}>
@@ -166,11 +204,11 @@ export default function BokaDemo() {
             </Typography>
 
             <Box component="form" onSubmit={handleSubmit} sx={{ display: 'grid', gap: 2 }}>
-              <TextField label="Företagsnamn" value={form.companyName} onChange={handleChange('companyName')} required fullWidth />
-              <TextField label="Kontaktperson" value={form.contactName} onChange={handleChange('contactName')} required fullWidth />
-              <TextField label="E-postadress" type="email" value={form.email} onChange={handleChange('email')} required fullWidth />
-              <TextField label="Telefon (valfritt)" value={form.phone} onChange={handleChange('phone')} fullWidth />
-              <TextField label="Adress (valfritt)" value={form.address} onChange={handleChange('address')} fullWidth />
+              <TextField label="Företagsnamn" value={form.companyName} onChange={handleChange('companyName')} required fullWidth sx={fieldSx} />
+              <TextField label="Kontaktperson" value={form.contactName} onChange={handleChange('contactName')} required fullWidth sx={fieldSx} />
+              <TextField label="E-postadress" type="email" value={form.email} onChange={handleChange('email')} required fullWidth sx={fieldSx} />
+              <TextField label="Telefon (valfritt)" value={form.phone} onChange={handleChange('phone')} fullWidth sx={fieldSx} />
+              <TextField label="Adress (valfritt)" value={form.address} onChange={handleChange('address')} fullWidth sx={fieldSx} />
 
               <Button
                 type="submit"

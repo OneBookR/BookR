@@ -18,14 +18,12 @@ import BokaDemo from './pages/BokaDemo.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
 import MobileNavigation from './components/MobileNavigation.jsx';
-import GoogleLogo from './assets/GoogleLogo.jsx';
-import MicrosoftLogo from './assets/MicrosoftLogo.jsx';
 import { GoogleIcon, MicrosoftIcon, SyncArrow } from './assets/ProviderIcons.jsx';
-import { Logo } from './assets/Logo.jsx';
 import { Container, Typography, Button, Box, Alert, Paper, CircularProgress } from '@mui/material';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import CookieBanner from './components/CookieBanner.jsx';
-import { apiRequest, createApiUrl } from './utils/apiConfig.js';
+import LandingHeader from './components/LandingHeader.jsx';
+import { apiRequest } from './utils/apiConfig.js';
 import { trackEvent, trackEventOnce, setAnalyticsUser, EVENTS } from './utils/analytics.js';
 
 function App() {
@@ -348,22 +346,18 @@ function App() {
       <Box sx={{ minHeight: '100vh', bgcolor: 'var(--background)' }}>
         <CookieBanner />
 
-        <Box sx={{ maxWidth: 1280, mx: 'auto', px: { xs: 3, md: 8 }, pt: { xs: 6, md: 8 }, pb: { xs: 8, md: 12 } }}>
+        <LandingHeader returnTo={window.location.pathname + window.location.search} />
 
-          {/* Top bar */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: { xs: 6, md: 10 } }}>
-            <Logo iconSize={26} fontSize={21} />
-            <Box
-              sx={{
-                display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, px: 1.75, py: 0.75,
-                borderRadius: 999, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.6)',
-                fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
-                color: 'var(--text-secondary)'
-              }}
+        <Box sx={{ maxWidth: 1280, mx: 'auto', px: { xs: 3, md: 8 }, pt: { xs: 5, md: 8 }, pb: { xs: 8, md: 12 } }}>
+
+          {(errorMessage || logoutMessage) && (
+            <Alert
+              severity={params.error === 'token_expired' ? 'warning' : 'error'}
+              sx={{ mb: { xs: 4, md: 6 }, borderRadius: 3, maxWidth: 760, mx: 'auto' }}
             >
-              Schemaläggning utan krångel
-            </Box>
-          </Box>
+              {errorMessage || logoutMessage}
+            </Alert>
+          )}
 
           {/* Hero */}
           <Box sx={{ maxWidth: 760, mx: 'auto', textAlign: 'center', mb: 7 }}>
@@ -573,65 +567,32 @@ function App() {
             </Box>
           </Box>
 
-          {/* Login card */}
+          {/* Closing CTA — login flyttad till headern; besökare bokar demo här */}
           <Paper
             elevation={0}
             sx={{
-              maxWidth: 460, mx: 'auto', borderRadius: 6, border: '1px solid var(--border)',
-              bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, sm: 5 }
+              maxWidth: 560, mx: 'auto', borderRadius: 6, border: '1px solid var(--border)',
+              bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 4, sm: 6 }, textAlign: 'center'
             }}
           >
-            <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1, textAlign: 'center' }}>
-              Kom igång
+            <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1 }}>
+              Redo att testa BookR?
             </Typography>
-            <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', mb: 3.5 }}>
-              Ingen kreditkort krävs.
+            <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', mb: 3.5, maxWidth: 400, mx: 'auto', lineHeight: 1.6 }}>
+              Boka ett demo så kopplar du din egen kalender och ser BookR hitta en gemensam tid på under en minut. Inget kreditkort.
             </Typography>
-
-            {(errorMessage || logoutMessage) && (
-              <Alert
-                severity={params.error === 'token_expired' ? 'warning' : 'error'}
-                sx={{ mb: 3, borderRadius: 3 }}
-              >
-                {errorMessage || logoutMessage}
-              </Alert>
-            )}
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              <Button
-                variant="contained"
-                href={createApiUrl(`/auth/google?returnTo=${authReturnTo}`)}
-                size="large"
-                startIcon={<GoogleLogo size={20} />}
-                fullWidth
-                sx={{
-                  py: 1.7, borderRadius: 3, bgcolor: 'var(--text)', color: 'var(--surface-strong)',
-                  boxShadow: 'none', '&:hover': { bgcolor: '#000000', boxShadow: 'none' }
-                }}
-              >
-                Fortsätt med Google
-              </Button>
-
-              <Button
-                variant="outlined"
-                href={createApiUrl(`/auth/microsoft?returnTo=${authReturnTo}`)}
-                size="large"
-                startIcon={<MicrosoftLogo size={20} />}
-                fullWidth
-                sx={{
-                  py: 1.7, borderRadius: 3, borderColor: 'var(--border)', color: 'var(--text)',
-                  '&:hover': { borderColor: 'rgba(17,24,39,0.22)', bgcolor: 'rgba(17,24,39,0.02)' }
-                }}
-              >
-                Fortsätt med Microsoft
-              </Button>
-            </Box>
-
-            {params.error === 'token_expired' && (
-              <Typography variant="body2" sx={{ mt: 2, color: 'var(--text-secondary)', textAlign: 'center' }}>
-                Logga in igen för att komma tillbaka till din kalenderjämförelse.
-              </Typography>
-            )}
+            <Button
+              href="/boka-demo"
+              variant="contained"
+              size="large"
+              sx={{
+                px: 4, py: 1.6, borderRadius: 3, bgcolor: 'var(--text)', color: 'var(--surface-strong)',
+                fontWeight: 700, fontSize: 15, boxShadow: 'none',
+                '&:hover': { bgcolor: '#000000', boxShadow: 'none' }
+              }}
+            >
+              Boka ett demo →
+            </Button>
           </Paper>
         </Box>
       </Box>
