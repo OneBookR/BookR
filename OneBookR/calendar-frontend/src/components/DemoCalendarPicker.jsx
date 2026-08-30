@@ -268,7 +268,7 @@ export default function DemoCalendarPicker({ leadId, companyName, onBooked, onEr
           Nu är era gemensamma lediga tider hittade
         </Typography>
         <Typography sx={{ fontSize: 14.5, color: 'var(--text-secondary)', lineHeight: 1.65, maxWidth: 468 }}>
-          Det här är din första kalenderjämförelse med BookR. Varje grön tid nedan
+          Det här är din första kalenderjämförelse med BookR. Varje tid nedan
           är ledig hos <Box component="span" sx={{ color: 'var(--text)', fontWeight: 700 }}>både dig och oss</Box> — ingen
           mejltråd, inga förslag fram och tillbaka. Välj en tid, så bokas den direkt
           i båda kalendrarna.
