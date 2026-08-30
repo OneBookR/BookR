@@ -550,10 +550,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     },
     {
       title: 'Uppgiftstid',
-      description: 'Blockera fokustid för uppgifter och planerade arbetsblock.',
-      accent: 'För egen planering',
+      description: 'Schemalägg uppgifter direkt i kalendern och se när de som snabbast kan vara klara utifrån ditt eget schema.',
+      accent: 'Kommer snart',
       icon: <TaskTimeIcon size={22} />,
-      onClick: () => handleNavigateToMeeting('task')
+      comingSoon: true,
+      onClick: undefined
     },
     {
       title: 'Team',
@@ -678,14 +679,33 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             <Paper
               key={action.title}
               elevation={0}
-              onClick={action.onClick}
+              onClick={action.comingSoon ? undefined : action.onClick}
+              aria-disabled={action.comingSoon || undefined}
               sx={{
+                position: 'relative',
                 p: 3.5, borderRadius: 5.5, border: '1px solid var(--border)',
                 bgcolor: 'var(--surface-strong)', boxShadow: '0 20px 60px rgba(15,23,42,0.07)',
-                cursor: 'pointer', transition: 'transform 180ms ease, box-shadow 180ms ease',
-                '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 26px 70px rgba(15,23,42,0.1)' }
+                transition: 'transform 180ms ease, box-shadow 180ms ease',
+                ...(action.comingSoon
+                  ? { cursor: 'default', opacity: 0.62 }
+                  : {
+                      cursor: 'pointer',
+                      '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 26px 70px rgba(15,23,42,0.1)' },
+                    }),
               }}
             >
+              {action.comingSoon && (
+                <Box
+                  sx={{
+                    position: 'absolute', top: 14, right: 14,
+                    px: 1, py: 0.25, borderRadius: 999,
+                    bgcolor: 'rgba(17,24,39,0.06)', color: 'var(--text-secondary)',
+                    fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+                  }}
+                >
+                  Snart
+                </Box>
+              )}
               <Box sx={{ width: 44, height: 44, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2.25, color: 'var(--text)' }}>
                 {action.title === 'Team' ? (
                   <Badge variant="dot" color="success" invisible={!hasDirectAccessTeam} sx={{ '& .MuiBadge-dot': { boxShadow: '0 0 0 2px #fff' } }}>

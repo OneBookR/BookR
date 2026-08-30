@@ -26,6 +26,10 @@ import LandingHeader from './components/LandingHeader.jsx';
 import { apiRequest } from './utils/apiConfig.js';
 import { trackEvent, trackEventOnce, setAnalyticsUser, EVENTS } from './utils/analytics.js';
 
+// ✅ Uppgiftstid är en kommande funktion — inte tillgänglig än. Slå på
+// när flödet är klart. Håller även direktlänkar (?view=task) borta.
+const TASK_FEATURE_ENABLED = false;
+
 function App() {
   // User-state initieras tom — sanningskällan är serverns session-cookie
   const [user, setUser] = useState(null);
@@ -108,7 +112,7 @@ function App() {
   useEffect(() => {
     if (user && params.groupId) {
       setCurrentView('dashboard');
-    } else if (params.view === 'task') {
+    } else if (params.view === 'task' && TASK_FEATURE_ENABLED) {
       setCurrentView('task');
     } else if (params.meetingType) {
       setCurrentView('dashboard');
@@ -277,6 +281,7 @@ function App() {
   // ✅ NAVIGATION HANDLER
   const handleNavigateToMeeting = useCallback((type) => {
     if (type === 'task') {
+      if (!TASK_FEATURE_ENABLED) return; // kommande funktion — ännu ej tillgänglig
       const url = new URL(window.location);
       url.searchParams.set('view', 'task');
       window.history.replaceState({}, '', url);
@@ -371,7 +376,7 @@ function App() {
               BookR jämför allas kalendrar direkt och visar de tider som faktiskt fungerar för alla — ingen mer fram-och-tillbaka i mejl eller Slack.
             </Typography>
             <Typography sx={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-secondary)', fontWeight: 600, mb: 4, maxWidth: 540, mx: 'auto' }}>
-              Ett snabbt avstämningsmöte, en stor gruppintervju eller en blockerad uppgiftstid — samma verktyg, samma enkla flöde.
+              Ett snabbt avstämningsmöte eller en stor gruppintervju med folk från olika företag — samma verktyg, samma enkla flöde.
             </Typography>
             <Button
               href="/boka-demo"
@@ -600,7 +605,7 @@ function App() {
   }
 
   // ✅ MAIN APP
-  const shouldShowTask = params.view === 'task' || currentView === 'task';
+  const shouldShowTask = TASK_FEATURE_ENABLED && (params.view === 'task' || currentView === 'task');
   const shouldShowDashboard = Boolean(params.groupId || currentView === 'dashboard' || params.meetingType);
 
   return (
