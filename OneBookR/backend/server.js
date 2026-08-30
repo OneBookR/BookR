@@ -1,3 +1,7 @@
+// Must run before any local module (gdpr-utils.js etc.) is evaluated — those
+// read process.env at module load. In prod the vars come from the platform so
+// order doesn't matter; locally they come from .env via this side-effect import.
+import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
@@ -8,6 +12,8 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { Resend } from 'resend';
 import { randomUUID } from 'crypto';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { initializeFirebase } from './firestore.js';
 import {
   addToWaitlist, createGroup, createInvitation, createUser, updateUserLastLogin,
@@ -19,7 +25,6 @@ import {
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken } from './token-refresh.js';
 import { upsertHubspotContact } from './hubspot.js';
-import 'dotenv/config';
 
 // ===== APPLICATION SETUP =====
 const app = express();
@@ -3532,7 +3537,10 @@ app.get('/api', (req, res) => {
 });
 
 // ✅ SERVE FRONTEND STATIC FILES
-app.use(express.static('OneBookR/calendar-frontend/dist'));
+// Resolve relative to this file (not process.cwd()) so it works both when the
+// server is started from the repo root (Docker/Railway) and from OneBookR/backend.
+const FRONTEND_DIST = join(dirname(fileURLToPath(import.meta.url)), '..', 'calendar-frontend', 'dist');
+app.use(express.static(FRONTEND_DIST));
 
 // ✅ SPA FALLBACK - ALLA ROUTES TILL INDEX.HTML
 app.get('*', (req, res) => {
@@ -3542,7 +3550,7 @@ app.get('*', (req, res) => {
   }
   
   // Serve frontend for all other routes
-  res.sendFile('index.html', { root: 'OneBookR/calendar-frontend/dist' });
+  res.sendFile('index.html', { root: FRONTEND_DIST });
 });
 
 app.use((error, req, res, next) => {
