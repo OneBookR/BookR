@@ -185,19 +185,6 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
                   color="inherit"
                   disabled
                   startIcon={<Task />}
-                  endIcon={
-                    <Chip
-                      label="Snart"
-                      size="small"
-                      sx={{
-                        height: 18,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        bgcolor: 'rgba(17,24,39,0.06)',
-                        color: 'var(--text-secondary)',
-                      }}
-                    />
-                  }
                   sx={{
                     fontWeight: 700,
                     borderRadius: 999,
