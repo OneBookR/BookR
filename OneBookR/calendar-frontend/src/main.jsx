@@ -4,6 +4,7 @@ import App from './App.jsx';
 import './styles/mobile.css';
 import './styles/theme.css';
 import { versionCheck } from './services/versionCheck';
+import { initPageViewTracking } from './utils/analytics.js';
 
 // NYTT: Initiera tema från localStorage vid start
 const initializeTheme = () => {
@@ -15,6 +16,9 @@ const initializeTheme = () => {
 };
 
 initializeTheme();
+
+// SPA-navigering → page_view i GA4 (no-op tills analytics-samtycke finns).
+initPageViewTracking();
 
 // Lyssna på tema-ändringar
 window.addEventListener('storage', (e) => {

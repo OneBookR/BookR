@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Typography, Button, Alert } from '@mui/material';
+import { trackEvent, EVENTS } from '../utils/analytics.js';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -21,6 +22,14 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
+    // GA4: vilka delar av appen kraschar för riktiga användare.
+    if (this.props.reportErrors !== false) {
+      trackEvent(EVENTS.ERROR_SHOWN, {
+        context: this.props.componentName || 'Unknown',
+        message: String(error?.message || '').slice(0, 120),
+      });
+    }
+
     const errorDetails = {
       error: error.message,
       stack: error.stack,

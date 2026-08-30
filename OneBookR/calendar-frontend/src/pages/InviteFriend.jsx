@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar, Button } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import { apiRequest } from '../utils/apiConfig.js';
+import { trackEvent, EVENTS } from '../utils/analytics.js';
 
 const InviteFriend = ({ fromUser, theme, embedded = false }) => {
   // ✅ STABLE USER DATA EXTRACTION
@@ -264,6 +265,14 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
       }
 
       if (res.ok && data) {
+        // ✅ GA4: inbjudnings-tratten. group_size = inbjudna + skaparen.
+        trackEvent(EVENTS.GROUP_CREATED, {
+          invite_count: cleanEmails.length,
+          group_size: cleanEmails.length + 1,
+          direct_access_count: directAccessEmails.length,
+        });
+        trackEvent(EVENTS.INVITATION_SENT, { invite_count: cleanEmails.length });
+
         // Success - reset form
         setEmails([]);
         setInputValue('');

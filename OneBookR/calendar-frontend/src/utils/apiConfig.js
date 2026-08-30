@@ -1,6 +1,26 @@
 // 🔧 ROBUST API CONFIGURATION FOR BOOKR
 // Detta är den ENDA källan för API URL-konfiguration
 
+import { trackEvent, EVENTS } from './analytics.js';
+
+// Byter ut ID-liknande segment mot :id så GA4-dimensionen inte
+// exploderar i unika värden (t.ex. /api/group/abc123/join -> /api/group/:id/join).
+function sanitizeEndpointForAnalytics(endpoint) {
+  try {
+    const path = String(endpoint).split('?')[0];
+    return path
+      .split('/')
+      .map(seg =>
+        /^[0-9]+$/.test(seg) || /^[A-Za-z0-9_-]{16,}$/.test(seg) || seg.includes('@')
+          ? ':id'
+          : seg
+      )
+      .join('/');
+  } catch {
+    return 'unknown';
+  }
+}
+
 /**
  * Bestämmer API base URL baserat på miljö
  * DEVELOPMENT: Använd alltid localhost:3000 för direkta anrop
@@ -57,11 +77,29 @@ export async function apiRequest(endpoint, options = {}) {
   
   console.log(`🌐 [API Request] ${finalOptions.method || 'GET'} ${url}`);
   
+  const method = finalOptions.method || 'GET';
+
   try {
     const response = await fetch(url, finalOptions);
+    if (!response.ok) {
+      // 401/429 är förväntade flödestillstånd (utloggad, rate limit) —
+      // logga allt utom dem som fel så signalen inte dränks i brus.
+      if (response.status !== 401 && response.status !== 429) {
+        trackEvent(EVENTS.API_ERROR, {
+          endpoint: sanitizeEndpointForAnalytics(endpoint),
+          method,
+          status: response.status,
+        });
+      }
+    }
     return response;
   } catch (error) {
     console.error(`❌ [API Request] Failed ${url}:`, error);
+    trackEvent(EVENTS.API_ERROR, {
+      endpoint: sanitizeEndpointForAnalytics(endpoint),
+      method,
+      status: 0, // 0 = nätverksfel / ingen respons
+    });
     throw error;
   }
 }

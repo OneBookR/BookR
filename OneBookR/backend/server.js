@@ -11,7 +11,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { Resend } from 'resend';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { initializeFirebase } from './firestore.js';
@@ -1354,7 +1354,17 @@ app.get('/api/auth/me', async (req, res) => {
   // OAuth-callbacken). Skickas alltid med när sant, oavsett vilken sida
   // som frågar — /boka-demo ignorerar fältet och använder resten av
   // svaret som vanligt.
-  res.json({ ...req.user, demoOnly: Boolean(req.session.demoOnly) });
+  // analyticsId: stabil, oåterkallelig pseudonym-id för GA4 (User-ID →
+  // retention/kohorter). SHA-256(e-post + serverhemlighet) — ingen PII
+  // lämnar servern, och den kan inte vändas tillbaka till e-post utan
+  // både hemligheten och en lista på kända adresser.
+  const analyticsId = req.user.email
+    ? createHash('sha256')
+        .update(`${process.env.SESSION_SECRET || 'bookr'}:${req.user.email.toLowerCase().trim()}`)
+        .digest('hex')
+        .slice(0, 32)
+    : null;
+  res.json({ ...req.user, demoOnly: Boolean(req.session.demoOnly), analyticsId });
 });
 
 app.get('/api/user', async (req, res) => {

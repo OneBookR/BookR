@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
+import { trackEvent, trackEventOnce, EVENTS, bucket, daysBetween } from '../utils/analytics.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
 import InviteFriend from './InviteFriend';
 import { useNotifications } from '../hooks/useNotifications.js';
@@ -272,6 +273,19 @@ export default function CompareCalendar({
         const data = await response.json();
         console.log('✅ Joined group successfully:', data);
         setHasJoinedGroup(true);
+
+        // ✅ GA4: botten av inbjudnings-tratten. Räkna bara faktiska
+        // inbjudna (URL bär ?invitee=), inte skaparen som återvänder till
+        // sin egen grupp. En gång per grupp.
+        try {
+          const isInvitee = new URLSearchParams(window.location.search).get('invitee');
+          const onceKey = `bookr_accepted_${propGroupId}`;
+          if (isInvitee && !localStorage.getItem(onceKey)) {
+            localStorage.setItem(onceKey, String(Date.now()));
+            trackEvent(EVENTS.INVITATION_ACCEPTED, {});
+          }
+        } catch { /* ignore */ }
+
         return true;
       } else {
         console.error('❌ Failed to join group:', response.status);
@@ -482,8 +496,26 @@ export default function CompareCalendar({
       ) : [];
       
       console.log(`✅ Received ${validSlots.length} valid availability slots`);
-      
+
       setAvailability(validSlots);
+
+      // ✅ GA4: aktiverings-milstolpe. En lyckad kalenderjämförelse är
+      // kärnvärdet i BookR — vi vill se hur ofta den faktiskt ger resultat.
+      const compGroupSize = propGroupId ? (groupInfo?.memberCount || 2) : 2;
+      trackEvent(EVENTS.COMPARISON_RUN, {
+        mode: propGroupId ? 'group' : 'direct',
+        group_size: compGroupSize,
+        slots_found_bucket: bucket(validSlots.length),
+        range_days: daysBetween(startTime, endTime),
+        duration_min: meetingDuration,
+        include_all: Boolean(includeAllEvents),
+        had_results: validSlots.length > 0,
+      });
+      if (validSlots.length > 0) {
+        trackEventOnce('bookr_first_comparison', EVENTS.FIRST_COMPARISON_COMPLETED, {
+          mode: propGroupId ? 'group' : 'direct',
+        });
+      }
       
       // ✅ ANVÄNDARFEEDBACK
       if (validSlots.length === 0) {
@@ -505,6 +537,10 @@ export default function CompareCalendar({
       
     } catch (err) {
       console.error('❌ Fetch availability error:', err);
+      trackEvent(EVENTS.ERROR_SHOWN, {
+        context: 'calendar_comparison',
+        message: String(err?.message || '').slice(0, 120),
+      });
       setError(`Kunde inte hämta kalenderjämförelse: ${err.message}`);
       setAvailability([]);
     } finally {
@@ -670,11 +706,18 @@ export default function CompareCalendar({
       }
 
       const data = await response.json();
-      
-      setToast({ 
-        open: true, 
-        message: `✅ Mötesförslag skickat! Väntar på svar från ${Object.keys(data.suggestion.votes).length} deltagare.`, 
-        severity: 'success' 
+
+      // ✅ GA4: aktivering — någon drev flödet vidare till ett mötesförslag.
+      trackEvent(EVENTS.SUGGESTION_CREATED, {
+        with_meet: Boolean(withMeet),
+        has_location: Boolean(meetingLocation.trim()),
+        participant_count: Object.keys(data.suggestion?.votes || {}).length || null,
+      });
+
+      setToast({
+        open: true,
+        message: `✅ Mötesförslag skickat! Väntar på svar från ${Object.keys(data.suggestion.votes).length} deltagare.`,
+        severity: 'success'
       });
       
       setSuggestDialog({ open: false, slot: null });
@@ -715,15 +758,26 @@ export default function CompareCalendar({
       }
 
       const data = await response.json();
-      
+
+      // ✅ GA4: förslags-omröstning. Bara "accepted"-röster räknas som
+      // suggestion_accepted; status === 'accepted' av alla = bokat möte.
+      if (vote === 'accepted') {
+        trackEvent(EVENTS.SUGGESTION_ACCEPTED, {
+          outcome: data.suggestion?.status || 'pending',
+        });
+      }
+      if (data.suggestion?.status === 'accepted') {
+        trackEvent(EVENTS.BOOKING_CONFIRMED, { via: 'group_suggestion' });
+      }
+
       // ✅ VISA FEEDBACK BASERAT PÅ RESULTAT
       if (vote === 'accepted') {
-        setToast({ 
-          open: true, 
-          message: data.suggestion.status === 'accepted' 
-            ? '🎉 Du accepterade! Möte skapas för alla.' 
-            : '✅ Du accepterade förslaget!', 
-          severity: 'success' 
+        setToast({
+          open: true,
+          message: data.suggestion.status === 'accepted'
+            ? '🎉 Du accepterade! Möte skapas för alla.'
+            : '✅ Du accepterade förslaget!',
+          severity: 'success'
         });
       } else {
         setToast({ 

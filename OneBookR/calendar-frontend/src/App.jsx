@@ -26,6 +26,7 @@ import { Container, Typography, Button, Box, Alert, Paper, CircularProgress } fr
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import CookieBanner from './components/CookieBanner.jsx';
 import { apiRequest, createApiUrl } from './utils/apiConfig.js';
+import { trackEvent, trackEventOnce, setAnalyticsUser, EVENTS } from './utils/analytics.js';
 
 function App() {
   // User-state initieras tom — sanningskällan är serverns session-cookie
@@ -71,6 +72,12 @@ function App() {
       localStorage.setItem('invitation_group', groupId || '');
       localStorage.setItem('invitation_invitee', invitee || '');
       localStorage.setItem('invitation_directAccess', directAccess || '');
+
+      // ✅ GA4: toppen av inbjudnings-tratten — någon öppnade en inbjudningslänk.
+      trackEvent(EVENTS.INVITATION_LINK_OPENED, {
+        has_invitee: Boolean(invitee),
+        direct_access: Boolean(directAccess),
+      });
     }
 
     const encoded = encodeURIComponent(currentPath || '/');
@@ -162,6 +169,12 @@ function App() {
 
           setUser(data);
           console.log('✅ User authenticated:', data.email);
+
+          // ✅ GA4: koppla användaren (retention/kohorter) + logga inloggning.
+          // data.analyticsId är en oåterkallelig hash från backend — ingen PII.
+          setAnalyticsUser(data.analyticsId, { login_provider: data.provider || 'google' });
+          trackEvent(EVENTS.LOGIN, { method: data.provider || 'google' });
+          trackEventOnce('bookr_signup_tracked', EVENTS.SIGNUP, { method: data.provider || 'google' });
 
           // ✅ Restora från localStorage (persistent genom Gmail login + OAuth)
           // OBS: körs ALDRIG om vi redan står på en annan special-route (t.ex.
