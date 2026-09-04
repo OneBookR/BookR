@@ -13,14 +13,16 @@ import {
   Container
 } from '@mui/material';
 import { 
-  AccountCircle, 
-  Logout, 
-  ExitToApp, 
-  Home, 
-  Task, 
-  Group 
+  AccountCircle,
+  Logout,
+  ExitToApp,
+  Home,
+  Task,
+  Group,
+  CreditCard
 } from '@mui/icons-material';
 import { LOGOUT_URL, HOME_URL } from '../config';
+import { apiRequest } from '../utils/apiConfig.js';
 import GDPRNotice from './GDPRNotice';
 import { Logo } from '../assets/Logo.jsx';
 
@@ -72,6 +74,21 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
   const handleGoHome = () => {
     window.location.href = HOME_URL;
     handleMenuClose();
+  };
+
+  // Fakturering: har man en aktiv prenumeration → Stripes kundportal,
+  // annars → prissidan.
+  const handleBilling = async () => {
+    handleMenuClose();
+    try {
+      const res = await apiRequest('/api/billing/portal', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+    } catch { /* faller igenom till prissidan */ }
+    window.location.href = '/priser';
   };
 
   const getUserDisplayName = () => {
@@ -250,7 +267,14 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
                   Hem
                 </MenuItem>
               )}
-              
+
+              {!isInGroup && (
+                <MenuItem onClick={handleBilling}>
+                  <CreditCard sx={{ mr: 1 }} />
+                  Fakturering
+                </MenuItem>
+              )}
+
               {/* ✅ LÄMNA GRUPP I MOBIL MENU */}
               {isInGroup && (
                 <MenuItem onClick={handleLeaveGroup}>

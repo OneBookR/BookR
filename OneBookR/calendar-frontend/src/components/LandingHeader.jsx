@@ -46,6 +46,18 @@ export default function LandingHeader({ showLogin = true, showDemo = true, retur
         />
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 1.5 } }}>
+          <Button
+            href="/priser"
+            disableElevation
+            sx={{
+              color: 'var(--text-secondary)', fontWeight: 700, fontSize: { xs: 13, md: 14 },
+              textTransform: 'none', borderRadius: 999, px: { xs: 1, md: 1.5 },
+              display: { xs: 'none', sm: 'inline-flex' },
+              '&:hover': { bgcolor: 'rgba(17,24,39,0.04)', color: 'var(--text)' },
+            }}
+          >
+            Priser
+          </Button>
           {showLogin && (
             <>
               <Button

@@ -20,11 +20,13 @@ import {
   logDataAccess, createBookingSession, updateBookingSession,
   saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail,
   saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking,
-  markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed
+  markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed,
+  setUserBilling, getUserBilling
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken } from './token-refresh.js';
 import { upsertHubspotContact } from './hubspot.js';
+import { isBillingConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretSubscription, emailForSubscription } from './billing.js';
 
 // ===== APPLICATION SETUP =====
 const app = express();
@@ -121,15 +123,17 @@ const CONFIG = {
     maxRecipients: 50
   },
   access: {
-    // ✅ PRIVAT BETA: den "riktiga" delen av BookR (vanlig inloggning →
-    // dashboard/gruppflöde) är stängd för allmänheten under cold outreach-
-    // fasen — vi vill inte att företag vi kontaktar kan klicka sig in i det
-    // riktiga verktyget, bara se det via det styrda /boka-demo-flödet.
-    // Tom lista = ingen begränsning (t.ex. lokal utveckling utan env-var).
-    allowedLoginEmails: (process.env.ALLOWED_LOGIN_EMAILS || 'info@onebookr.se,av.goransson@gmail.com')
-      .split(',')
-      .map(e => e.trim().toLowerCase())
-      .filter(Boolean)
+    // ✅ PRIVAT BETA vs ÖPPEN SIGNUP: den "riktiga" delen av BookR (vanlig
+    // inloggning → dashboard/gruppflöde) är stängd under cold outreach-fasen.
+    // Öppna signup för alla genom att sätta ALLOWED_LOGIN_EMAILS='*' (eller
+    // tom sträng) på Railway. En kommaseparerad lista = privat beta för just
+    // de mejlen. Default = nuvarande whitelist, så en deploy ändrar INTE
+    // åtkomsten av sig själv.
+    allowedLoginEmails: (() => {
+      const raw = process.env.ALLOWED_LOGIN_EMAILS ?? 'info@onebookr.se,gustav@onebookr.se,av.goransson@gmail.com';
+      if (raw.trim() === '*' || raw.trim() === '') return []; // [] = ingen begränsning
+      return raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    })()
   }
 };
 
@@ -1093,6 +1097,69 @@ if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
 }
 
+// ✅ STRIPE WEBHOOK — MÅSTE ligga före express.json(): Stripe-signaturen
+// verifieras mot den RÅA request-bodyn, en JSON-parsad body går inte att
+// verifiera. Egen express.raw() bara för den här routen.
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  let event;
+  try {
+    event = constructWebhookEvent(req.body, req.headers['stripe-signature']);
+  } catch (err) {
+    console.error('❌ Stripe webhook signaturfel:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      if (session.mode === 'subscription' && session.subscription) {
+        const sub = await stripeRetrieveSubscription(session.subscription);
+        await applySubscriptionToUser(sub, session.client_reference_id || session.customer_email);
+      }
+    } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+      await applySubscriptionToUser(event.data.object, null);
+    } else if (event.type === 'invoice.payment_failed') {
+      const inv = event.data.object;
+      const email = inv.customer_email;
+      if (email && db) {
+        await setUserBilling(email, { billingStatus: 'past_due' }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error('❌ Stripe webhook-hantering misslyckades:', err.message);
+    // 200 ändå — Stripe retryar annars i evighet på fel vi inte kan lösa.
+  }
+  res.json({ received: true });
+});
+
+// Hjälpare: hämta ett fullständigt subscription-objekt (webhooken ger ibland
+// bara ID:t i checkout.session.completed).
+async function stripeRetrieveSubscription(idOrObject) {
+  if (typeof idOrObject !== 'string') return idOrObject;
+  const { stripe } = await import('./billing.js');
+  return stripe.subscriptions.retrieve(idOrObject);
+}
+
+// Hjälpare: skriv plan-status till user-doc:et från ett subscription-objekt.
+async function applySubscriptionToUser(subscription, fallbackEmail) {
+  if (!db) return;
+  const email = (await emailForSubscription(subscription)) || (fallbackEmail && fallbackEmail.toLowerCase().trim());
+  if (!email) {
+    console.warn('⚠️ Stripe-webhook: kunde inte koppla subscription till en e-post');
+    return;
+  }
+  const info = interpretSubscription(subscription);
+  await setUserBilling(email, {
+    plan: info.plan,
+    billingStatus: info.billingStatus,
+    stripeCustomerId: info.stripeCustomerId,
+    stripeSubscriptionId: info.stripeSubscriptionId,
+    billingPeriodEnd: info.billingPeriodEnd,
+    seats: info.seats,
+  });
+  gdprLog('Billing: plan uppdaterad via Stripe', { email: anonymizeEmail(email), plan: info.plan, status: info.billingStatus });
+}
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -1364,7 +1431,90 @@ app.get('/api/auth/me', async (req, res) => {
         .digest('hex')
         .slice(0, 32)
     : null;
-  res.json({ ...req.user, demoOnly: Boolean(req.session.demoOnly), analyticsId });
+
+  // Plan-status (Stripe) — bara läsning; sätts av webhooken. Faller tillbaka
+  // på 'free' om Firebase saknas eller inget billing skrivits än.
+  let plan = 'free';
+  let billingStatus = null;
+  if (db && req.user.email) {
+    try {
+      const b = await getUserBilling(req.user.email);
+      plan = b.plan;
+      billingStatus = b.billingStatus;
+    } catch { /* free */ }
+  }
+
+  res.json({ ...req.user, demoOnly: Boolean(req.session.demoOnly), analyticsId, plan, billingStatus });
+});
+
+// ===== BILLING (Stripe) =====
+const billingLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+
+function requireUser(req, res) {
+  if (!req.user?.email) {
+    res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+    return null;
+  }
+  return req.user.email;
+}
+
+// POST /api/billing/checkout  { plan: 'pro'|'business', period: 'monthly'|'yearly' }
+app.post('/api/billing/checkout', billingLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!isBillingConfigured()) {
+    return res.status(503).json({ error: 'Billing är inte konfigurerat än', code: 'BILLING_NOT_CONFIGURED' });
+  }
+  const { plan, period } = req.body || {};
+  try {
+    const base = CONFIG.urls.frontend;
+    const url = await createCheckoutSession({
+      email,
+      plan,
+      period,
+      successUrl: `${base}/?billing=success`,
+      cancelUrl: `${base}/priser?billing=cancelled`,
+    });
+    res.json({ url });
+  } catch (err) {
+    console.error('❌ Checkout-fel:', err.message);
+    res.status(400).json({ error: 'Kunde inte starta checkout', code: err.message });
+  }
+});
+
+// POST /api/billing/portal  → Stripe-kundportal (planbyte, uppsägning, kvitton)
+app.post('/api/billing/portal', billingLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  try {
+    const b = await getUserBilling(email);
+    if (!b.stripeCustomerId) {
+      return res.status(400).json({ error: 'Ingen aktiv prenumeration', code: 'NO_SUBSCRIPTION' });
+    }
+    const url = await createPortalSession({
+      customerId: b.stripeCustomerId,
+      returnUrl: `${CONFIG.urls.frontend}/`,
+    });
+    res.json({ url });
+  } catch (err) {
+    console.error('❌ Portal-fel:', err.message);
+    res.status(400).json({ error: 'Kunde inte öppna kundportalen', code: err.message });
+  }
+});
+
+// GET /api/billing/status  → aktuell plan för frontend
+app.get('/api/billing/status', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  const b = db ? await getUserBilling(email) : { plan: 'free', billingStatus: null };
+  res.json({
+    plan: b.plan,
+    billingStatus: b.billingStatus,
+    seats: b.seats,
+    periodEnd: b.billingPeriodEnd,
+    hasSubscription: Boolean(b.stripeSubscriptionId),
+    billingConfigured: isBillingConfigured(),
+  });
 });
 
 app.get('/api/user', async (req, res) => {

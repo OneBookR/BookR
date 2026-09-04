@@ -392,6 +392,40 @@ async function updateUserLastLogin(email) {
   }
 }
 
+// ✅ BILLING — Stripe-synkad plan-status på user-doc:et. Skrivs bara av
+// Stripe-webhooken (server.js), aldrig av frontend. merge:true så doc:et
+// skapas om webhooken skulle hinna före första inloggningen.
+async function setUserBilling(email, data) {
+  try {
+    await getDb().collection('users').doc(email.toLowerCase().trim()).set({
+      ...data,
+      billingUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Error setting user billing:', err);
+    throw err;
+  }
+}
+
+async function getUserBilling(email) {
+  try {
+    const docSnap = await getDb().collection('users').doc(email.toLowerCase().trim()).get();
+    if (!docSnap.exists) return { plan: 'free', billingStatus: null };
+    const d = docSnap.data();
+    return {
+      plan: d.plan || 'free',
+      billingStatus: d.billingStatus || null,
+      stripeCustomerId: d.stripeCustomerId || null,
+      stripeSubscriptionId: d.stripeSubscriptionId || null,
+      billingPeriodEnd: d.billingPeriodEnd || null,
+      seats: d.seats || null
+    };
+  } catch (err) {
+    console.error('Error getting user billing:', err);
+    return { plan: 'free', billingStatus: null };
+  }
+}
+
 // ✅ BOOKING SESSIONS
 async function createBookingSession(sessionData) {
   const docRef = getDb().collection('booking_sessions').doc();
@@ -647,6 +681,10 @@ export {
   createUser,
   getUser,
   updateUserLastLogin,
+
+  // Billing (Stripe)
+  setUserBilling,
+  getUserBilling,
 
   // GDPR & Audit
   deleteUserData,
