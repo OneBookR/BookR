@@ -1,7 +1,9 @@
 // stripe-setup.mjs — skapar BookRs produkter och priser i Stripe (test- eller
 // live-läge, avgörs av vilken nyckel du kör med) och skriver ut ett .env-block.
 //
-// Kör:
+// Kör (efter att STRIPE_SECRET_KEY lagts i OneBookR/backend/.env):
+//   node OneBookR/backend/scripts/stripe-setup.mjs
+// eller inline:
 //   STRIPE_SECRET_KEY=sk_test_xxx node OneBookR/backend/scripts/stripe-setup.mjs
 //
 // Idempotent: hittar befintliga produkter/priser via metadata (bookr_plan /
@@ -12,7 +14,11 @@
 //   Pro         149 kr/mån   ·  1 428 kr/år
 //   Business    229 kr/säte/mån  ·  2 148 kr/säte/år   (per_unit, quantity = säten)
 
+import { config } from 'dotenv';
 import Stripe from 'stripe';
+
+// Läs OneBookR/backend/.env oavsett var scriptet körs ifrån.
+config({ path: new URL('../.env', import.meta.url) });
 
 const key = process.env.STRIPE_SECRET_KEY;
 if (!key) {
@@ -58,15 +64,24 @@ async function findPrice(productId, bookrKey) {
   return null;
 }
 
+// SaaS, B2B — krävs för Managed Payments (Stripe sköter moms/tax).
+const TAX_CODE = 'txcd_10103001';
+
 async function upsertProduct(def) {
   const existing = await findProduct(def.plan);
   if (existing) {
-    console.log(`• Produkt finns: ${existing.name} (${existing.id})`);
+    if (existing.tax_code !== TAX_CODE) {
+      await stripe.products.update(existing.id, { tax_code: TAX_CODE });
+      console.log(`• Produkt finns: ${existing.name} (${existing.id}) — satte tax_code`);
+    } else {
+      console.log(`• Produkt finns: ${existing.name} (${existing.id})`);
+    }
     return existing;
   }
   const created = await stripe.products.create({
     name: def.productName,
     description: def.productDescription,
+    tax_code: TAX_CODE,
     metadata: { bookr_plan: def.plan },
   });
   console.log(`✓ Skapade produkt: ${created.name} (${created.id})`);
@@ -99,13 +114,17 @@ async function upsertPrice(productId, def) {
 async function main() {
   console.log(`\nStripe-setup för BookR — läge: ${MODE}\n`);
   const envLines = [];
+  const portalProducts = []; // { product, prices: [...] } för portalens planbyte
 
   for (const def of PLANS) {
     const product = await upsertProduct(def);
+    const priceIds = [];
     for (const priceDef of def.prices) {
       const price = await upsertPrice(product.id, priceDef);
       envLines.push(`STRIPE_PRICE_${priceDef.key.toUpperCase()}=${price.id}`);
+      priceIds.push(price.id);
     }
+    portalProducts.push({ product: product.id, prices: priceIds });
   }
 
   // Billing Portal-konfiguration (för /api/billing/portal). Skapa en default om
@@ -127,7 +146,7 @@ async function main() {
         subscription_update: {
           enabled: true,
           default_allowed_updates: ['price', 'quantity'],
-          products: 'all',
+          products: portalProducts,
         },
       },
     });
