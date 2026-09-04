@@ -16,6 +16,7 @@ import VenueAdmin from './pages/VenueAdmin.jsx';
 import VenueBooking from './pages/VenueBooking.jsx';
 import BokaDemo from './pages/BokaDemo.jsx';
 import Pricing from './pages/Pricing.jsx';
+import EnterpriseKontakt from './pages/EnterpriseKontakt.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
 import MobileNavigation from './components/MobileNavigation.jsx';
@@ -163,8 +164,12 @@ function App() {
           // landningssidan visas istället för dashboarden. /boka-demo gör
           // sin egen /api/auth/me-koll (se BokaDemo.jsx) och bryr sig inte
           // om detta state, så demo-flödet fungerar precis som förut.
-          if (data.demoOnly && window.location.pathname !== '/boka-demo') {
-            console.log('ℹ️ Demo-scoped session utanför /boka-demo — visar landningssidan');
+          // demoOnly-sessioner (ej whitelistade, kom in via /boka-demo eller
+          // ett /priser-checkoutflöde) behandlas som utloggade överallt UTOM
+          // på de sidorna — där behöver de sin session för att slutföra
+          // flödet. Har de betalat rensar backend flaggan, då är detta false.
+          if (data.demoOnly && !['/boka-demo', '/priser', '/enterprise'].includes(window.location.pathname)) {
+            console.log('ℹ️ Demo-scoped session utanför demo/priser/enterprise — visar landningssidan');
             setUser(null);
             setLoading(false);
             return;
@@ -188,7 +193,7 @@ function App() {
           // "Bjud in vänner" innan hamnade i CompareCalendar istället för
           // boka-demo-kalendern efter att ha loggat in där.
           const isOnUnrelatedSpecialRoute = window.location.pathname !== '/' &&
-            ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/boka-demo'].includes(window.location.pathname);
+            ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/boka-demo', '/priser', '/enterprise'].includes(window.location.pathname);
 
           const savedGroup = isOnUnrelatedSpecialRoute ? null : localStorage.getItem('invitation_group');
           const savedInvitee = isOnUnrelatedSpecialRoute ? null : localStorage.getItem('invitation_invitee');
@@ -299,7 +304,7 @@ function App() {
 
   // ✅ SPECIAL ROUTES CHECK
   const path = window.location.pathname;
-  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/anvandarvillkor', '/boka-demo', '/priser'].includes(path) || path.startsWith('/venue/');
+  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/anvandarvillkor', '/boka-demo', '/priser', '/enterprise'].includes(path) || path.startsWith('/venue/');
 
   // ✅ RENDER SPECIAL ROUTES
   if (isSpecialRoute) {
@@ -316,7 +321,8 @@ function App() {
       '/integritetspolicy': Integritetspolicy,
       '/anvandarvillkor': Anvandarvillkor,
       '/boka-demo': BokaDemo,
-      '/priser': Pricing
+      '/priser': Pricing,
+      '/enterprise': EnterpriseKontakt
     }[path] || (path.startsWith('/venue/') ? VenueBooking : null);
 
     if (RouteComponent) {
@@ -381,7 +387,7 @@ function App() {
               Ett snabbt avstämningsmöte eller en stor gruppintervju med folk från olika företag — samma verktyg, samma enkla flöde.
             </Typography>
             <Button
-              href="/boka-demo"
+              href="/priser"
               variant="contained"
               size="large"
               sx={{

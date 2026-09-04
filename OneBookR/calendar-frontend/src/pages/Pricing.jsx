@@ -79,9 +79,21 @@ export default function Pricing({ user }) {
   const [yearly, setYearly] = useState(false);
   const [busy, setBusy] = useState(null); // plan-id under bearbetning
   const [toast, setToast] = useState({ open: false, message: '', severity: 'error' });
-  const cancelled = new URLSearchParams(window.location.search).get('billing') === 'cancelled';
+  const billingParam = new URLSearchParams(window.location.search).get('billing');
+  const cancelled = billingParam === 'cancelled';
+  const [activating, setActivating] = useState(billingParam === 'success');
+  // Pro/Business är låsta tills PAID_PLANS_ENABLED=true på servern. Default
+  // låst — vi visar "Kommer snart" och döljer priset.
+  const [paidEnabled, setPaidEnabled] = useState(false);
 
   const period = yearly ? 'yearly' : 'monthly';
+
+  useEffect(() => {
+    apiRequest('/api/billing/config')
+      .then((r) => r.json())
+      .then((d) => setPaidEnabled(Boolean(d?.paidPlansEnabled)))
+      .catch(() => setPaidEnabled(false));
+  }, []);
 
   // Kärnlogiken: POSTa checkout och skicka vidare till Stripe. period skickas
   // explicit så auto-återupptagningen kan använda värdet från URL:en.
@@ -119,15 +131,27 @@ export default function Pricing({ user }) {
 
   const handleCta = useCallback((plan) => {
     if (plan.id === 'free') {
-      window.location.href = user?.email ? '/' : createApiUrl('/auth/google?returnTo=%2F');
+      // Free-signup: logga in (ingen whitelist krävs för /priser-flödet) och
+      // skickas sen rakt in i appen på Free-nivå.
+      window.location.href = user?.email
+        ? '/'
+        : createApiUrl(`/auth/google?returnTo=${encodeURIComponent('/priser?welcome=free')}`);
       return;
     }
     if (plan.id === 'enterprise') {
-      window.location.href = '/kontakt';
+      window.location.href = '/enterprise';
       return;
     }
     startCheckout(plan.id, period);
   }, [user, period, startCheckout]);
+
+  // Free-signup: tillbaka från inloggning med ?welcome=free → in i appen.
+  useEffect(() => {
+    if (!user?.email) return;
+    if (new URLSearchParams(window.location.search).get('welcome')) {
+      window.location.href = '/';
+    }
+  }, [user]);
 
   // Kom tillbaka från inloggning med ?checkout=pro&period=monthly → fortsätt
   // automatiskt till Stripe (en gång).
@@ -142,6 +166,32 @@ export default function Pricing({ user }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Tillbaka från lyckad checkout → poll:a tills webhooken satt planen,
+  // skicka sen in i appen.
+  useEffect(() => {
+    if (billingParam !== 'success') return;
+    let tries = 0;
+    const iv = setInterval(async () => {
+      tries += 1;
+      try {
+        const res = await apiRequest('/api/billing/status');
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.plan && data.plan !== 'free') {
+          clearInterval(iv);
+          window.location.href = '/';
+          return;
+        }
+      } catch { /* fortsätt försöka */ }
+      if (tries >= 12) { // ~24 s
+        clearInterval(iv);
+        setActivating(false);
+        setToast({ open: true, message: 'Betalningen gick igenom men kontot tar en stund att aktivera. Ladda om sidan om en minut.', severity: 'info' });
+      }
+    }, 2000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billingParam]);
+
   const seg = (active) => ({
     padding: '9px 20px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer',
     border: 'none', fontFamily: 'inherit',
@@ -153,7 +203,19 @@ export default function Pricing({ user }) {
     <Box sx={{ minHeight: '100vh', bgcolor: 'var(--background)' }}>
       <LandingHeader returnTo="/priser" />
 
-      <Box sx={{ maxWidth: 1200, mx: 'auto', px: { xs: 3, md: 6 }, pt: { xs: 5, md: 8 }, pb: { xs: 8, md: 12 } }}>
+      {activating && (
+        <Box sx={{ maxWidth: 480, mx: 'auto', px: 3, pt: { xs: 10, md: 16 }, textAlign: 'center' }}>
+          <CircularProgress size={32} sx={{ color: 'var(--text)', mb: 3 }} />
+          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1 }}>
+            Betalningen gick igenom
+          </Typography>
+          <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Aktiverar ditt konto — du skickas vidare automatiskt om någon sekund.
+          </Typography>
+        </Box>
+      )}
+
+      <Box sx={{ maxWidth: 1200, mx: 'auto', px: { xs: 3, md: 6 }, pt: { xs: 5, md: 8 }, pb: { xs: 8, md: 12 }, display: activating ? 'none' : 'block' }}>
 
         {cancelled && (
           <Alert severity="info" sx={{ mb: 4, borderRadius: 3, maxWidth: 760, mx: 'auto' }}>
@@ -169,31 +231,36 @@ export default function Pricing({ user }) {
           <Typography sx={{ fontSize: { xs: 15, md: 17 }, lineHeight: 1.6, color: 'var(--text-secondary)', fontWeight: 500, mb: 3.5 }}>
             Varje plan har äkta synk mellan Google Kalender och Microsoft Outlook — utan att motparten kopplar in sin kalender. Personer du bjuder in loggar in gratis och betalar aldrig något.
           </Typography>
-          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, p: 0.5, borderRadius: 999, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)' }}>
-            <button type="button" style={seg(!yearly)} onClick={() => setYearly(false)}>Månadsvis</button>
-            <button type="button" style={seg(yearly)} onClick={() => setYearly(true)}>Årsvis · spara upp till 22%</button>
-          </Box>
+          {paidEnabled && (
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, p: 0.5, borderRadius: 999, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)' }}>
+              <button type="button" style={seg(!yearly)} onClick={() => setYearly(false)}>Månadsvis</button>
+              <button type="button" style={seg(yearly)} onClick={() => setYearly(true)}>Årsvis · spara upp till 22%</button>
+            </Box>
+          )}
         </Box>
 
         {/* Plan cards */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(4, 1fr)' }, gap: 2.5, alignItems: 'start' }}>
           {PLANS.map((plan) => {
-            const price = yearly ? plan.priceYearly : plan.priceMonthly;
-            const note = yearly ? plan.noteYearly : plan.noteMonthly;
+            const locked = (plan.id === 'pro' || plan.id === 'business') && !paidEnabled;
+            const price = locked ? 'Snart' : (yearly ? plan.priceYearly : plan.priceMonthly);
+            const note = locked ? '' : (yearly ? plan.noteYearly : plan.noteMonthly);
             const isNum = /^\d/.test(price);
             return (
               <Box
                 key={plan.id}
                 sx={{
+                  position: 'relative',
                   display: 'flex', flexDirection: 'column', borderRadius: 5, p: 3.5,
                   bgcolor: plan.dark ? 'var(--text)' : 'var(--surface-strong)',
                   border: plan.highlight ? '2px solid var(--text)' : '1px solid var(--border)',
                   boxShadow: plan.highlight ? '0 24px 80px rgba(15,23,42,0.12)' : '0 20px 60px rgba(15,23,42,0.07)',
+                  opacity: locked ? 0.72 : 1,
                 }}
               >
-                {plan.highlight && (
-                  <Box sx={{ alignSelf: 'flex-start', bgcolor: 'var(--text)', color: 'var(--surface-strong)', fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', px: 1.25, py: 0.5, borderRadius: 999, mb: 1.5 }}>
-                    Populärast
+                {locked && (
+                  <Box sx={{ position: 'absolute', top: 14, right: 14, px: 1, py: 0.25, borderRadius: 999, bgcolor: 'rgba(17,24,39,0.06)', color: 'var(--text-secondary)', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    Snart
                   </Box>
                 )}
                 <Typography sx={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', color: plan.dark ? '#fff' : 'var(--text)' }}>{plan.name}</Typography>
@@ -202,11 +269,11 @@ export default function Pricing({ user }) {
                   <Typography sx={{ fontSize: isNum ? 40 : 26, fontWeight: 800, letterSpacing: '-0.04em', color: plan.dark ? '#fff' : 'var(--text)' }}>{price}</Typography>
                   {isNum && <Typography sx={{ fontSize: 15, fontWeight: 700, color: plan.dark ? 'rgba(255,255,255,0.62)' : 'var(--text-secondary)' }}>kr</Typography>}
                 </Box>
-                <Typography sx={{ fontSize: 12, mt: 0.5, mb: 2.5, minHeight: 32, color: plan.dark ? 'rgba(255,255,255,0.62)' : 'var(--text-secondary)' }}>{isNum ? note.replace(/^kr\s*·?\s*/, '') : note}</Typography>
+                <Typography sx={{ fontSize: 12, mt: 0.5, mb: 2.5, minHeight: 32, color: plan.dark ? 'rgba(255,255,255,0.62)' : 'var(--text-secondary)' }}>{locked ? 'Prissättning öppnar snart' : (isNum ? note.replace(/^kr\s*·?\s*/, '') : note)}</Typography>
 
                 <Button
                   onClick={() => handleCta(plan)}
-                  disabled={busy === plan.id}
+                  disabled={busy === plan.id || locked}
                   variant={plan.highlight || plan.dark ? 'contained' : 'outlined'}
                   sx={{
                     py: 1.4, borderRadius: 3, fontWeight: 700, fontSize: 14, boxShadow: 'none', textTransform: 'none',
@@ -215,9 +282,10 @@ export default function Pricing({ user }) {
                       : plan.highlight
                       ? { bgcolor: 'var(--text)', color: 'var(--surface-strong)', '&:hover': { bgcolor: '#000' } }
                       : { borderColor: 'var(--border)', color: 'var(--text)', '&:hover': { borderColor: 'rgba(17,24,39,0.22)', bgcolor: 'rgba(17,24,39,0.02)' } }),
+                    '&.Mui-disabled': locked ? { bgcolor: 'rgba(17,24,39,0.05)', color: 'var(--text-secondary)', border: 'none' } : {},
                   }}
                 >
-                  {busy === plan.id ? <CircularProgress size={18} sx={{ color: 'inherit' }} /> : plan.cta}
+                  {busy === plan.id ? <CircularProgress size={18} sx={{ color: 'inherit' }} /> : locked ? 'Kommer snart' : plan.cta}
                 </Button>
 
                 <Box sx={{ height: '1px', bgcolor: plan.dark ? 'rgba(255,255,255,0.14)' : 'var(--border)', my: 2.5 }} />
@@ -240,7 +308,9 @@ export default function Pricing({ user }) {
         </Box>
 
         <Typography sx={{ textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)', mt: 3 }}>
-          Priser exkl. moms. Två betalperioder: månad eller år. Byt eller säg upp när du vill.
+          {paidEnabled
+            ? 'Priser exkl. moms. Två betalperioder: månad eller år. Byt eller säg upp när du vill.'
+            : 'Kom igång gratis idag. Pro och Business öppnar för köp inom kort.'}
         </Typography>
 
         {/* Kort FAQ */}

@@ -562,12 +562,22 @@ async function createDemoBooking(data) {
   }
 
   const docRef = getDb().collection('demo_bookings').doc();
+  // leadType: 'demo' (standard) eller 'enterprise' (bokat via /enterprise —
+  // då bär data även employees + seats för säljteamet).
+  const leadType = data.leadType === 'enterprise' ? 'enterprise' : 'demo';
+  const toPosInt = (v) => {
+    const n = parseInt(String(v ?? '').replace(/\D/g, ''), 10);
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 1000000) : null;
+  };
   const sanitizedData = {
     companyName: data.companyName.trim().substring(0, 200),
     contactName: data.contactName.trim().substring(0, 200),
     email: data.email.toLowerCase().trim(),
     phone: data.phone?.trim().substring(0, 50) || null,
     address: data.address?.trim().substring(0, 300) || null,
+    leadType,
+    employees: leadType === 'enterprise' ? toPosInt(data.employees) : null,
+    seats: leadType === 'enterprise' ? toPosInt(data.seats) : null,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     booked: false,
     bookedAt: null,

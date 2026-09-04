@@ -461,17 +461,23 @@ async function sendDemoNotificationEmail(booking, startIso, endIso) {
     }
 
     const timeStr = formatMeetingTimeSv(startIso, endIso);
+    const isEnterprise = booking.leadType === 'enterprise';
+    const enterpriseLines = isEnterprise
+      ? `\nAntal anställda: ${booking.employees ?? 'Ej angivet'}\nAntal säten: ${booking.seats ?? 'Ej angivet'}`
+      : '';
     const result = await resend.emails.send({
       from: 'BookR <info@onebookr.se>',
       to: 'info@onebookr.se',
-      subject: `🎉 Nytt demo bokat — ${booking.companyName}`,
-      text: `Nytt demo bokat via BookR!
+      subject: isEnterprise
+        ? `🏢 Nytt Enterprise-samtal bokat — ${booking.companyName}`
+        : `🎉 Nytt demo bokat — ${booking.companyName}`,
+      text: `${isEnterprise ? 'Nytt Enterprise-samtal' : 'Nytt demo'} bokat via BookR!
 
 Företag: ${booking.companyName}
 Kontaktperson: ${booking.contactName}
 E-post: ${booking.email}
 Telefon: ${booking.phone || 'Ej angivet'}
-Adress: ${booking.address || 'Ej angivet'}
+Adress: ${booking.address || 'Ej angivet'}${enterpriseLines}
 
 Tid: ${timeStr}
 Bokat: ${new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' })}`,
@@ -1444,7 +1450,16 @@ app.get('/api/auth/me', async (req, res) => {
     } catch { /* free */ }
   }
 
-  res.json({ ...req.user, demoOnly: Boolean(req.session.demoOnly), analyticsId, plan, billingStatus });
+  // ✅ BETALNING LÅSER UPP: en session som fick `demoOnly` under ett
+  // checkout-/demo-flöde (ej whitelistad) ska få full åtkomst så snart
+  // personen har en betald plan. Rensa flaggan permanent när så är fallet.
+  const paid = plan !== 'free' && ['active', 'trialing', 'past_due'].includes(billingStatus);
+  if (paid && req.session.demoOnly) {
+    delete req.session.demoOnly;
+  }
+  const demoOnly = Boolean(req.session.demoOnly) && !paid;
+
+  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus });
 });
 
 // ===== BILLING (Stripe) =====
@@ -1458,10 +1473,19 @@ function requireUser(req, res) {
   return req.user.email;
 }
 
+// GET /api/billing/config  → publik: styr om Pro/Business går att köpa
+const PAID_PLANS_ENABLED = () => process.env.PAID_PLANS_ENABLED === 'true';
+app.get('/api/billing/config', (req, res) => {
+  res.json({ paidPlansEnabled: PAID_PLANS_ENABLED(), billingConfigured: isBillingConfigured() });
+});
+
 // POST /api/billing/checkout  { plan: 'pro'|'business', period: 'monthly'|'yearly' }
 app.post('/api/billing/checkout', billingLimiter, async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
+  if (!PAID_PLANS_ENABLED()) {
+    return res.status(403).json({ error: 'Pro och Business öppnar snart', code: 'PAID_PLANS_LOCKED' });
+  }
   if (!isBillingConfigured()) {
     return res.status(503).json({ error: 'Billing är inte konfigurerat än', code: 'BILLING_NOT_CONFIGURED' });
   }
@@ -1472,7 +1496,9 @@ app.post('/api/billing/checkout', billingLimiter, async (req, res) => {
       email,
       plan,
       period,
-      successUrl: `${base}/?billing=success`,
+      // Tillbaka till /priser (som en demoOnly-session får se) och vänta där
+      // tills webhooken hunnit sätta planen — sen vidare in i appen.
+      successUrl: `${base}/priser?billing=success`,
       cancelUrl: `${base}/priser?billing=cancelled`,
     });
     res.json({ url });
@@ -1558,7 +1584,7 @@ app.get('/auth/google', authLimiter, (req, res, next) => {
     // ✅ LEAD-TRATT: om detta är demo-flödet (returnTo pekar mot
     // /boka-demo?leadId=...) markerar vi att inloggning påbörjades, med
     // vilken provider. Fire-and-forget — får aldrig fördröja redirecten.
-    if (returnTo.startsWith('/boka-demo')) {
+    if (returnTo.startsWith('/boka-demo') || returnTo.startsWith('/enterprise')) {
       try {
         const leadId = new URL(returnTo, 'https://x').searchParams.get('leadId');
         if (leadId) markDemoLoginStarted(leadId, 'google').catch(() => {});
@@ -1629,8 +1655,18 @@ app.get('/auth/google/callback', (req, res, next) => {
     // Alla ANDRA vägar in (vanlig dashboard/gruppflöde) kräver att e-posten
     // finns i whitelisten — annars kan vem som helst vi skickar ett kallt
     // mejl till klicka sig vidare in i det riktiga verktyget.
-    const isDemoFlow = returnTo.startsWith('/boka-demo');
-    if (!isDemoFlow && !isAllowedLoginEmail(user.email)) {
+    // /boka-demo och /enterprise = samma sorts flöde: besökaren loggar in med
+    // sin egen kalender för att boka ett möte med oss, blir INTE en riktig
+    // app-användare (får en demoOnly-session).
+    const isDemoFlow = returnTo.startsWith('/boka-demo') || returnTo.startsWith('/enterprise');
+    // ✅ SIGNUP via /priser släpps alltid in (ingen whitelist krävs).
+    //   Free-signup → full åtkomst direkt (på Free-nivå).
+    //   Pro/Business-checkout (?checkout=pro|business) → begränsad session
+    //   (demoOnly) tills betalningen gått igenom, sen rensas flaggan i
+    //   /api/auth/me.
+    const isCheckoutFlow = returnTo.startsWith('/priser');
+    const isPaidCheckout = isCheckoutFlow && /[?&]checkout=(pro|business)\b/.test(returnTo);
+    if (!isDemoFlow && !isCheckoutFlow && !isAllowedLoginEmail(user.email)) {
       console.warn(`⛔ Inloggning nekad (ej whitelistad): ${anonymizeEmail(user.email)}`);
       return res.redirect(`${CONFIG.urls.frontend}?error=access_restricted`);
     }
@@ -1647,7 +1683,7 @@ app.get('/auth/google/callback', (req, res, next) => {
       // sessionen som demo-scoped (bara om användaren INTE redan är
       // whitelistad — annars skulle en admin som testar demoflödet bli
       // felaktigt utelåst ur sin egen riktiga session efteråt).
-      if (isDemoFlow && !isAllowedLoginEmail(user.email)) {
+      if ((isDemoFlow || isPaidCheckout) && !isAllowedLoginEmail(user.email)) {
         req.session.demoOnly = true;
       }
 
@@ -1669,7 +1705,7 @@ app.get('/auth/microsoft', authLimiter, (req, res, next) => {
     console.log(`   Storing in session: ${returnTo}`);
 
     // ✅ LEAD-TRATT: se identisk kommentar vid /auth/google ovan.
-    if (returnTo.startsWith('/boka-demo')) {
+    if (returnTo.startsWith('/boka-demo') || returnTo.startsWith('/enterprise')) {
       try {
         const leadId = new URL(returnTo, 'https://x').searchParams.get('leadId');
         if (leadId) markDemoLoginStarted(leadId, 'microsoft').catch(() => {});
@@ -1725,8 +1761,18 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
     if (!user) return res.redirect(`${CONFIG.urls.frontend}?error=microsoft_auth_failed`);
 
     // ✅ PRIVAT BETA: se identisk kommentar vid Google-callbacken ovan.
-    const isDemoFlow = returnTo.startsWith('/boka-demo');
-    if (!isDemoFlow && !isAllowedLoginEmail(user.email)) {
+    // /boka-demo och /enterprise = samma sorts flöde: besökaren loggar in med
+    // sin egen kalender för att boka ett möte med oss, blir INTE en riktig
+    // app-användare (får en demoOnly-session).
+    const isDemoFlow = returnTo.startsWith('/boka-demo') || returnTo.startsWith('/enterprise');
+    // ✅ SIGNUP via /priser släpps alltid in (ingen whitelist krävs).
+    //   Free-signup → full åtkomst direkt (på Free-nivå).
+    //   Pro/Business-checkout (?checkout=pro|business) → begränsad session
+    //   (demoOnly) tills betalningen gått igenom, sen rensas flaggan i
+    //   /api/auth/me.
+    const isCheckoutFlow = returnTo.startsWith('/priser');
+    const isPaidCheckout = isCheckoutFlow && /[?&]checkout=(pro|business)\b/.test(returnTo);
+    if (!isDemoFlow && !isCheckoutFlow && !isAllowedLoginEmail(user.email)) {
       console.warn(`⛔ Inloggning nekad (ej whitelistad): ${anonymizeEmail(user.email)}`);
       return res.redirect(`${CONFIG.urls.frontend}?error=access_restricted`);
     }
@@ -1735,7 +1781,7 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
       if (loginErr) return next(loginErr);
 
       // ✅ Se identisk kommentar vid Google-callbacken ovan.
-      if (isDemoFlow && !isAllowedLoginEmail(user.email)) {
+      if ((isDemoFlow || isPaidCheckout) && !isAllowedLoginEmail(user.email)) {
         req.session.demoOnly = true;
       }
 
@@ -3440,7 +3486,7 @@ async function createAdminCalendarEvent(suggestion, adminCalendar, visitorEmail)
 
 app.post('/api/book-demo/lead', demoLimiter, async (req, res) => {
   try {
-    const { companyName, contactName, email, phone, address } = req.body;
+    const { companyName, contactName, email, phone, address, leadType, employees, seats } = req.body;
 
     if (!companyName || typeof companyName !== 'string' || !companyName.trim()) {
       throw new BookRError('Företagsnamn krävs', 400, 'MISSING_COMPANY_NAME');
@@ -3452,7 +3498,7 @@ app.post('/api/book-demo/lead', demoLimiter, async (req, res) => {
       throw new BookRError('Giltig e-postadress krävs', 400, 'INVALID_EMAIL');
     }
 
-    const leadId = await createDemoBooking({ companyName, contactName, email, phone, address });
+    const leadId = await createDemoBooking({ companyName, contactName, email, phone, address, leadType, employees, seats });
 
     gdprLog('Demo lead created', { leadId, email: anonymizeEmail(email) });
 

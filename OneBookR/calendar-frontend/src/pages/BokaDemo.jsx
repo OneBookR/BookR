@@ -84,7 +84,9 @@ function SuccessCheckIcon({ size = 64 }) {
 // `user`-prop) — special-routes i App.jsx renderas innan App:s async
 // /api/auth/me-koll hinner svara, så en prop skulle transient vara null
 // även för en redan inloggad besökare som precis kom tillbaka från OAuth.
-export default function BokaDemo() {
+export default function BokaDemo({ variant = 'demo' }) {
+  const isEnterprise = variant === 'enterprise';
+  const routeBase = isEnterprise ? '/enterprise' : '/boka-demo';
   const urlParams = new URLSearchParams(window.location.search);
   const leadIdFromUrl = urlParams.get('leadId');
   const authError = urlParams.get('error');
@@ -119,7 +121,7 @@ export default function BokaDemo() {
   const [leadId, setLeadId] = useState(() => leadIdFromUrl || sessionStorage.getItem('bookr_demo_lead_id') || null);
   const [companyName, setCompanyName] = useState(() => sessionStorage.getItem('bookr_demo_company') || '');
 
-  const [form, setForm] = useState({ companyName: '', contactName: '', email: '', phone: '', address: '' });
+  const [form, setForm] = useState({ companyName: '', contactName: '', email: '', phone: '', address: '', employees: '', seats: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [confirmedMeeting, setConfirmedMeeting] = useState(null);
@@ -132,12 +134,20 @@ export default function BokaDemo() {
       setToast({ open: true, message: 'Företagsnamn, kontaktperson och e-post krävs.', severity: 'error' });
       return;
     }
+    if (isEnterprise && (!form.employees.trim() || !form.seats.trim())) {
+      setToast({ open: true, message: 'Ange antal anställda och antal säten.', severity: 'error' });
+      return;
+    }
+
+    const payload = isEnterprise
+      ? { ...form, leadType: 'enterprise' }
+      : { companyName: form.companyName, contactName: form.contactName, email: form.email, phone: form.phone, address: form.address };
 
     setIsSubmitting(true);
     try {
       const res = await apiRequest('/api/book-demo/lead', {
         method: 'POST',
-        body: JSON.stringify(form)
+        body: JSON.stringify(payload)
       });
       const data = await res.json().catch(() => ({}));
 
@@ -160,7 +170,7 @@ export default function BokaDemo() {
 
   // ✅ Efter Google/Microsoft-inloggning måste vi hitta tillbaka hit MED
   // leadId kvar, så OAuth-returtVägen bär leadId i returnTo-frågesträngen.
-  const returnTo = encodeURIComponent(`/boka-demo?leadId=${leadId}`);
+  const returnTo = encodeURIComponent(`${routeBase}?leadId=${leadId}`);
 
   // Sessionskollen är klar men ingen användare hittades — leadId i URL:en
   // utan giltig session (t.ex. utgången cookie). Backa till login-steget.
@@ -198,10 +208,12 @@ export default function BokaDemo() {
         {step === 'form' && (
           <Paper elevation={0} sx={{ borderRadius: 6, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: 'var(--shadow-soft)', p: { xs: 3, md: 5 } }}>
             <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em', mb: 1 }}>
-              Boka ett demo
+              {isEnterprise ? 'Boka ett samtal om Enterprise' : 'Boka ett demo'}
             </Typography>
             <Typography sx={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, mb: 3.5 }}>
-              Fyll i dina uppgifter, koppla din kalender och se direkt hur BookR hittar en gemensam tid — det tar under en minut.
+              {isEnterprise
+                ? 'Fyll i era uppgifter så bokar vi en tid för att gå igenom en Enterprise-modell som passar er storlek — säten, villkor och onboarding.'
+                : 'Fyll i dina uppgifter, koppla din kalender och se direkt hur BookR hittar en gemensam tid — det tar under en minut.'}
             </Typography>
 
             <Box component="form" onSubmit={handleSubmit} sx={{ display: 'grid', gap: 2 }}>
@@ -210,6 +222,12 @@ export default function BokaDemo() {
               <TextField label="E-postadress" type="email" value={form.email} onChange={handleChange('email')} required fullWidth sx={fieldSx} />
               <TextField label="Telefon (valfritt)" value={form.phone} onChange={handleChange('phone')} fullWidth sx={fieldSx} />
               <TextField label="Adress (valfritt)" value={form.address} onChange={handleChange('address')} fullWidth sx={fieldSx} />
+              {isEnterprise && (
+                <>
+                  <TextField label="Antal anställda på företaget" type="number" value={form.employees} onChange={handleChange('employees')} required fullWidth sx={fieldSx} inputProps={{ min: 1 }} />
+                  <TextField label="Antal säten ni behöver" type="number" value={form.seats} onChange={handleChange('seats')} required fullWidth sx={fieldSx} inputProps={{ min: 1 }} />
+                </>
+              )}
 
               <Button
                 type="submit"
@@ -309,7 +327,7 @@ export default function BokaDemo() {
                 </Box>
                 <Box>
                   <Typography sx={{ fontSize: 14, fontWeight: 700, textTransform: 'capitalize' }}>
-                    {companyName} x BookR – Demo
+                    {companyName} x BookR – {isEnterprise ? 'Enterprise' : 'Demo'}
                   </Typography>
                   <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
                     {new Date(confirmedMeeting.start).toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Stockholm' })}
@@ -321,15 +339,28 @@ export default function BokaDemo() {
                 </Box>
               </Box>
 
-              <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 2 }}>
-                Nu har du gjort din första kalenderjämförelse med BookR.
-              </Typography>
-              <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, mb: 2 }}>
-                Ganska skönt att slippa kolla i sin egen kalender innan man bokar något?
-              </Typography>
-              <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, mb: 4 }}>
-                Vi ser fram emot att prata mer med er.
-              </Typography>
+              {isEnterprise ? (
+                <>
+                  <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 2 }}>
+                    Tack! Tiden ligger i era kalendrar.
+                  </Typography>
+                  <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, mb: 4 }}>
+                    Vi går igenom en Enterprise-modell som passar er storlek — säten, villkor och onboarding — på mötet.
+                  </Typography>
+                </>
+              ) : (
+                <>
+                  <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.7, mb: 2 }}>
+                    Nu har du gjort din första kalenderjämförelse med BookR.
+                  </Typography>
+                  <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, mb: 2 }}>
+                    Ganska skönt att slippa kolla i sin egen kalender innan man bokar något?
+                  </Typography>
+                  <Typography sx={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, mb: 4 }}>
+                    Vi ser fram emot att prata mer med er.
+                  </Typography>
+                </>
+              )}
 
               <Button
                 href="/"
