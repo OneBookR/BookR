@@ -410,7 +410,7 @@ async function setUserBilling(email, data) {
 async function getUserBilling(email) {
   try {
     const docSnap = await getDb().collection('users').doc(email.toLowerCase().trim()).get();
-    if (!docSnap.exists) return { plan: 'free', billingStatus: null };
+    if (!docSnap.exists) return { plan: 'free', billingStatus: null, appAccess: false };
     const d = docSnap.data();
     return {
       plan: d.plan || 'free',
@@ -418,11 +418,15 @@ async function getUserBilling(email) {
       stripeCustomerId: d.stripeCustomerId || null,
       stripeSubscriptionId: d.stripeSubscriptionId || null,
       billingPeriodEnd: d.billingPeriodEnd || null,
-      seats: d.seats || null
+      seats: d.seats || null,
+      // ✅ Permanent flagga: kontot har en gång beviljats åtkomst (Free-
+      // signup fullföljd, eller betald plan) — skiljer det från en
+      // user-doc som bara skapades av att någon FÖRSÖKTE logga in.
+      appAccess: Boolean(d.appAccess)
     };
   } catch (err) {
     console.error('Error getting user billing:', err);
-    return { plan: 'free', billingStatus: null };
+    return { plan: 'free', billingStatus: null, appAccess: false };
   }
 }
 

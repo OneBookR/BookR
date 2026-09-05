@@ -1162,6 +1162,9 @@ async function applySubscriptionToUser(subscription, fallbackEmail) {
     stripeSubscriptionId: info.stripeSubscriptionId,
     billingPeriodEnd: info.billingPeriodEnd,
     seats: info.seats,
+    // ✅ Samma permanenta åtkomstflagga som Free-signup sätter — annars
+    // fastnar en betalande kund på prissidan vid nästa vanliga omlogin.
+    appAccess: true,
   });
   gdprLog('Billing: plan uppdaterad via Stripe', { email: anonymizeEmail(email), plan: info.plan, status: info.billingStatus });
 }
@@ -1646,7 +1649,7 @@ app.get('/auth/google/callback', (req, res, next) => {
   // (strategy, options, callback) istället för att kedja två middlewares —
   // ger full kontroll över req.login() och undviker att förlita sig på
   // implicit next()-vidarebefordran mellan två separata handlers.
-  passport.authenticate('google', { failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed` }, (err, user) => {
+  passport.authenticate('google', { failureRedirect: `${CONFIG.urls.frontend}?error=google_auth_failed` }, async (err, user) => {
     if (err) return next(err);
     if (!user) return res.redirect(`${CONFIG.urls.frontend}?error=google_auth_failed`);
 
@@ -1666,7 +1669,20 @@ app.get('/auth/google/callback', (req, res, next) => {
     //   /api/auth/me.
     const isCheckoutFlow = returnTo.startsWith('/priser');
     const isPaidCheckout = isCheckoutFlow && /[?&]checkout=(pro|business)\b/.test(returnTo);
-    if (!isDemoFlow && !isCheckoutFlow && !isAllowedLoginEmail(user.email)) {
+    const isFreeSignup = isCheckoutFlow && /[?&]welcome=free\b/.test(returnTo);
+
+    // ✅ HAR REDAN ÅTKOMST: beviljas en gång (Free-signup fullföljd, eller
+    // betald plan via webhooken) och ska sen INTE kräva /priser-vägen igen —
+    // annars fastnar en helt vanlig omlogin (returnTo='/') på prissidan,
+    // eftersom den aldrig är en isCheckoutFlow-URL.
+    let hasStoredAccess = false;
+    if (db) {
+      try {
+        hasStoredAccess = Boolean((await getUserBilling(user.email)).appAccess);
+      } catch { /* ingen lagrad åtkomst — behandla som ej beviljad */ }
+    }
+
+    if (!isDemoFlow && !isCheckoutFlow && !isAllowedLoginEmail(user.email) && !hasStoredAccess) {
       console.warn(`⛔ Inloggning nekad (ej whitelistad): ${anonymizeEmail(user.email)}`);
       return res.redirect(`${CONFIG.urls.frontend}?error=access_restricted`);
     }
@@ -1683,8 +1699,15 @@ app.get('/auth/google/callback', (req, res, next) => {
       // sessionen som demo-scoped (bara om användaren INTE redan är
       // whitelistad — annars skulle en admin som testar demoflödet bli
       // felaktigt utelåst ur sin egen riktiga session efteråt).
-      if ((isDemoFlow || isPaidCheckout) && !isAllowedLoginEmail(user.email)) {
+      if ((isDemoFlow || (isPaidCheckout && !hasStoredAccess)) && !isAllowedLoginEmail(user.email)) {
         req.session.demoOnly = true;
+      }
+
+      // ✅ Free-signup fullföljd → beviljar åtkomst PERMANENT (inte bara
+      // för denna session), annars fastnar nästa vanliga omlogin på
+      // prissidan igen (se hasStoredAccess-kommentaren ovan).
+      if (isFreeSignup && !isAllowedLoginEmail(user.email) && !hasStoredAccess && db) {
+        setUserBilling(user.email, { appAccess: true, plan: 'free' }).catch(() => {});
       }
 
       console.log(`🔐 [OAuth Google Callback]`);
@@ -1756,7 +1779,7 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
   const returnTo = req.session.returnTo || CONFIG.urls.frontend;
   delete req.session.returnTo;
 
-  passport.authenticate('microsoft', { failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed` }, (err, user) => {
+  passport.authenticate('microsoft', { failureRedirect: `${CONFIG.urls.frontend}?error=microsoft_auth_failed` }, async (err, user) => {
     if (err) return next(err);
     if (!user) return res.redirect(`${CONFIG.urls.frontend}?error=microsoft_auth_failed`);
 
@@ -1772,7 +1795,20 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
     //   /api/auth/me.
     const isCheckoutFlow = returnTo.startsWith('/priser');
     const isPaidCheckout = isCheckoutFlow && /[?&]checkout=(pro|business)\b/.test(returnTo);
-    if (!isDemoFlow && !isCheckoutFlow && !isAllowedLoginEmail(user.email)) {
+    const isFreeSignup = isCheckoutFlow && /[?&]welcome=free\b/.test(returnTo);
+
+    // ✅ HAR REDAN ÅTKOMST: beviljas en gång (Free-signup fullföljd, eller
+    // betald plan via webhooken) och ska sen INTE kräva /priser-vägen igen —
+    // annars fastnar en helt vanlig omlogin (returnTo='/') på prissidan,
+    // eftersom den aldrig är en isCheckoutFlow-URL.
+    let hasStoredAccess = false;
+    if (db) {
+      try {
+        hasStoredAccess = Boolean((await getUserBilling(user.email)).appAccess);
+      } catch { /* ingen lagrad åtkomst — behandla som ej beviljad */ }
+    }
+
+    if (!isDemoFlow && !isCheckoutFlow && !isAllowedLoginEmail(user.email) && !hasStoredAccess) {
       console.warn(`⛔ Inloggning nekad (ej whitelistad): ${anonymizeEmail(user.email)}`);
       return res.redirect(`${CONFIG.urls.frontend}?error=access_restricted`);
     }
@@ -1781,8 +1817,13 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
       if (loginErr) return next(loginErr);
 
       // ✅ Se identisk kommentar vid Google-callbacken ovan.
-      if ((isDemoFlow || isPaidCheckout) && !isAllowedLoginEmail(user.email)) {
+      if ((isDemoFlow || (isPaidCheckout && !hasStoredAccess)) && !isAllowedLoginEmail(user.email)) {
         req.session.demoOnly = true;
+      }
+
+      // ✅ Se identisk kommentar vid Google-callbacken ovan.
+      if (isFreeSignup && !isAllowedLoginEmail(user.email) && !hasStoredAccess && db) {
+        setUserBilling(user.email, { appAccess: true, plan: 'free' }).catch(() => {});
       }
 
       console.log(`🔐 [OAuth Microsoft Callback]`);
