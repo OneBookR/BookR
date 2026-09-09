@@ -19,7 +19,8 @@ import {
   Home,
   Task,
   Group,
-  CreditCard
+  CreditCard,
+  EventAvailable
 } from '@mui/icons-material';
 import { LOGOUT_URL, HOME_URL } from '../config';
 import { apiRequest } from '../utils/apiConfig.js';
@@ -147,6 +148,22 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
 
           {/* ✅ MITT OMRÅDE - DESKTOP NAVIGATION + LÄMNA GRUPP KNAPP */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* ✅ PRIMÄR CTA: Boka möte — alltid synlig i bannern */}
+            <Button
+              onClick={() => onNavigate?.('group')}
+              startIcon={<EventAvailable />}
+              variant="contained"
+              disableElevation
+              sx={{
+                fontWeight: 700, borderRadius: 999, px: 2, textTransform: 'none',
+                bgcolor: 'var(--text)', color: 'var(--surface-strong)', boxShadow: 'none',
+                display: { xs: 'none', md: 'flex' },
+                '&:hover': { bgcolor: '#000', boxShadow: 'none' },
+              }}
+            >
+              Boka möte
+            </Button>
+
             {/* ✅ LÄMNA GRUPP KNAPP - DESKTOP */}
             {isInGroup && (
               <Button

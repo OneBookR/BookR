@@ -628,7 +628,8 @@ export default function CompareCalendar({
       start: new Date(slot.start),
       end: new Date(slot.end),
       resource: 'free_time',
-      allDay: false
+      allDay: false,
+      slot // originalsloten — behövs när man klickar eventet för att föreslå tiden
     }));
   }, [futureSlots, meetingDuration]);
 
@@ -637,26 +638,27 @@ export default function CompareCalendar({
     if (event.resource === 'free_time') {
       return {
         style: {
-          backgroundColor: '#4caf50',
-          color: '#ffffff',
-          border: '2px solid #388e3c',
-          borderRadius: '6px',
+          backgroundColor: 'rgba(31,122,77,0.12)',
+          color: 'var(--success)',
+          border: '1px solid rgba(31,122,77,0.35)',
+          borderRadius: '8px',
           fontSize: '12px',
-          fontWeight: '600',
-          padding: '2px 6px'
+          fontWeight: 700,
+          padding: '2px 6px',
+          cursor: propGroupId ? 'pointer' : 'default'
         }
       };
     }
-    
+
     return {
       style: {
-        backgroundColor: '#e3f2fd',
-        color: '#1976d2',
-        border: '1px solid #1976d2',
-        borderRadius: '4px'
+        backgroundColor: 'rgba(17,24,39,0.06)',
+        color: 'var(--text)',
+        border: '1px solid var(--border)',
+        borderRadius: '8px'
       }
     };
-  }, []);
+  }, [propGroupId]);
 
   // ✅ FETCH SUGGESTIONS FUNCTION - FIXA API URL
   const fetchSuggestions = useCallback(async () => {
@@ -1799,6 +1801,7 @@ export default function CompareCalendar({
                     min={CAL_MIN}
                     max={CAL_MAX}
                     scrollToTime={CAL_SCROLL_TO}
+                    onSelectEvent={propGroupId ? (event) => event.slot && handleSuggest(event.slot) : undefined}
                     messages={{
                       next: 'Nästa', previous: 'Föregående', today: 'Idag',
                       month: 'Månad', week: 'Vecka', day: 'Dag'
@@ -1836,6 +1839,7 @@ export default function CompareCalendar({
                         min={CAL_MIN}
                         max={CAL_MAX}
                         scrollToTime={CAL_SCROLL_TO}
+                        onSelectEvent={propGroupId ? (event) => event.slot && handleSuggest(event.slot) : undefined}
                         messages={{
                           next: 'Nästa', previous: 'Föregående', today: 'Idag',
                           month: 'Månad', week: 'Vecka', day: 'Dag'
