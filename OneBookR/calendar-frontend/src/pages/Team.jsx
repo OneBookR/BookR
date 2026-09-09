@@ -407,26 +407,8 @@ export default function Team({ user, onNavigateBack }) {
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={contact.directAccess || false}
-                            onChange={() => handleToggleDirectAccess(contact.id)}
-                          />
-                        }
-                        label="Direktåtkomst"
-                        labelPlacement="start"
-                        sx={{ m: 0, color: 'var(--text-secondary)' }}
-                      />
-                      <Chip
-                        label={contact.directAccess ? 'Aktiv åtkomst' : 'Ingen åtkomst'}
-                        size="small"
-                        sx={{
-                          bgcolor: contact.directAccess ? 'rgba(31,122,77,0.1)' : 'rgba(17,24,39,0.04)',
-                          color: contact.directAccess ? 'var(--success)' : 'var(--text-secondary)',
-                          border: `1px solid ${contact.directAccess ? 'rgba(31,122,77,0.14)' : 'rgba(17,24,39,0.06)'}`
-                        }}
-                      />
+                      {/* Direktåtkomst-toggeln tillfälligt dold tills funktionen är klar.
+                          handleToggleDirectAccess finns kvar för när den tas tillbaka. */}
                       <Button
                         variant="outlined"
                         color="error"
