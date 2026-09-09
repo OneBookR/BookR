@@ -41,10 +41,12 @@ export default function Team({ user, onNavigateBack }) {
       setLoading(true);
       const savedContacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${userEmail}`) || '[]');
       const savedTeams = JSON.parse(localStorage.getItem(`bookr_teams_${userEmail}`) || '[]');
-      const savedRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${userEmail}`) || '[]');
       setContacts(savedContacts);
       setTeams(savedTeams);
-      setContactRequests(savedRequests);
+      // Kontaktförfrågningar är avstängda tills direktåtkomst-flödet är klart.
+      // Läser INTE in gamla localStorage-poster (de kunde se ut som att någon
+      // bjudit in dig fast du var den som la till dem).
+      setContactRequests([]);
       setLoading(false);
     }
   }, [userEmail]);
@@ -62,38 +64,14 @@ export default function Team({ user, onNavigateBack }) {
     const updatedContacts = [...contacts, { ...newContact, id: Date.now(), directAccess: false }];
     localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
     setContacts(updatedContacts);
-    
-    // Skicka kontaktförfrågan via BookR backend
-    try {
-      await fetch('https://www.onebookr.se/api/contact-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fromEmail: userEmail,
-          fromName: user.displayName || userEmail,
-          toEmail: newContact.email,
-          toName: newContact.name,
-          message: `${user.displayName || userEmail} vill lägga till dig som kontakt i BookR`
-        })
-      });
-    } catch (error) {
-      console.log('Failed to send contact request via API, using localStorage fallback');
-    }
-    
-    // Fallback: Spara lokalt också
-    const existingRequests = JSON.parse(localStorage.getItem(`bookr_contact_requests_${newContact.email}`) || '[]');
-    const newRequest = {
-      id: Date.now(),
-      fromEmail: userEmail,
-      fromName: user.displayName || userEmail,
-      timestamp: new Date().toISOString()
-    };
-    existingRequests.push(newRequest);
-    localStorage.setItem(`bookr_contact_requests_${newContact.email}`, JSON.stringify(existingRequests));
-    
+
+    // OBS: att lägga till en kontakt skickar INTE någon kontaktförfrågan
+    // längre. Förfråge-/direktåtkomst-flödet är inte färdigutvecklat, och
+    // den gamla fallbacken skrev en pending request i mottagarens
+    // localStorage vilket fick det att se ut som att de bjudit in dig.
     setNewContact({ name: '', email: '' });
     setAddContactOpen(false);
-    setToast({ open: true, message: 'Kontakt sparad och vänförslag skickat!', severity: 'success' });
+    setToast({ open: true, message: 'Kontakt sparad', severity: 'success' });
   };
 
   const handleDeleteContact = (contactId) => {
