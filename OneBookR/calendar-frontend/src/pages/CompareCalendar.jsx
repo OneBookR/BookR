@@ -20,6 +20,23 @@ import { useNotifications } from '../hooks/useNotifications.js';
 moment.locale('sv');
 const localizer = momentLocalizer(moment);
 
+// Öppna veckovyn vid arbetsdagens början och klipp bort nattetimmarna.
+const CAL_MIN = new Date(1970, 0, 1, 6, 0, 0);
+const CAL_MAX = new Date(1970, 0, 1, 22, 0, 0);
+const CAL_SCROLL_TO = new Date(1970, 0, 1, 8, 0, 0);
+
+// Svenska 24h-format — react-big-calendars default landar annars i en-US
+// AM/PM och engelska dagnamn ("06 Sun") även med moment-locale satt.
+const CAL_FORMATS = {
+  timeGutterFormat: 'HH:mm',
+  eventTimeRangeFormat: ({ start, end }) => `${moment(start).format('HH:mm')}–${moment(end).format('HH:mm')}`,
+  selectRangeFormat: ({ start, end }) => `${moment(start).format('HH:mm')}–${moment(end).format('HH:mm')}`,
+  agendaTimeRangeFormat: ({ start, end }) => `${moment(start).format('HH:mm')}–${moment(end).format('HH:mm')}`,
+  dayFormat: 'ddd D/M',
+  dayHeaderFormat: 'dddd D MMMM',
+  dayRangeHeaderFormat: ({ start, end }) => `${moment(start).format('D MMM')} – ${moment(end).format('D MMM YYYY')}`,
+};
+
 // ✅ REDESIGN: hjälpkomponent + delad inline-stil för formulärets
 // labeled-input-fält (datum, möteslängd, arbetstid) — på modulnivå så de
 // inte återskapas som nya referenser vid varje render av CompareCalendar.
@@ -64,7 +81,32 @@ export default function CompareCalendar({
       background: 'var(--surface-strong)',
       borderRadius: '16px',
       border: '1px solid var(--border)',
-      height: '500px'
+      width: '100%',
+      maxWidth: '100%',
+      // Håll veckogriddens innehåll innanför det rundade kortet — utan
+      // detta blöder RBC:s header/events ut till höger ("ligger utanför").
+      overflow: 'hidden',
+      '& .rbc-calendar': { width: '100%', fontFamily: 'inherit' },
+      // Toolbar → BookRs pill-knappar
+      '& .rbc-toolbar': { gap: '8px', flexWrap: 'wrap', marginBottom: '12px' },
+      '& .rbc-toolbar button': {
+        fontFamily: 'inherit', fontWeight: 700, fontSize: '13px', color: 'var(--text)',
+        border: '1px solid var(--border)', borderRadius: '999px', padding: '6px 14px',
+      },
+      '& .rbc-toolbar button:hover': { background: 'rgba(17,24,39,0.04)', borderColor: 'var(--border)' },
+      '& .rbc-toolbar button.rbc-active, & .rbc-toolbar button.rbc-active:hover': {
+        background: 'var(--text)', color: 'var(--surface-strong)', borderColor: 'var(--text)', boxShadow: 'none',
+      },
+      '& .rbc-toolbar-label': { fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' },
+      // Rutnät + rubriker
+      '& .rbc-header': { fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)', padding: '10px 4px', borderColor: 'var(--border)' },
+      '& .rbc-time-view, & .rbc-month-view': { border: 'none' },
+      '& .rbc-time-content, & .rbc-time-header-content, & .rbc-timeslot-group, & .rbc-day-slot, & .rbc-time-gutter, & .rbc-day-bg + .rbc-day-bg, & .rbc-month-row + .rbc-month-row': { borderColor: 'var(--border)' },
+      '& .rbc-time-content': { borderTopColor: 'var(--border)' },
+      '& .rbc-label': { fontSize: '11px', color: 'var(--text-secondary)' },
+      '& .rbc-today': { background: 'rgba(17,24,39,0.03)' },
+      '& .rbc-off-range-bg': { background: 'rgba(17,24,39,0.02)' },
+      '& .rbc-current-time-indicator': { background: 'var(--success)' }
     },
     eventProps: (event) => ({
       style: {
@@ -1749,10 +1791,14 @@ export default function CompareCalendar({
                     events={calendarEvents}
                     startAccessor="start"
                     endAccessor="end"
-                    style={{ height: 560 }}
+                    style={{ height: 560, width: '100%' }}
                     eventPropGetter={eventPropGetter}
                     views={['month', 'week', 'day']}
                     defaultView="week"
+                    formats={CAL_FORMATS}
+                    min={CAL_MIN}
+                    max={CAL_MAX}
+                    scrollToTime={CAL_SCROLL_TO}
                     messages={{
                       next: 'Nästa', previous: 'Föregående', today: 'Idag',
                       month: 'Månad', week: 'Vecka', day: 'Dag'
@@ -1782,10 +1828,14 @@ export default function CompareCalendar({
                         events={calendarEvents}
                         startAccessor="start"
                         endAccessor="end"
-                        style={{ height: 500 }}
+                        style={{ height: 500, width: '100%' }}
                         eventPropGetter={eventPropGetter}
                         views={['month', 'week', 'day']}
                         defaultView="week"
+                        formats={CAL_FORMATS}
+                        min={CAL_MIN}
+                        max={CAL_MAX}
+                        scrollToTime={CAL_SCROLL_TO}
                         messages={{
                           next: 'Nästa', previous: 'Föregående', today: 'Idag',
                           month: 'Månad', week: 'Vecka', day: 'Dag'
