@@ -148,22 +148,6 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
 
           {/* ✅ MITT OMRÅDE - DESKTOP NAVIGATION + LÄMNA GRUPP KNAPP */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {/* ✅ PRIMÄR CTA: Boka möte — alltid synlig i bannern */}
-            <Button
-              onClick={() => onNavigate?.('group')}
-              startIcon={<EventAvailable />}
-              variant="contained"
-              disableElevation
-              sx={{
-                fontWeight: 700, borderRadius: 999, px: 2, textTransform: 'none',
-                bgcolor: 'var(--text)', color: 'var(--surface-strong)', boxShadow: 'none',
-                display: { xs: 'none', md: 'flex' },
-                '&:hover': { bgcolor: '#000', boxShadow: 'none' },
-              }}
-            >
-              Boka möte
-            </Button>
-
             {/* ✅ LÄMNA GRUPP KNAPP - DESKTOP */}
             {isInGroup && (
               <Button
@@ -234,7 +218,24 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
 
           {/* ✅ USER MENU */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-            <Typography 
+            {/* ✅ PRIMÄR CTA: Boka möte — vår egen bokningssida (samma som "Boka demo"),
+                inte kalenderjämförelsen. Höger sida av bannern. */}
+            <Button
+              href="/boka-demo"
+              startIcon={<EventAvailable />}
+              variant="contained"
+              disableElevation
+              sx={{
+                fontWeight: 700, borderRadius: 999, px: 2, textTransform: 'none',
+                bgcolor: 'var(--text)', color: 'var(--surface-strong)', boxShadow: 'none',
+                display: { xs: 'none', md: 'flex' },
+                '&:hover': { bgcolor: '#000', boxShadow: 'none' },
+              }}
+            >
+              Boka möte
+            </Button>
+
+            <Typography
               variant="body2" 
               sx={{ 
                 display: { xs: 'none', sm: 'block' },
