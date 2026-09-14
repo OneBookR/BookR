@@ -21,12 +21,13 @@ import {
   saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail,
   saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking,
   markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed,
-  setUserBilling, getUserBilling
+  setUserBilling, getUserBilling, checkAndConsumeSession, getMonthlyUsage
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken } from './token-refresh.js';
 import { upsertHubspotContact } from './hubspot.js';
 import { isBillingConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretSubscription, emailForSubscription } from './billing.js';
+import { limitsForPlan } from './plans.js';
 
 // ===== APPLICATION SETUP =====
 const app = express();
@@ -161,6 +162,49 @@ class BookRError extends Error {
 
 // ===== VALIDATION HELPERS =====
 const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+// ✅ PLAN-GRÄNSER: deltagare per session + sessioner/månad (se plans.js).
+// Anropas från varje ställe en NY kalenderjämförelse startar (skapa grupp,
+// direkt jämförelse) — INTE när en redan skapad grupp bara visas/pollas.
+// Fail-open om Firebase saknas eller ingen e-post finns — går inte att
+// enforca utan lagring, resten av appen ska fungera ändå (samma mönster
+// som annan billing-kod i den här filen).
+async function enforceSessionLimits(email, participantCount) {
+  if (!db || !email) return { ok: true };
+
+  const { plan } = await getUserBilling(email);
+  const limits = limitsForPlan(plan);
+
+  if (participantCount > limits.maxParticipants) {
+    return {
+      ok: false,
+      statusCode: 403,
+      body: {
+        error: `Din plan tillåter max ${limits.maxParticipants} deltagare per kalenderjämförelse. Uppgradera på /priser för fler.`,
+        code: 'PLAN_LIMIT_PARTICIPANTS',
+        limit: limits.maxParticipants,
+        plan
+      }
+    };
+  }
+
+  const usage = await checkAndConsumeSession(email, limits.sessionsPerMonth);
+  if (!usage.allowed) {
+    return {
+      ok: false,
+      statusCode: 403,
+      body: {
+        error: `Du har använt alla dina ${usage.limit} kalenderjämförelser den här månaden. Uppgradera på /priser för obegränsat.`,
+        code: 'PLAN_LIMIT_SESSIONS',
+        used: usage.used,
+        limit: usage.limit,
+        plan
+      }
+    };
+  }
+
+  return { ok: true, plan, limits, sessionsUsed: usage.used };
+}
 
 // ✅ VALIDERA ANVÄNDARTOKEN
 async function validateUserToken(user) {
@@ -1536,6 +1580,8 @@ app.get('/api/billing/status', async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
   const b = db ? await getUserBilling(email) : { plan: 'free', billingStatus: null };
+  const limits = limitsForPlan(b.plan);
+  const usage = db ? await getMonthlyUsage(email) : { sessionsUsed: 0 };
   res.json({
     plan: b.plan,
     billingStatus: b.billingStatus,
@@ -1543,6 +1589,12 @@ app.get('/api/billing/status', async (req, res) => {
     periodEnd: b.billingPeriodEnd,
     hasSubscription: Boolean(b.stripeSubscriptionId),
     billingConfigured: isBillingConfigured(),
+    usage: {
+      sessionsUsed: usage.sessionsUsed,
+      sessionsLimit: limits.sessionsPerMonth, // null = obegränsat
+      maxParticipants: limits.maxParticipants,
+      periodKey: usage.periodKey,
+    },
   });
 });
 
@@ -2297,6 +2349,14 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
       throw new BookRError(`Invalid email addresses: ${invalidEmails.join(', ')}`, 400, 'INVALID_EMAILS');
     }
 
+    // ✅ PLAN-GRÄNS: deltagare (skaparen + inbjudna) och sessioner/månad.
+    // Konsumerar en session här — en gång per grupp som skapas, oavsett
+    // hur många gånger gruppen sedan pollas/visas.
+    const planCheck = await enforceSessionLimits(senderEmail, inviteEmails.length + 1);
+    if (!planCheck.ok) {
+      return res.status(planCheck.statusCode).json(planCheck.body);
+    }
+
     // ✅ VALIDATION: GROUPNAME LENGTH
     if (rawGroupName && typeof rawGroupName !== 'string') {
       throw new BookRError('Group name must be a string', 400, 'INVALID_GROUP_NAME');
@@ -2567,6 +2627,12 @@ app.get('/api/group/:groupId/status', pollingLimiter, validateGroup, (req, res) 
 
 app.post('/api/availability', async (req, res) => {
   try {
+    // ✅ Krävs för att kunna räkna sessionen mot rätt plan — direkt
+    // jämförelse (utan grupp) hade tidigare ingen inloggningsspärr alls.
+    if (!req.user?.email) {
+      return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+    }
+
     const { tokens, timeMin, timeMax, duration = 60, dayStart = '09:00', dayEnd = '17:00' } = req.body;
 
     // ✅ VALIDATION: REQUIRED FIELDS
@@ -2589,6 +2655,13 @@ app.post('/api/availability', async (req, res) => {
     const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
     if (!timePattern.test(dayStart) || !timePattern.test(dayEnd)) {
       return res.status(400).json({ error: 'dayStart and dayEnd must be HH:MM format', code: 'INVALID_TIME_FORMAT' });
+    }
+
+    // ✅ PLAN-GRÄNS: deltagare (antal tokens = antal kalendrar i jämförelsen)
+    // och sessioner/månad. Konsumerar en session per lyckad direkt-jämförelse.
+    const planCheck = await enforceSessionLimits(req.user.email, tokens.length);
+    if (!planCheck.ok) {
+      return res.status(planCheck.statusCode).json(planCheck.body);
     }
 
     console.log('📅 Calendar comparison request:', {

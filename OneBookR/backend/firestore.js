@@ -1,5 +1,6 @@
 // firestore.js
 import admin from 'firebase-admin';
+import { currentPeriodKey } from './plans.js';
 
 // ✅ ROBUST INITIALIZATION WITH ERROR HANDLING
 let db = null;
@@ -430,6 +431,47 @@ async function getUserBilling(email) {
   }
 }
 
+// ✅ ANVÄNDNING — sessioner/månad per plan (se plans.js). En doc per
+// användare+månad ('usage_monthly/{email}_{YYYY-MM}'), atomisk increment
+// via transaktion så två samtidiga requests inte båda kan slinka under
+// gränsen. sessionsPerMonth=null (obegränsat) konsumerar aldrig — vi
+// räknar ändå för statistikens skull, men nekar aldrig.
+async function checkAndConsumeSession(email, sessionsPerMonth) {
+  const normalizedEmail = email.toLowerCase().trim();
+  const periodKey = currentPeriodKey();
+  const docRef = getDb().collection('usage_monthly').doc(`${normalizedEmail}_${periodKey}`);
+
+  return getDb().runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+    const used = snap.exists ? (snap.data().sessionsUsed || 0) : 0;
+
+    if (sessionsPerMonth !== null && used >= sessionsPerMonth) {
+      return { allowed: false, used, limit: sessionsPerMonth };
+    }
+
+    tx.set(docRef, {
+      email: normalizedEmail,
+      periodKey,
+      sessionsUsed: used + 1,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    return { allowed: true, used: used + 1, limit: sessionsPerMonth };
+  });
+}
+
+async function getMonthlyUsage(email) {
+  try {
+    const normalizedEmail = email.toLowerCase().trim();
+    const periodKey = currentPeriodKey();
+    const docSnap = await getDb().collection('usage_monthly').doc(`${normalizedEmail}_${periodKey}`).get();
+    return { periodKey, sessionsUsed: docSnap.exists ? (docSnap.data().sessionsUsed || 0) : 0 };
+  } catch (err) {
+    console.error('Error getting monthly usage:', err);
+    return { periodKey: currentPeriodKey(), sessionsUsed: 0 };
+  }
+}
+
 // ✅ BOOKING SESSIONS
 async function createBookingSession(sessionData) {
   const docRef = getDb().collection('booking_sessions').doc();
@@ -699,6 +741,10 @@ export {
   // Billing (Stripe)
   setUserBilling,
   getUserBilling,
+
+  // Usage (plan-gränser)
+  checkAndConsumeSession,
+  getMonthlyUsage,
 
   // GDPR & Audit
   deleteUserData,

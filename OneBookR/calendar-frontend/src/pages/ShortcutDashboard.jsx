@@ -78,7 +78,19 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [teams, setTeams] = useState([]);
   const [hasDirectAccessTeam, setHasDirectAccessTeam] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' eller 'team'
+  const [billingStatus, setBillingStatus] = useState(null); // plan + usage.sessionsUsed/-Limit/maxParticipants
 
+  // ✅ Plan-användning — så man som Free/Pro/Business-användare kan se hur
+  // mycket man har kvar innan man stöter i taket. Tyst fel = ingen widget,
+  // stör aldrig resten av dashboarden.
+  useEffect(() => {
+    const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
+    if (!userEmail) return;
+    apiRequest('/api/billing/status')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => data && setBillingStatus(data))
+      .catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
@@ -601,6 +613,47 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
               : 'Allt är uppdaterat — inget väntar på ditt svar just nu.'}
           </Typography>
         </Box>
+
+        {/* ✅ Plan-användning: hur många kalenderjämförelser som är kvar denna
+            månad + deltagartak. Visas bara när vi faktiskt har datan. */}
+        {billingStatus?.usage && (() => {
+          const { sessionsUsed, sessionsLimit, maxParticipants } = billingStatus.usage;
+          const unlimited = sessionsLimit === null;
+          const atLimit = !unlimited && sessionsUsed >= sessionsLimit;
+          const planLabels = { free: 'Free', pro: 'Pro', business: 'Business', enterprise: 'Enterprise' };
+          return (
+            <Box
+              sx={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap',
+                mb: 3.5, px: 2.5, py: 1.75, borderRadius: 3.5, border: '1px solid var(--border)',
+                bgcolor: atLimit ? 'rgba(180,35,24,0.04)' : 'var(--surface-strong)'
+              }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 700, color: atLimit ? 'var(--error)' : 'var(--text)' }}>
+                  {unlimited
+                    ? 'Obegränsade kalenderjämförelser'
+                    : `${sessionsUsed} av ${sessionsLimit} kalenderjämförelser använda denna månad`}
+                </Typography>
+                <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', mt: 0.25 }}>
+                  {planLabels[billingStatus.plan] || 'Free'}-plan · max {maxParticipants} deltagare per jämförelse
+                </Typography>
+              </Box>
+              {!unlimited && (
+                <Button
+                  href="/priser"
+                  size="small"
+                  variant={atLimit ? 'contained' : 'outlined'}
+                  sx={atLimit
+                    ? { bgcolor: 'var(--text)', color: 'var(--surface-strong)', fontWeight: 700, borderRadius: 999, boxShadow: 'none', '&:hover': { bgcolor: '#000' } }
+                    : { borderColor: 'var(--border)', color: 'var(--text)', fontWeight: 700, borderRadius: 999 }}
+                >
+                  Uppgradera
+                </Button>
+              )}
+            </Box>
+          );
+        })()}
 
         {/* Aktivitetsflöde — inbjudningar och tidsförslag, alltid synligt högst upp */}
         {(invites.length > 0 || timeProposals.length > 0) && (

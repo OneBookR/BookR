@@ -523,7 +523,10 @@ export default function CompareCalendar({
           TokenValidator.handleTokenExpiration();
           return;
         }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // ✅ Plan-gränser (deltagare/session) skickar ett läsbart error-
+        // meddelande från servern — visa det istället för en generisk
+        // "HTTP 403: Forbidden" som gömmer vad som faktiskt hände.
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
       }
       
       const data = await response.json();
