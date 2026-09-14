@@ -69,6 +69,7 @@ const PLANS = [
     dark: true,
     plusOf: 'Business',
     features: [
+      'Upp till 50 deltagare per session',
       'Förhandlat årsavtal med volymvillkor',
       'Dedikerad onboarding för teamet',
     ],

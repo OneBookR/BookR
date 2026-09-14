@@ -8,7 +8,7 @@ export const PLAN_LIMITS = {
   free:       { sessionsPerMonth: 3,    maxParticipants: 5 },
   pro:        { sessionsPerMonth: null, maxParticipants: 10 }, // null = obegränsat
   business:   { sessionsPerMonth: null, maxParticipants: 20 },
-  enterprise: { sessionsPerMonth: null, maxParticipants: 20 },
+  enterprise: { sessionsPerMonth: null, maxParticipants: 50 },
 };
 
 export function limitsForPlan(plan) {
