@@ -202,7 +202,13 @@ export default function Pricing({ user }) {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'var(--background)' }}>
-      <LandingHeader returnTo="/priser" />
+      {/* "Logga in" i headern hade ingen returnTo-signal, så en inloggning
+          landade tillbaka på /priser utan att skickas vidare någonstans —
+          sidan bara stod still. Återanvänder welcome=free-effekten nedan
+          (skickar in i appen efter inloggning); ofarligt för redan
+          registrerade — den sätter bara Free-åtkomst om kontot INTE redan
+          har åtkomst (se hasStoredAccess-skyddet i OAuth-callbacken). */}
+      <LandingHeader returnTo="/priser?welcome=free" />
 
       {activating && (
         <Box sx={{ maxWidth: 480, mx: 'auto', px: 3, pt: { xs: 10, md: 16 }, textAlign: 'center' }}>
