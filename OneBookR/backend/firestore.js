@@ -201,7 +201,7 @@ async function createInvitation(invitationData) {
 
   try {
     const docRef = getDb().collection('invitations').doc();
-    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 dagar
     
     const sanitizedData = {
       email: invitationData.email.toLowerCase().trim(),
@@ -230,9 +230,19 @@ async function getInvitationsByEmail(email) {
     .where('email', '==', email)
     .where('responded', '==', false)
     .get();
-  
+
+  const now = new Date();
   return snapshot.docs
     .map(doc => ({ id: doc.id, ...doc.data(), createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt }))
+    // ✅ Gamla/utgångna inbjudningar (expiresAt passerat) filtreras bort här
+    // istället för att raderas — de ligger kvar i Firestore om man skulle
+    // behöva slå upp dem, men skräpar inte längre ner "Väntar på dig".
+    // Inbjudningar utan expiresAt (borde inte förekomma, men failsafe) visas.
+    .filter(inv => {
+      if (!inv.expiresAt) return true;
+      const expiry = inv.expiresAt.toDate?.() || new Date(inv.expiresAt);
+      return expiry > now;
+    })
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
