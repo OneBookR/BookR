@@ -881,18 +881,26 @@ async function fetchMicrosoftCalendarEvents(token, timeMin, timeMax, userEmail) 
 // deltagare på dina kalenderhändelser"). Den här funktionen gör precis det
 // undantaget, och får därför BARA anropas efter uttryckligt samtycke
 // (calendarDetailsConsent) — se /api/calendar/upcoming nedan.
+//
+// ✅ Bara händelser med en möteslänk (Google Meet/Teams m.fl.) tas med —
+// privata kalenderposter utan möteslänk (läkarbesök, "Tandläkare", etc.)
+// filtreras bort innan de ens mappas till svaret. Utöver att det är rätt
+// UX (kortet är till för möten man ska GÅ MED i) är det bättre GDPR-
+// minimering: färre händelsers titlar lämnar Google/Microsofts API över
+// huvud taget. maxResults höjs till 25 för att kompensera bortfallet —
+// listan visar ändå max 5.
 async function fetchUpcomingMeetingsWithDetails(token, provider, timeMin, timeMax) {
   if (provider === 'microsoft') {
     const url = `https://graph.microsoft.com/v1.0/me/calendarView?` +
       `startDateTime=${encodeURIComponent(timeMin)}&endDateTime=${encodeURIComponent(timeMax)}&` +
       `$select=subject,start,end,isAllDay,isCancelled,onlineMeeting,onlineMeetingUrl&` +
-      `$orderby=start/dateTime&$top=10`;
+      `$orderby=start/dateTime&$top=25`;
     const response = await fetchWithRetry(url, {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Prefer': 'outlook.timezone="UTC"' }
     });
     const data = await response.json();
     return (data.value || [])
-      .filter(e => !e.isCancelled && !e.isAllDay && e.start?.dateTime)
+      .filter(e => !e.isCancelled && !e.isAllDay && e.start?.dateTime && (e.onlineMeetingUrl || e.onlineMeeting?.joinUrl))
       .slice(0, 5)
       .map(e => ({
         id: e.id,
@@ -906,14 +914,14 @@ async function fetchUpcomingMeetingsWithDetails(token, provider, timeMin, timeMa
 
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
     `timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&` +
-    `singleEvents=true&orderBy=startTime&maxResults=10&showDeleted=false&` +
+    `singleEvents=true&orderBy=startTime&maxResults=25&showDeleted=false&` +
     `fields=items(id,summary,start,end,status,hangoutLink,conferenceData/entryPoints)`;
   const response = await fetchWithRetry(url, {
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
   });
   const data = await response.json();
   return (data.items || [])
-    .filter(e => e.status !== 'cancelled' && e.start?.dateTime)
+    .filter(e => e.status !== 'cancelled' && e.start?.dateTime && (e.hangoutLink || e.conferenceData?.entryPoints?.some(p => p.entryPointType === 'video')))
     .slice(0, 5)
     .map(e => ({
       id: e.id,

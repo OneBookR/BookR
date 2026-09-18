@@ -180,7 +180,7 @@ export default function UpcomingMeetingsCard({ initialConsent }) {
             </Typography>
             <Typography sx={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
               <Box component="span" sx={{ color: 'var(--text)', fontWeight: 700 }}>Idag läser BookR aldrig innehållet i din kalender</Box>{' '}
-              — vi kollar bara ledigt/upptaget. Slår du på det här visar vi mötestitlar och tider för de kommande två veckorna, direkt i översikten.
+              — vi kollar bara ledigt/upptaget. Slår du på det här visar vi mötestitlar och tider för de kommande två veckornas videomöten (Google Meet, Teams m.fl.), direkt i översikten.
             </Typography>
             <Typography sx={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-secondary)', mt: 0.5 }}>
               Frivilligt, gäller bara den här vyn, och du stänger av det när du vill.
@@ -218,7 +218,7 @@ export default function UpcomingMeetingsCard({ initialConsent }) {
         </Box>
       ) : meetings.length === 0 ? (
         <Box sx={{ py: 4, px: 2, textAlign: 'center', borderRadius: 3.5, bgcolor: 'rgba(17,24,39,0.02)', border: '1px dashed rgba(17,24,39,0.12)' }}>
-          <Typography sx={{ color: 'var(--text-secondary)', fontSize: 14 }}>Inga möten de kommande två veckorna.</Typography>
+          <Typography sx={{ color: 'var(--text-secondary)', fontSize: 14 }}>Inga videomöten inbokade de kommande två veckorna.</Typography>
         </Box>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
@@ -251,7 +251,7 @@ export default function UpcomingMeetingsCard({ initialConsent }) {
                     {[duration, provider].filter(Boolean).join(' · ') || 'Möte'}
                   </Typography>
                 </Box>
-                {soon && !joinUrl && (
+                {soon && (
                   <Typography sx={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--success)', bgcolor: 'rgba(31,122,77,0.1)', px: 1.1, py: 0.5, borderRadius: 999, flexShrink: 0 }}>
                     {soon}
                   </Typography>
