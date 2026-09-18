@@ -79,6 +79,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [hasDirectAccessTeam, setHasDirectAccessTeam] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' eller 'team'
   const [billingStatus, setBillingStatus] = useState(null); // plan + usage.sessionsUsed/-Limit/maxParticipants
+  const [feedExpanded, setFeedExpanded] = useState(false); // "Väntar på dig" — visa fler än de första 4
 
   // ✅ Plan-användning — så man som Free/Pro/Business-användare kan se hur
   // mycket man har kvar innan man stöter i taket. Tyst fel = ingen widget,
@@ -556,6 +557,86 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const pendingCount = invites.length + timeProposals.length;
   const greetingName = (user?.displayName || currentUserEmail || '').split(' ')[0] || currentUserEmail;
 
+  // ✅ "Väntar på dig" kan i praktiken bli väldigt långt (t.ex. gamla
+  // testinbjudningar) — bara de första FEED_VISIBLE_LIMIT raderna visas
+  // direkt, resten döljs bakom "Visa X till" i en skrollbar lista istället
+  // för att svälla hela dashboarden.
+  const FEED_VISIBLE_LIMIT = 4;
+  const feedItems = [
+    ...invites.map((data, i) => ({ kind: 'invite', key: `invite-${i}`, data })),
+    ...timeProposals.map((data, i) => ({ kind: 'proposal', key: `proposal-${i}`, data })),
+  ];
+  const visibleFeedItems = feedItems.slice(0, FEED_VISIBLE_LIMIT);
+  const hiddenFeedItems = feedItems.slice(FEED_VISIBLE_LIMIT);
+
+  const renderFeedItem = (item) => {
+    if (item.kind === 'invite') {
+      const invite = item.data;
+      return (
+        <Box
+          key={item.key}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 2, p: '18px 20px',
+            borderRadius: 4.5, border: '1.5px solid rgba(17,24,39,0.14)',
+            bgcolor: 'var(--surface-strong)', boxShadow: '0 18px 40px rgba(15,23,42,0.05)'
+          }}
+        >
+          <Box sx={{ width: 40, height: 40, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--text)' }}>
+            {invite.type === 'contact_request' ? <PersonIcon sx={{ fontSize: 19 }} /> : <GroupIcon sx={{ fontSize: 19 }} />}
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }} noWrap>
+              {invite.type === 'contact_request' ? 'Kontaktförfrågan' : (invite.groupName || 'Kalenderjämförelse')}
+            </Typography>
+            <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', mt: 0.25 }} noWrap>
+              Från: {invite.fromName || invite.fromEmail}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+            {invite.type === 'contact_request' ? (
+              <>
+                <Button size="small" variant="outlined" onClick={() => handleInviteResponse(invite.id, null, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)', borderRadius: 2.5 }}>Neka</Button>
+                <Button size="small" variant="contained" onClick={() => handleInviteResponse(invite.id, null, 'accept')} sx={{ bgcolor: 'var(--text)', borderRadius: 2.5, '&:hover': { bgcolor: '#000' } }}>Acceptera</Button>
+              </>
+            ) : (
+              <>
+                <Button size="small" variant="outlined" onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)', borderRadius: 2.5 }}>Neka</Button>
+                <Button size="small" variant="contained" onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')} sx={{ bgcolor: 'var(--text)', borderRadius: 2.5, '&:hover': { bgcolor: '#000' } }}>Gå med</Button>
+              </>
+            )}
+          </Box>
+        </Box>
+      );
+    }
+    const proposal = item.data;
+    return (
+      <Box
+        key={item.key}
+        sx={{
+          display: 'flex', alignItems: 'center', gap: 2, p: '18px 20px',
+          borderRadius: 4.5, border: '1.5px solid rgba(17,24,39,0.14)',
+          bgcolor: 'var(--surface-strong)', boxShadow: '0 18px 40px rgba(15,23,42,0.05)'
+        }}
+      >
+        <Box sx={{ width: 40, height: 40, borderRadius: 3, bgcolor: 'rgba(31,122,77,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--success)' }}>
+          <AccessTimeIcon sx={{ fontSize: 19 }} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }} noWrap>
+            {proposal.title || 'Tidsförslag'}: {formatProposalDateTime(proposal)}
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', mt: 0.25 }} noWrap>
+            Föreslaget av {proposal.fromEmail}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+          <Button size="small" variant="outlined" onClick={() => handleProposalResponse(proposal.id, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)', borderRadius: 2.5 }}>Neka</Button>
+          <Button size="small" variant="contained" onClick={() => handleProposalResponse(proposal.id, 'accept')} sx={{ bgcolor: 'var(--text)', borderRadius: 2.5, '&:hover': { bgcolor: '#000' } }}>Acceptera</Button>
+        </Box>
+      </Box>
+    );
+  };
+
   return (
     <>
       {/* ✅ BUGFIX: maxWidth="sm" är MUI:s breakpoint-namn för 600px, inte
@@ -615,71 +696,34 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           );
         })()}
 
-        {/* Aktivitetsflöde — inbjudningar och tidsförslag, alltid synligt högst upp */}
-        {(invites.length > 0 || timeProposals.length > 0) && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 4.5 }}>
-            {invites.map((invite, index) => (
-              <Box
-                key={`invite-${index}`}
-                sx={{
-                  display: 'flex', alignItems: 'center', gap: 2, p: '18px 20px',
-                  borderRadius: 4.5, border: '1.5px solid rgba(17,24,39,0.14)',
-                  bgcolor: 'var(--surface-strong)', boxShadow: '0 18px 40px rgba(15,23,42,0.05)'
-                }}
-              >
-                <Box sx={{ width: 40, height: 40, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--text)' }}>
-                  {invite.type === 'contact_request' ? <PersonIcon sx={{ fontSize: 19 }} /> : <GroupIcon sx={{ fontSize: 19 }} />}
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }} noWrap>
-                    {invite.type === 'contact_request' ? 'Kontaktförfrågan' : (invite.groupName || 'Kalenderjämförelse')}
-                  </Typography>
-                  <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', mt: 0.25 }} noWrap>
-                    Från: {invite.fromName || invite.fromEmail}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                  {invite.type === 'contact_request' ? (
-                    <>
-                      <Button size="small" variant="outlined" onClick={() => handleInviteResponse(invite.id, null, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)', borderRadius: 2.5 }}>Neka</Button>
-                      <Button size="small" variant="contained" onClick={() => handleInviteResponse(invite.id, null, 'accept')} sx={{ bgcolor: 'var(--text)', borderRadius: 2.5, '&:hover': { bgcolor: '#000' } }}>Acceptera</Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button size="small" variant="outlined" onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)', borderRadius: 2.5 }}>Neka</Button>
-                      <Button size="small" variant="contained" onClick={() => handleInviteResponse(invite.groupId, invite.inviteeId, 'accept')} sx={{ bgcolor: 'var(--text)', borderRadius: 2.5, '&:hover': { bgcolor: '#000' } }}>Gå med</Button>
-                    </>
-                  )}
-                </Box>
-              </Box>
-            ))}
+        {/* Aktivitetsflöde — inbjudningar och tidsförslag, alltid synligt högst upp.
+            Bara de första FEED_VISIBLE_LIMIT visas direkt; resten döljs bakom
+            "Visa X till" i en skrollbar lista (t.ex. gamla testinbjudningar ska
+            inte kunna svälla ut hela sidan). */}
+        {feedItems.length > 0 && (
+          <Box sx={{ mb: 4.5 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {visibleFeedItems.map(renderFeedItem)}
+            </Box>
 
-            {timeProposals.map((proposal, index) => (
-              <Box
-                key={`proposal-${index}`}
-                sx={{
-                  display: 'flex', alignItems: 'center', gap: 2, p: '18px 20px',
-                  borderRadius: 4.5, border: '1.5px solid rgba(17,24,39,0.14)',
-                  bgcolor: 'var(--surface-strong)', boxShadow: '0 18px 40px rgba(15,23,42,0.05)'
-                }}
-              >
-                <Box sx={{ width: 40, height: 40, borderRadius: 3, bgcolor: 'rgba(31,122,77,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--success)' }}>
-                  <AccessTimeIcon sx={{ fontSize: 19 }} />
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }} noWrap>
-                    {proposal.title || 'Tidsförslag'}: {formatProposalDateTime(proposal)}
-                  </Typography>
-                  <Typography sx={{ fontSize: 13, color: 'var(--text-secondary)', mt: 0.25 }} noWrap>
-                    Föreslaget av {proposal.fromEmail}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                  <Button size="small" variant="outlined" onClick={() => handleProposalResponse(proposal.id, 'decline')} sx={{ borderColor: 'var(--border)', color: 'var(--text)', borderRadius: 2.5 }}>Neka</Button>
-                  <Button size="small" variant="contained" onClick={() => handleProposalResponse(proposal.id, 'accept')} sx={{ bgcolor: 'var(--text)', borderRadius: 2.5, '&:hover': { bgcolor: '#000' } }}>Acceptera</Button>
-                </Box>
-              </Box>
-            ))}
+            {hiddenFeedItems.length > 0 && (
+              <>
+                {feedExpanded && (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1.5, maxHeight: 360, overflowY: 'auto', pr: 0.5 }}>
+                    {hiddenFeedItems.map(renderFeedItem)}
+                  </Box>
+                )}
+                <Button
+                  onClick={() => setFeedExpanded((v) => !v)}
+                  sx={{
+                    mt: 1.5, fontSize: 13, fontWeight: 700, textTransform: 'none', color: 'var(--text-secondary)',
+                    borderRadius: 2.5, px: 1.5, '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' }
+                  }}
+                >
+                  {feedExpanded ? 'Visa färre' : `Visa ${hiddenFeedItems.length} till`}
+                </Button>
+              </>
+            )}
           </Box>
         )}
 
