@@ -697,32 +697,33 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         })()}
 
         {/* Aktivitetsflöde — inbjudningar och tidsförslag, alltid synligt högst upp.
-            Bara de första FEED_VISIBLE_LIMIT visas direkt; resten döljs bakom
-            "Visa X till" i en skrollbar lista (t.ex. gamla testinbjudningar ska
-            inte kunna svälla ut hela sidan). */}
+            Kollapsat: bara de första FEED_VISIBLE_LIMIT, statiskt (ingen scroll).
+            Expanderat ("Visa X till"): ALLA (de 4 + resten) i EN skrollbar
+            rullgardinsmeny, så man scrollar igenom hela listan i ett — inte två
+            separata block. (T.ex. gamla testinbjudningar ska inte kunna svälla
+            ut hela sidan när den är kollapsad.) */}
         {feedItems.length > 0 && (
           <Box sx={{ mb: 4.5 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              {visibleFeedItems.map(renderFeedItem)}
+            <Box
+              sx={
+                feedExpanded
+                  ? { display: 'flex', flexDirection: 'column', gap: 1.5, maxHeight: 420, overflowY: 'auto', pr: 0.5 }
+                  : { display: 'flex', flexDirection: 'column', gap: 1.5 }
+              }
+            >
+              {(feedExpanded ? feedItems : visibleFeedItems).map(renderFeedItem)}
             </Box>
 
             {hiddenFeedItems.length > 0 && (
-              <>
-                {feedExpanded && (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1.5, maxHeight: 360, overflowY: 'auto', pr: 0.5 }}>
-                    {hiddenFeedItems.map(renderFeedItem)}
-                  </Box>
-                )}
-                <Button
-                  onClick={() => setFeedExpanded((v) => !v)}
-                  sx={{
-                    mt: 1.5, fontSize: 13, fontWeight: 700, textTransform: 'none', color: 'var(--text-secondary)',
-                    borderRadius: 2.5, px: 1.5, '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' }
-                  }}
-                >
-                  {feedExpanded ? 'Visa färre' : `Visa ${hiddenFeedItems.length} till`}
-                </Button>
-              </>
+              <Button
+                onClick={() => setFeedExpanded((v) => !v)}
+                sx={{
+                  mt: 1.5, fontSize: 13, fontWeight: 700, textTransform: 'none', color: 'var(--text-secondary)',
+                  borderRadius: 2.5, px: 1.5, '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' }
+                }}
+              >
+                {feedExpanded ? 'Visa färre' : `Visa ${hiddenFeedItems.length} till`}
+              </Button>
             )}
           </Box>
         )}
