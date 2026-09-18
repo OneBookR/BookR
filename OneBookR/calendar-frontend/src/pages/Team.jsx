@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Container, Typography, Box, Button, Card, CardContent, Grid, TextField,
   Dialog, DialogTitle, DialogContent, DialogActions, Paper, Snackbar, Alert,
-  Switch, FormControlLabel, Chip, Autocomplete, Checkbox, Tabs, Tab, Avatar
+  Switch, FormControlLabel, Chip, Autocomplete, Checkbox, Tabs, Tab, Avatar,
+  CircularProgress
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
@@ -15,6 +16,9 @@ import CheckBox from '@mui/icons-material/CheckBox';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
+import LinkIcon from '@mui/icons-material/Link';
+import HourglassTopIcon from '@mui/icons-material/HourglassTop';
+import BoltIcon from '@mui/icons-material/Bolt';
 import { apiRequest } from '../utils/apiConfig.js';
 
 const icon = <CheckBoxOutlineBlank fontSize="small" />;
@@ -24,7 +28,6 @@ export default function Team({ user, onNavigateBack }) {
   const [currentTab, setCurrentTab] = useState(0);
   const [contacts, setContacts] = useState([]);
   const [teams, setTeams] = useState([]);
-  const [contactRequests, setContactRequests] = useState([]);
   const [newContact, setNewContact] = useState({ name: '', email: '' });
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
@@ -33,9 +36,36 @@ export default function Team({ user, onNavigateBack }) {
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const [loading, setLoading] = useState(true);
 
+  // ✅ Direktåtkomst — riktig, backend-synkad relation (Firestore), till
+  // skillnad från contacts/teams ovan som förblir en lokal adressbok.
+  const [directAccessRequests, setDirectAccessRequests] = useState({ received: [], sent: [] });
+  const [directAccessLinks, setDirectAccessLinks] = useState([]);
+  const [directAccessBusyEmail, setDirectAccessBusyEmail] = useState(null); // vilken rad som just nu laddar
+  const [calendarLinkPrompt, setCalendarLinkPrompt] = useState(null); // { returnTo } | null
+
   const userEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0];
 
-  // Load contacts, teams and contact requests from localStorage
+  const linkedEmails = useMemo(
+    () => new Set(directAccessLinks.map(l => l.withEmail?.toLowerCase())),
+    [directAccessLinks]
+  );
+  const pendingSentEmails = useMemo(
+    () => new Set(directAccessRequests.sent.map(r => r.toEmail?.toLowerCase())),
+    [directAccessRequests.sent]
+  );
+
+  const loadDirectAccessData = useCallback(() => {
+    apiRequest('/api/direct-access/requests')
+      .then(res => (res.ok ? res.json() : { received: [], sent: [] }))
+      .then(data => setDirectAccessRequests({ received: data.received || [], sent: data.sent || [] }))
+      .catch(() => {});
+    apiRequest('/api/direct-access/links')
+      .then(res => (res.ok ? res.json() : { links: [] }))
+      .then(data => setDirectAccessLinks(data.links || []))
+      .catch(() => {});
+  }, []);
+
+  // Load contacts + teams (lokal adressbok) och direktåtkomst (backend)
   useEffect(() => {
     if (userEmail) {
       setLoading(true);
@@ -43,13 +73,137 @@ export default function Team({ user, onNavigateBack }) {
       const savedTeams = JSON.parse(localStorage.getItem(`bookr_teams_${userEmail}`) || '[]');
       setContacts(savedContacts);
       setTeams(savedTeams);
-      // Kontaktförfrågningar är avstängda tills direktåtkomst-flödet är klart.
-      // Läser INTE in gamla localStorage-poster (de kunde se ut som att någon
-      // bjudit in dig fast du var den som la till dem).
-      setContactRequests([]);
       setLoading(false);
+      loadDirectAccessData();
     }
-  }, [userEmail]);
+  }, [userEmail, loadDirectAccessData]);
+
+  // ✅ Läser ?tab= och ?directAccessLink= från URL:en — den senare kommer
+  // tillbaka från /auth/google|microsoft/direct-access-kopplingen (se
+  // server.js). Städar bort båda ur URL:en efter läsning.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'requests') setCurrentTab(2);
+    else if (tab === 'teams') setCurrentTab(1);
+
+    const linkResult = params.get('directAccessLink');
+    if (linkResult) {
+      const messages = {
+        success: { message: 'Kalendern kopplad! Du kan nu skicka eller acceptera direktåtkomst.', severity: 'success' },
+        failed: { message: 'Kunde inte koppla kalendern. Försök igen.', severity: 'error' },
+        noRefreshToken: { message: 'Google gav ingen ny åtkomst — gå till myaccount.google.com/permissions, ta bort BookR och försök igen.', severity: 'error' },
+        emailMismatch: { message: 'Kopplingen gällde en annan e-postadress än ditt BookR-konto.', severity: 'error' },
+        saveFailed: { message: 'Kalendern kopplades men kunde inte sparas. Försök igen.', severity: 'error' },
+      };
+      const result = messages[linkResult] || { message: 'Något gick fel vid kopplingen.', severity: 'error' };
+      setToast({ open: true, ...result });
+      if (linkResult === 'success') loadDirectAccessData();
+    }
+
+    if (tab || linkResult) {
+      params.delete('tab');
+      params.delete('directAccessLink');
+      const newSearch = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Startar den engångskoppling av kalendern som krävs innan man kan
+  // skicka ELLER acceptera en direktåtkomst-förfrågan (se NEEDS_CALENDAR_LINK
+  // i server.js). tabParam avgör var man hamnar tillbaka efteråt.
+  const startCalendarLink = (tabParam) => {
+    const provider = user?.provider === 'microsoft' ? 'microsoft' : 'google';
+    const returnTo = encodeURIComponent(`/?view=team&tab=${tabParam}`);
+    window.location.href = `/auth/${provider}/direct-access?returnTo=${returnTo}`;
+  };
+
+  const handleRequestDirectAccess = async (toEmail) => {
+    setDirectAccessBusyEmail(toEmail);
+    try {
+      const res = await apiRequest('/api/direct-access/request', {
+        method: 'POST',
+        body: JSON.stringify({ toEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setToast({ open: true, message: `Förfrågan skickad till ${toEmail}`, severity: 'success' });
+        loadDirectAccessData();
+      } else if (data.code === 'NEEDS_CALENDAR_LINK') {
+        setCalendarLinkPrompt({ tabParam: 'contacts' });
+      } else {
+        setToast({ open: true, message: data.error || 'Kunde inte skicka förfrågan', severity: 'error' });
+      }
+    } catch {
+      setToast({ open: true, message: 'Kunde inte skicka förfrågan', severity: 'error' });
+    } finally {
+      setDirectAccessBusyEmail(null);
+    }
+  };
+
+  const handleRespondDirectAccessRequest = async (requestId, response) => {
+    setDirectAccessBusyEmail(requestId);
+    try {
+      const res = await apiRequest(`/api/direct-access/requests/${requestId}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({ response }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setToast({ open: true, message: response === 'accept' ? 'Direktåtkomst aktiverad!' : 'Förfrågan nekad', severity: response === 'accept' ? 'success' : 'info' });
+        loadDirectAccessData();
+      } else if (data.code === 'NEEDS_CALENDAR_LINK') {
+        setCalendarLinkPrompt({ tabParam: 'requests' });
+      } else {
+        setToast({ open: true, message: data.error || 'Kunde inte besvara förfrågan', severity: 'error' });
+      }
+    } catch {
+      setToast({ open: true, message: 'Kunde inte besvara förfrågan', severity: 'error' });
+    } finally {
+      setDirectAccessBusyEmail(null);
+    }
+  };
+
+  const handleRevokeDirectAccess = async (withEmail) => {
+    setDirectAccessBusyEmail(withEmail);
+    try {
+      const res = await apiRequest('/api/direct-access/links/revoke', {
+        method: 'POST',
+        body: JSON.stringify({ withEmail }),
+      });
+      if (res.ok) {
+        setToast({ open: true, message: 'Direktåtkomst avstängd', severity: 'info' });
+        loadDirectAccessData();
+      } else {
+        setToast({ open: true, message: 'Kunde inte stänga av direktåtkomst', severity: 'error' });
+      }
+    } catch {
+      setToast({ open: true, message: 'Kunde inte stänga av direktåtkomst', severity: 'error' });
+    } finally {
+      setDirectAccessBusyEmail(null);
+    }
+  };
+
+  // Startar en kalenderjämförelse DIREKT (inga inbjudningar) med en eller
+  // flera personer man redan har aktiv direktåtkomst med.
+  const startDirectSession = async (emails, groupName) => {
+    setToast({ open: true, message: 'Öppnar kalendrarna...', severity: 'info' });
+    try {
+      const res = await apiRequest('/api/direct-access/start-session', {
+        method: 'POST',
+        body: JSON.stringify({ emails, groupName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.groupId) {
+        window.location.href = `/?group=${data.groupId}`;
+      } else {
+        setToast({ open: true, message: data.error || 'Kunde inte öppna kalendrarna', severity: 'error' });
+      }
+    } catch {
+      setToast({ open: true, message: 'Kunde inte öppna kalendrarna', severity: 'error' });
+    }
+  };
 
   // --- Contact Management ---
   const handleAddContact = async () => {
@@ -79,15 +233,6 @@ export default function Team({ user, onNavigateBack }) {
     localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
     setContacts(updatedContacts);
     setToast({ open: true, message: 'Kontakt borttagen', severity: 'info' });
-  };
-
-  const handleToggleDirectAccess = (contactId) => {
-    const updatedContacts = contacts.map(c =>
-      c.id === contactId ? { ...c, directAccess: !c.directAccess } : c
-    );
-    localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
-    setContacts(updatedContacts);
-    setToast({ open: true, message: 'Inställning sparad!', severity: 'success' });
   };
 
   // --- Team Management ---
@@ -134,18 +279,17 @@ export default function Team({ user, onNavigateBack }) {
     setToast({ open: true, message: 'Team borttaget', severity: 'info' });
   };
 
+  // ✅ Om avsändaren har aktiv direktåtkomst till ALLA medlemmar: gå rakt
+  // in i en gemensam kalenderjämförelse — inga inbjudningar, inget
+  // väntande. Annars: dagens beteende (riktiga mejlinbjudningar).
   const handleStartComparison = async (team) => {
     const memberEmails = team.members.map(m => m.email);
-    const directAccessEmails = team.members
-      .filter(member => {
-        const contact = contacts.find(c => c.email === member.email);
-        return contact && contact.directAccess;
-      })
-      .map(member => member.email);
-    const allHaveDirectAccess = team.members.every(member => {
-        const contact = contacts.find(c => c.email === member.email);
-        return contact && contact.directAccess;
-    });
+    const allHaveDirectAccess = memberEmails.every(e => linkedEmails.has(e.toLowerCase()));
+
+    if (allHaveDirectAccess) {
+      await startDirectSession(memberEmails, `${team.name} - Kalenderjämförelse`);
+      return;
+    }
 
     setToast({ open: true, message: 'Startar kalenderjämförelse...', severity: 'info' });
 
@@ -157,7 +301,6 @@ export default function Team({ user, onNavigateBack }) {
           emails: memberEmails,
           fromUser: userEmail,
           groupName: `${team.name} - Kalenderjämförelse`,
-          directAccessEmails
         })
       });
 
@@ -167,23 +310,20 @@ export default function Team({ user, onNavigateBack }) {
       }
 
       const data = await response.json();
-      
+
       if (data.groupId) {
-        setToast({ 
-          open: true, 
-          message: `Kalenderjämförelse startad! Inbjudningar skickade till ${memberEmails.length} medlemmar.`, 
-          severity: 'success' 
+        setToast({
+          open: true,
+          message: `Kalenderjämförelse startad! Inbjudningar skickade till ${memberEmails.length} medlemmar.`,
+          severity: 'success'
         });
 
         // Navigera till kalenderjämförelsen
         const params = new URLSearchParams();
         params.append('group', data.groupId);
-        if (allHaveDirectAccess) {
-          params.append('directAccess', 'true');
-        }
         params.append('teamName', team.name);
         memberEmails.forEach(email => params.append('contactEmail', email));
-        
+
         setTimeout(() => {
           window.location.href = `/?${params.toString()}`;
         }, 1500);
@@ -194,31 +334,6 @@ export default function Team({ user, onNavigateBack }) {
       console.error('Error starting team comparison:', err);
       setToast({ open: true, message: 'Fel vid start av kalenderjämförelse', severity: 'error' });
     }
-  };
-
-  // Handle contact requests
-  const handleContactRequest = (requestId, action) => {
-    const request = contactRequests.find(r => r.id === requestId);
-    if (!request) return;
-    
-    if (action === 'accept') {
-      // Lägg till som kontakt
-      const newContact = {
-        id: Date.now(),
-        name: request.fromName,
-        email: request.fromEmail,
-        directAccess: false
-      };
-      const updatedContacts = [...contacts, newContact];
-      localStorage.setItem(`bookr_team_contacts_${userEmail}`, JSON.stringify(updatedContacts));
-      setContacts(updatedContacts);
-      setToast({ open: true, message: `${request.fromName} är nu din kontakt!`, severity: 'success' });
-    }
-    
-    // Ta bort förfrågan
-    const updatedRequests = contactRequests.filter(r => r.id !== requestId);
-    localStorage.setItem(`bookr_contact_requests_${userEmail}`, JSON.stringify(updatedRequests));
-    setContactRequests(updatedRequests);
   };
 
   const pageCardSx = {
@@ -332,7 +447,7 @@ export default function Team({ user, onNavigateBack }) {
           >
             <Tab label={`Kontakter (${contacts.length})`} icon={<PersonIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
             <Tab label={`Team (${teams.length})`} icon={<GroupsIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
-            <Tab label={`Förfrågningar (${contactRequests.length})`} icon={<NotificationsIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
+            <Tab label={`Förfrågningar (${directAccessRequests.received.length})`} icon={<NotificationsIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
           </Tabs>
         </Box>
 
@@ -358,47 +473,101 @@ export default function Team({ user, onNavigateBack }) {
               </Card>
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {contacts.map((contact) => (
-                  <Paper
-                    key={contact.id}
-                    sx={{
-                      ...pageCardSx,
-                      p: 3,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 2,
-                      flexWrap: 'wrap'
-                    }}
-                  >
-                    <Box sx={{ minWidth: 0 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                        <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(17,24,39,0.08)', color: 'var(--text)' }}>
-                          {contact.name?.charAt(0)?.toUpperCase() || '?'}
-                        </Avatar>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'var(--text)' }}>
-                          {contact.name}
+                {contacts.map((contact) => {
+                  const emailKey = contact.email?.toLowerCase();
+                  const isLinked = linkedEmails.has(emailKey);
+                  const isPending = pendingSentEmails.has(emailKey);
+                  const isBusy = directAccessBusyEmail === contact.email;
+                  return (
+                    <Paper
+                      key={contact.id}
+                      sx={{
+                        ...pageCardSx,
+                        p: 3,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 2,
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <Box sx={{ minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
+                          <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(17,24,39,0.08)', color: 'var(--text)' }}>
+                            {contact.name?.charAt(0)?.toUpperCase() || '?'}
+                          </Avatar>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'var(--text)' }}>
+                            {contact.name}
+                          </Typography>
+                          {isLinked && (
+                            <Chip
+                              size="small"
+                              icon={<LinkIcon sx={{ fontSize: 14 }} />}
+                              label="Direktåtkomst aktiv"
+                              sx={{ bgcolor: 'rgba(31,122,77,0.1)', color: 'var(--success)', fontWeight: 700, border: 'none' }}
+                            />
+                          )}
+                          {!isLinked && isPending && (
+                            <Chip
+                              size="small"
+                              icon={<HourglassTopIcon sx={{ fontSize: 14 }} />}
+                              label="Väntar på svar"
+                              sx={{ bgcolor: 'rgba(17,24,39,0.05)', color: 'var(--text-secondary)', fontWeight: 700, border: 'none' }}
+                            />
+                          )}
+                        </Box>
+                        <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+                          {contact.email}
                         </Typography>
                       </Box>
-                      <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
-                        {contact.email}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                      {/* Direktåtkomst-toggeln tillfälligt dold tills funktionen är klar.
-                          handleToggleDirectAccess finns kvar för när den tas tillbaka. */}
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                        onClick={() => handleDeleteContact(contact.id)}
-                        sx={{ ...secondaryButtonSx, color: 'var(--error)', borderColor: 'rgba(180,35,24,0.18)' }}
-                      >
-                        Ta bort
-                      </Button>
-                    </Box>
-                  </Paper>
-                ))}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        {isLinked ? (
+                          <>
+                            <Button
+                              variant="contained"
+                              size="small"
+                              startIcon={<BoltIcon />}
+                              disabled={isBusy}
+                              onClick={() => startDirectSession([contact.email], `Möte med ${contact.name}`)}
+                              sx={primaryButtonSx}
+                            >
+                              Boka möte direkt
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              disabled={isBusy}
+                              onClick={() => handleRevokeDirectAccess(contact.email)}
+                              sx={secondaryButtonSx}
+                            >
+                              Stäng av
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={isBusy ? <CircularProgress size={14} /> : <LinkIcon />}
+                            disabled={isPending || isBusy}
+                            onClick={() => handleRequestDirectAccess(contact.email)}
+                            sx={secondaryButtonSx}
+                          >
+                            {isPending ? 'Väntar på svar' : 'Begär direktåtkomst'}
+                          </Button>
+                        )}
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          size="small"
+                          onClick={() => handleDeleteContact(contact.id)}
+                          sx={{ ...secondaryButtonSx, color: 'var(--error)', borderColor: 'rgba(180,35,24,0.18)' }}
+                        >
+                          Ta bort
+                        </Button>
+                      </Box>
+                    </Paper>
+                  );
+                })}
               </Box>
             )}
           </Box>
@@ -428,10 +597,7 @@ export default function Team({ user, onNavigateBack }) {
             ) : (
               <Grid container spacing={3}>
                 {teams.map(team => {
-                  const allHaveDirectAccess = team.members.every(member => {
-                      const contact = contacts.find(c => c.email === member.email);
-                      return contact && contact.directAccess;
-                  });
+                  const allHaveDirectAccess = team.members.every(member => linkedEmails.has(member.email?.toLowerCase()));
                   return (
                     <Grid item xs={12} sm={6} md={4} key={team.id}>
                       <Card sx={{ ...pageCardSx, p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -446,7 +612,9 @@ export default function Team({ user, onNavigateBack }) {
                           </Box>
                         </CardContent>
                         <Box sx={{ p: 2, pt: 0, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                          <Button variant="contained" size="small" onClick={() => handleStartComparison(team)} sx={primaryButtonSx}>Starta jämföring</Button>
+                          <Button variant="contained" size="small" startIcon={allHaveDirectAccess ? <BoltIcon /> : undefined} onClick={() => handleStartComparison(team)} sx={primaryButtonSx}>
+                            {allHaveDirectAccess ? 'Boka direkt' : 'Starta jämföring'}
+                          </Button>
                           <Button variant="outlined" size="small" onClick={() => handleOpenEditDialog(team)} sx={secondaryButtonSx}>Redigera</Button>
                           <Button variant="outlined" color="error" size="small" onClick={() => handleDeleteTeam(team.id)} sx={{ ...secondaryButtonSx, color: 'var(--error)', borderColor: 'rgba(180,35,24,0.18)' }}>Ta bort</Button>
                         </Box>
@@ -459,72 +627,110 @@ export default function Team({ user, onNavigateBack }) {
           </Box>
         )}
 
-        {/* Contact Requests Tab */}
+        {/* Direktåtkomst-förfrågningar */}
         {currentTab === 2 && (
           <Box>
-            {loading ? (
-              <Typography>Laddar förfrågningar...</Typography>
-            ) : contactRequests.length === 0 ? (
+            {directAccessRequests.received.length === 0 && directAccessRequests.sent.length === 0 ? (
               <Card sx={{ ...pageCardSx, p: 4, textAlign: 'center' }}>
                 <NotificationsIcon sx={{ fontSize: 48, color: 'rgba(17,24,39,0.18)', mb: 2 }} />
                 <Typography variant="h6" sx={{ color: 'var(--text)', fontWeight: 700 }}>Inga förfrågningar</Typography>
-                <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>Du har inga väntande kontaktförfrågningar.</Typography>
+                <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>Du har inga väntande förfrågningar om direktåtkomst.</Typography>
               </Card>
             ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {contactRequests.map((request) => (
-                  <Paper
-                    key={request.id}
-                    sx={{
-                      ...pageCardSx,
-                      p: 3,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 2,
-                      flexWrap: 'wrap'
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'var(--text)' }}>
-                        {request.fromName}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
-                        {request.fromEmail}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
-                        {new Date(request.timestamp).toLocaleDateString()}
-                      </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {directAccessRequests.received.length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 2, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 12.5 }}>
+                      Väntar på dig
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {directAccessRequests.received.map((request) => (
+                        <Paper key={request.id} sx={{ ...pageCardSx, p: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                          <Box>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'var(--text)' }}>
+                              {request.fromEmail}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+                              Vill ha direktåtkomst till din kalender
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button
+                              variant="contained"
+                              size="small"
+                              startIcon={directAccessBusyEmail === request.id ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : <CheckIcon />}
+                              disabled={directAccessBusyEmail === request.id}
+                              onClick={() => handleRespondDirectAccessRequest(request.id, 'accept')}
+                              sx={primaryButtonSx}
+                            >
+                              Acceptera
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              color="error"
+                              size="small"
+                              startIcon={<CloseIcon />}
+                              disabled={directAccessBusyEmail === request.id}
+                              onClick={() => handleRespondDirectAccessRequest(request.id, 'decline')}
+                              sx={{ ...secondaryButtonSx, color: 'var(--error)', borderColor: 'rgba(180,35,24,0.18)' }}
+                            >
+                              Neka
+                            </Button>
+                          </Box>
+                        </Paper>
+                      ))}
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button
-                        variant="contained"
-                        color="success"
-                        size="small"
-                        startIcon={<CheckIcon />}
-                        onClick={() => handleContactRequest(request.id, 'accept')}
-                        sx={primaryButtonSx}
-                      >
-                        Acceptera
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                        startIcon={<CloseIcon />}
-                        onClick={() => handleContactRequest(request.id, 'decline')}
-                        sx={{ ...secondaryButtonSx, color: 'var(--error)', borderColor: 'rgba(180,35,24,0.18)' }}
-                      >
-                        Neka
-                      </Button>
+                  </Box>
+                )}
+
+                {directAccessRequests.sent.length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 2, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: 12.5 }}>
+                      Skickade — väntar på svar
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {directAccessRequests.sent.map((request) => (
+                        <Paper key={request.id} sx={{ ...pageCardSx, p: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                          <Box>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'var(--text)' }}>
+                              {request.toEmail}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+                              Har inte svarat än
+                            </Typography>
+                          </Box>
+                          <Chip size="small" icon={<HourglassTopIcon sx={{ fontSize: 14 }} />} label="Väntar" sx={{ bgcolor: 'rgba(17,24,39,0.05)', color: 'var(--text-secondary)', fontWeight: 700 }} />
+                        </Paper>
+                      ))}
                     </Box>
-                  </Paper>
-                ))}
+                  </Box>
+                )}
               </Box>
             )}
           </Box>
         )}
       </Container>
+
+      {/* Direktåtkomst kräver en engångskoppling av kalendern (offline-samtycke) */}
+      <Dialog open={Boolean(calendarLinkPrompt)} onClose={() => setCalendarLinkPrompt(null)} maxWidth="xs" fullWidth PaperProps={{ sx: { ...pageCardSx, bgcolor: 'rgba(255,255,255,0.96)' } }}>
+        <DialogTitle>Koppla din kalender</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Direktåtkomst kräver en extra, engångskoppling av din kalender — så BookR kan hämta lediga tider åt dig
+            utan att du behöver vara inloggad varje gång. Tar tio sekunder, och du kan stänga av det när du vill.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCalendarLinkPrompt(null)} sx={secondaryButtonSx}>Avbryt</Button>
+          <Button
+            variant="contained"
+            onClick={() => startCalendarLink(calendarLinkPrompt?.tabParam || 'contacts')}
+            sx={primaryButtonSx}
+          >
+            Koppla kalender
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Add Contact Dialog */}
       <Dialog open={addContactOpen} onClose={() => setAddContactOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { ...pageCardSx, bgcolor: 'rgba(255,255,255,0.94)' } }}>

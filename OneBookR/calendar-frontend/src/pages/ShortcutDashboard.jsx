@@ -81,6 +81,19 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [billingStatus, setBillingStatus] = useState(null); // plan + usage.sessionsUsed/-Limit/maxParticipants
   const [feedExpanded, setFeedExpanded] = useState(false); // "Väntar på dig" — visa fler än de första 4
 
+  // ✅ ?view=team i URL:en (t.ex. tillbaka från kalenderkopplingen för
+  // Direktåtkomst, se Team.jsx) växlar direkt till Team-vyn — det finns
+  // ingen egen /team-route, bara detta interna view-state.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'team') {
+      setCurrentView('team');
+      params.delete('view');
+      const rest = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
+    }
+  }, []);
+
   // ✅ Plan-användning — så man som Free/Pro/Business-användare kan se hur
   // mycket man har kvar innan man stöter i taket. Tyst fel = ingen widget,
   // stör aldrig resten av dashboarden.

@@ -5,7 +5,7 @@
 // BookR-kalender för demo-flödet sluta fungera så fort dess access-token
 // gick ut (~1h för Google). Denna modul är den enda källan för "vad är
 // BookRs kalender-token just nu".
-import { getAdminCalendarToken as fetchStoredAdminCalendarToken, saveAdminCalendarToken } from './firestore.js';
+import { getAdminCalendarToken as fetchStoredAdminCalendarToken, saveAdminCalendarToken, getStoredDirectAccessToken, saveDirectAccessToken } from './firestore.js';
 import { decryptToken, encryptToken } from './gdpr-utils.js';
 
 // ✅ In-memory cache — undviker att förnya token på varje enskilt anrop.
@@ -116,4 +116,47 @@ export async function getAdminCalendarToken() {
   }
 
   return { accessToken: cachedAccessToken, provider: cachedProvider, email: cachedEmail };
+}
+
+// ✅ Samma mönster som getAdminCalendarToken ovan, men generaliserat till
+// GODTYCKLIG e-post — grunden för Direktåtkomst: hämtar en giltig
+// access-token för en kontaktperson som gett BookR en engångs offline-
+// koppling (se /auth/google|microsoft/direct-access i server.js), utan att
+// personen behöver vara inloggad just då. In-memory cache per e-post,
+// samma anledning som ovan (access-tokens korta, refresh-token det enda
+// som faktiskt är persisterat).
+const directAccessCache = new Map(); // email -> { accessToken, expiresAt, provider }
+
+export async function getDirectAccessToken(email) {
+  const key = email.toLowerCase().trim();
+  const cached = directAccessCache.get(key);
+  if (cached && Date.now() < cached.expiresAt - 120_000) {
+    return cached;
+  }
+
+  const stored = await getStoredDirectAccessToken(key);
+  if (!stored || !stored.refreshToken) {
+    return null;
+  }
+
+  const refreshToken = decryptToken(stored.refreshToken);
+  if (!refreshToken) {
+    throw new Error(`Direktåtkomst-refreshToken för ${key} kunde inte dekrypteras`);
+  }
+
+  const refreshed = stored.provider === 'microsoft'
+    ? await refreshMicrosoftAccessToken(refreshToken)
+    : await refreshGoogleAccessToken(refreshToken);
+
+  const result = { accessToken: refreshed.accessToken, expiresAt: refreshed.expiresAt, provider: stored.provider };
+  directAccessCache.set(key, result);
+
+  // Microsoft roterar ibland refresh_token vid förnyelse — spara den nya
+  // krypterad, fire-and-forget, annars slutar nästa förnyelse fungera.
+  if (stored.provider === 'microsoft' && refreshed.refreshToken !== refreshToken) {
+    saveDirectAccessToken(key, { provider: 'microsoft', refreshToken: encryptToken(refreshed.refreshToken) })
+      .catch(err => console.warn(`⚠️ Kunde inte spara roterad direktåtkomst-refreshToken för ${key}:`, err.message));
+  }
+
+  return result;
 }

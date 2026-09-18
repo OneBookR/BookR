@@ -23,10 +23,13 @@ import {
   markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed,
   setUserBilling, getUserBilling, checkAndConsumeSession, getMonthlyUsage,
   saveLeadProfile, setLeadProfileStatus, setCalendarDetailsConsent,
-  getInvitationsByEmail, respondToInvitation
+  getInvitationsByEmail, respondToInvitation,
+  saveDirectAccessToken, getStoredDirectAccessToken, createDirectAccessRequest, getDirectAccessRequestsFor,
+  getDirectAccessRequest, respondToDirectAccessRequest, createDirectAccessLink,
+  getDirectAccessLink, listDirectAccessLinksFor, revokeDirectAccessLink
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
-import { getAdminCalendarToken } from './token-refresh.js';
+import { getAdminCalendarToken, getDirectAccessToken } from './token-refresh.js';
 import { upsertHubspotContact } from './hubspot.js';
 import { isBillingConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretSubscription, emailForSubscription } from './billing.js';
 import { limitsForPlan } from './plans.js';
@@ -404,6 +407,105 @@ async function sendInviteEmail(toEmail, fromName, fromEmail, groupName, inviteLi
       stack: error.stack,
       response: error.response?.data || 'No response data'
     });
+    return { success: false, error: error.message };
+  }
+}
+
+// ===== DIREKTÅTKOMST-FÖRFRÅGAN =====
+// Samma mönster som createInviteEmailHtml/sendInviteEmail ovan, men för en
+// helt annan sorts begäran: inte "kom med i den här jämförelsen" utan
+// "koppla din kalender varaktigt med min, så vi slipper skicka inbjudningar
+// framöver". respondLink pekar in i Team-sidans Förfrågningar-flik.
+const createDirectAccessEmailHtml = (fromName, fromEmail, respondLink) => {
+  const safeName = String(fromName || 'Någon').replace(/[<>]/g, '');
+  const safeEmail = String(fromEmail || 'unknown@email.com').replace(/[<>]/g, '');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BookR Direktåtkomst</title>
+</head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f7fa;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 300;">📅 BookR</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Förfrågan om direktåtkomst</p>
+        </div>
+        <div style="padding: 40px 30px;">
+            <h2 style="color: #2c3e50; margin: 0 0 20px 0; font-size: 24px; font-weight: 400;">${safeName} vill koppla kalendrar med dig</h2>
+            <p style="color: #34495e; font-size: 16px; line-height: 1.6; margin: 0 0 15px 0;">
+                <strong>${safeName}</strong> (${safeEmail}) vill ha direktåtkomst till din kalender i BookR — det gör att ni kan boka möten
+                med varandra direkt, utan att skicka en inbjudan varje gång.
+            </p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${respondLink}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: 500; font-size: 16px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">Öppna förfrågan i BookR</a>
+            </div>
+            <p style="color: #7f8c8d; font-size: 14px; line-height: 1.5; margin: 25px 0 0 0;">
+                Helt frivilligt — du väljer själv om du vill acceptera, och kan när som helst stänga av det igen. Ignorerar du det här mejlet händer ingenting.
+            </p>
+        </div>
+        <div style="background: #f8f9fa; padding: 20px 30px; text-align: center; border-top: 1px solid #ecf0f1;">
+            <p style="color: #95a5a6; font-size: 12px; margin: 0;">
+                Det här mejlet skickades via BookR<br>
+                <a href="https://www.onebookr.se" style="color: #3498db; text-decoration: none;">www.onebookr.se</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>`;
+};
+
+const createDirectAccessEmailText = (fromName, fromEmail, respondLink) => {
+  const safeName = String(fromName || 'Någon');
+  const safeEmail = String(fromEmail || 'unknown@email.com');
+
+  return `BookR - Förfrågan om direktåtkomst
+
+Hej!
+
+${safeName} (${safeEmail}) vill ha direktåtkomst till din kalender i BookR — det gör att ni kan boka möten med varandra direkt, utan att skicka en inbjudan varje gång.
+
+Öppna förfrågan: ${respondLink}
+
+Helt frivilligt — du väljer själv om du vill acceptera, och kan när som helst stänga av det igen. Ignorerar du det här mejlet händer ingenting.
+
+Mvh,
+BookR Team
+https://www.onebookr.se`;
+};
+
+async function sendDirectAccessRequestEmail(toEmail, fromName, fromEmail, respondLink) {
+  try {
+    if (!validateEmail(toEmail)) {
+      throw new BookRError('Invalid recipient email address', 400, 'INVALID_EMAIL');
+    }
+    if (!process.env.RESEND_API_KEY) {
+      console.error('❌ RESEND_API_KEY is missing from environment variables');
+      return { success: false, error: 'Email service not configured' };
+    }
+
+    const emailData = {
+      from: 'BookR <noreply@onebookr.se>',
+      to: [toEmail],
+      subject: `🔗 ${fromName} vill ha direktåtkomst till din kalender - BookR`,
+      html: createDirectAccessEmailHtml(fromName, fromEmail, respondLink),
+      text: createDirectAccessEmailText(fromName, fromEmail, respondLink),
+      headers: {
+        'X-Entity-Ref-ID': `direct-access-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      },
+    };
+
+    const result = await resend.emails.send(emailData);
+    if (!result) throw new Error('No response from Resend API');
+    if (result.error) throw new Error(`Resend API error: ${result.error.message || JSON.stringify(result.error)}`);
+
+    const emailId = result.data?.id || result.id;
+    console.log(`✅ Direct-access request email sent to ${toEmail}:`, emailId);
+    return { success: true, id: emailId };
+  } catch (error) {
+    console.error(`❌ Failed to send direct-access email to ${toEmail}:`, error.message);
     return { success: false, error: error.message };
   }
 }
@@ -1547,6 +1649,230 @@ app.post('/api/invitation/:id/respond', async (req, res) => {
   }
 });
 
+// ===== DIREKTÅTKOMST =====
+// Riktig, backend-synkad relation — inte den gamla localStorage-attrappen
+// i Team.jsx. NEEDS_CALENDAR_LINK är inte ett fel: frontend fångar koden
+// och startar /auth/google|microsoft/direct-access, försöker sedan igen.
+app.post('/api/direct-access/request', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+
+  const myEmail = email.toLowerCase().trim();
+  const toEmail = String(req.body?.toEmail || '').toLowerCase().trim();
+  if (!validateEmail(toEmail)) {
+    return res.status(400).json({ error: 'Ogiltig e-postadress', code: 'INVALID_EMAIL' });
+  }
+  if (toEmail === myEmail) {
+    return res.status(400).json({ error: 'Du kan inte begära direktåtkomst till dig själv', code: 'SELF_REQUEST' });
+  }
+
+  try {
+    const myToken = await getStoredDirectAccessToken(myEmail);
+    if (!myToken) {
+      return res.status(409).json({ error: 'Koppla din kalender för direktåtkomst först', code: 'NEEDS_CALENDAR_LINK' });
+    }
+
+    const existingLink = await getDirectAccessLink(myEmail, toEmail);
+    if (existingLink) {
+      return res.status(400).json({ error: 'Ni har redan direktåtkomst', code: 'ALREADY_LINKED' });
+    }
+
+    // Undvik dubbla väntande förfrågningar åt samma håll.
+    const { sent } = await getDirectAccessRequestsFor(myEmail);
+    if (sent.some(r => r.toEmail === toEmail)) {
+      return res.status(400).json({ error: 'Du har redan en väntande förfrågan till den här personen', code: 'ALREADY_PENDING' });
+    }
+
+    const requestId = await createDirectAccessRequest(myEmail, toEmail);
+    const respondLink = `${CONFIG.urls.frontend}/?view=team&tab=requests`;
+    sendDirectAccessRequestEmail(toEmail, req.user.name || req.user.displayName || myEmail, myEmail, respondLink)
+      .catch(err => console.warn('⚠️ Kunde inte skicka direktåtkomst-mejl:', err.message));
+
+    gdprLog('Direct-access request created', { requestId, fromEmail: anonymizeEmail(myEmail), toEmail: anonymizeEmail(toEmail) });
+    res.json({ success: true, requestId });
+  } catch (err) {
+    console.error('❌ Kunde inte skapa direktåtkomst-förfrågan:', err.message);
+    res.status(500).json({ error: 'Kunde inte skicka förfrågan', code: 'REQUEST_FAILED' });
+  }
+});
+
+app.get('/api/direct-access/requests', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) return res.json({ received: [], sent: [] });
+  try {
+    const { received, sent } = await getDirectAccessRequestsFor(email);
+    res.json({ received, sent });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta direktåtkomst-förfrågningar:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta förfrågningar', code: 'FETCH_FAILED' });
+  }
+});
+
+app.post('/api/direct-access/requests/:id/respond', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  const { response } = req.body || {};
+  if (response !== 'accept' && response !== 'decline') {
+    return res.status(400).json({ error: 'response måste vara accept eller decline', code: 'INVALID_RESPONSE' });
+  }
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+
+  try {
+    const request = await getDirectAccessRequest(req.params.id);
+    if (!request) {
+      return res.status(404).json({ error: 'Förfrågan hittades inte', code: 'NOT_FOUND' });
+    }
+    if (request.toEmail !== email.toLowerCase().trim()) {
+      return res.status(403).json({ error: 'Forbidden', code: 'NOT_RECIPIENT' });
+    }
+    if (request.status !== 'pending') {
+      return res.status(400).json({ error: 'Förfrågan är redan besvarad', code: 'ALREADY_RESPONDED' });
+    }
+
+    if (response === 'accept') {
+      const myToken = await getStoredDirectAccessToken(email);
+      if (!myToken) {
+        return res.status(409).json({ error: 'Koppla din kalender för direktåtkomst först', code: 'NEEDS_CALENDAR_LINK' });
+      }
+      await createDirectAccessLink(request.fromEmail, request.toEmail);
+      gdprLog('Direct-access link created', { emails: [anonymizeEmail(request.fromEmail), anonymizeEmail(request.toEmail)] });
+    }
+
+    await respondToDirectAccessRequest(req.params.id, response);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Kunde inte besvara direktåtkomst-förfrågan:', err.message);
+    res.status(500).json({ error: 'Kunde inte besvara förfrågan', code: 'RESPOND_FAILED' });
+  }
+});
+
+app.get('/api/direct-access/links', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) return res.json({ links: [] });
+  try {
+    const links = await listDirectAccessLinksFor(email);
+    res.json({ links });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta direktåtkomst-relationer:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta relationer', code: 'FETCH_FAILED' });
+  }
+});
+
+app.post('/api/direct-access/links/revoke', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  const withEmail = String(req.body?.withEmail || '').toLowerCase().trim();
+  if (!validateEmail(withEmail)) {
+    return res.status(400).json({ error: 'Ogiltig e-postadress', code: 'INVALID_EMAIL' });
+  }
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+  try {
+    await revokeDirectAccessLink(email, withEmail);
+    gdprLog('Direct-access link revoked', { emails: [anonymizeEmail(email), anonymizeEmail(withEmail)] });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Kunde inte återkalla direktåtkomst:', err.message);
+    res.status(500).json({ error: 'Kunde inte återkalla', code: 'REVOKE_FAILED' });
+  }
+});
+
+// ✅ Startar en kalenderjämförelse DIREKT med alla i `emails` — inga
+// inbjudningar skickas, ingen väntar. Kräver aktiv direktåtkomst-länk
+// (denna användare <-> var och en i listan) och en giltig, färsk
+// access-token för var och en (hämtad via getDirectAccessToken i
+// token-refresh.js — samma mönster som BookRs admin-kalender, men per
+// kontaktperson). "Hub-and-spoke": bara INITIATIVTAGARENS länkar
+// kontrolleras, inte alla-mot-alla — räcker tekniskt eftersom det är
+// initiativtagarens session som hämtar allas kalendrar och bokar in möten,
+// precis som en vanlig jämförelse redan görs.
+app.post('/api/direct-access/start-session', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+
+  const myEmail = email.toLowerCase().trim();
+  const otherEmails = Array.isArray(req.body?.emails)
+    ? [...new Set(req.body.emails.map(e => String(e).toLowerCase().trim()))].filter(e => e && e !== myEmail)
+    : [];
+  if (otherEmails.length === 0) {
+    return res.status(400).json({ error: 'Minst en annan person krävs', code: 'MISSING_EMAILS' });
+  }
+
+  const planCheck = await enforceSessionLimits(myEmail, otherEmails.length + 1);
+  if (!planCheck.ok) {
+    return res.status(planCheck.statusCode).json(planCheck.body);
+  }
+
+  try {
+    // Kolla direktåtkomst-länk till VAR OCH EN innan vi rör några tokens.
+    const links = await Promise.all(otherEmails.map(e => getDirectAccessLink(myEmail, e)));
+    const missingLink = otherEmails.filter((_, i) => !links[i]);
+    if (missingLink.length > 0) {
+      return res.status(403).json({
+        error: `Ingen aktiv direktåtkomst till: ${missingLink.join(', ')}`,
+        code: 'NO_DIRECT_ACCESS_LINK',
+        missing: missingLink
+      });
+    }
+
+    // Färsk access-token per person — misslyckas det för någon (t.ex.
+    // återkallat samtycke hos Google/Microsoft) avbryts hela anropet med
+    // besked om VEM, istället för en gruppsession med hål i.
+    const tokens = {};
+    for (const otherEmail of otherEmails) {
+      const token = await getDirectAccessToken(otherEmail);
+      if (!token) {
+        return res.status(409).json({
+          error: `${otherEmail} behöver koppla om sin kalender för direktåtkomst`,
+          code: 'DIRECT_ACCESS_TOKEN_UNAVAILABLE',
+          email: otherEmail
+        });
+      }
+      tokens[otherEmail] = token;
+    }
+
+    const groupId = `group_${randomUUID()}`;
+    const nowIso = new Date().toISOString();
+    const group = {
+      id: groupId,
+      name: req.body?.groupName?.trim?.() || 'Direktåtkomst',
+      creator: myEmail,
+      createdAt: nowIso,
+      members: [
+        { email: myEmail, token: req.user.accessToken, provider: req.user.provider || 'google', joinedAt: nowIso, isCreator: true },
+        ...otherEmails.map(otherEmail => ({
+          email: otherEmail,
+          token: tokens[otherEmail].accessToken,
+          provider: tokens[otherEmail].provider,
+          joinedAt: nowIso,
+          isCreator: false,
+          viaDirectAccess: true
+        }))
+      ],
+      invitedEmails: [],
+      status: 'active'
+    };
+
+    activeGroups.set(groupId, group);
+    persistGroup(groupId, group);
+
+    if (db) {
+      createGroup({ name: group.name, creator: myEmail, memberCount: group.members.length }).catch(err =>
+        console.warn('⚠️ Firebase group creation (direct-access) failed:', err.message)
+      );
+    }
+
+    gdprLog('Direct-access session started', { groupId: groupId.substring(0, 12) + '...', creator: anonymizeEmail(myEmail), memberCount: group.members.length });
+    res.json({ success: true, groupId });
+  } catch (err) {
+    console.error('❌ Kunde inte starta direktåtkomst-session:', err.message);
+    res.status(500).json({ error: 'Kunde inte starta kalenderjämförelsen', code: 'START_SESSION_FAILED' });
+  }
+});
+
 app.get('/api/auth/me', async (req, res) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
@@ -2313,6 +2639,59 @@ passport.use(new GoogleStrategy({
   }
 }));
 
+// ===== DIREKTÅTKOMST: EGNA STRATEGIER FÖR ATT KOPPLA EN ANVÄNDARES EGEN
+// KALENDER MED OFFLINE-ÅTKOMST =====
+// Samma anledning som 'google-admin' nedan har en egen strategi-instans:
+// passport-google-oauth20/passport-microsoft binder EN callbackURL per
+// strategi-instans, så den vanliga inloggnings-strategin kan inte
+// återanvändas här. Detta är INTE en inloggning — användaren är redan
+// inloggad i sin vanliga session; vi vill bara, som ett separat och
+// tydligt begärt steg, få ut en refresh-token så BookR kan hämta färsk
+// kalenderdata åt den här personen senare utan att de är inloggade just
+// då (grunden för Direktåtkomst — se /api/direct-access/* längre ner).
+passport.use('google-direct-access', new GoogleStrategy({
+  clientID: process.env.CLIENT_ID,
+  clientSecret: process.env.CLIENT_SECRET,
+  callbackURL: process.env.GOOGLE_DIRECT_ACCESS_CALLBACK_URL || (
+    process.env.NODE_ENV === 'production'
+      ? 'https://www.onebookr.se/auth/google/direct-access/callback'
+      : '/auth/google/direct-access/callback'
+  )
+}, (accessToken, refreshToken, profile, done) => {
+  // Ingen Firebase-loggning/createUser här — samma skäl som 'google-admin'.
+  done(null, {
+    id: profile.id,
+    email: profile.emails?.[0]?.value,
+    name: profile.displayName,
+    provider: 'google',
+    accessToken,
+    refreshToken
+  });
+}));
+
+passport.use('microsoft-direct-access', new MicrosoftStrategy({
+  clientID: process.env.MICROSOFT_CLIENT_ID,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+  callbackURL: process.env.MICROSOFT_DIRECT_ACCESS_CALLBACK_URL || (
+    process.env.NODE_ENV === 'production'
+      ? 'https://www.onebookr.se/auth/microsoft/direct-access/callback'
+      : '/auth/microsoft/direct-access/callback'
+  ),
+  // ✅ 'offline_access' krävs för att Microsoft ska ge ut en refresh-token
+  // alls (till skillnad från Google räcker det med scopet, inget separat
+  // access_type=offline-koncept på Microsofts sida).
+  scope: ['user.read', 'calendars.readwrite', 'offline_access']
+}, (accessToken, refreshToken, profile, done) => {
+  done(null, {
+    id: profile.id,
+    email: profile.emails?.[0]?.value || profile.mail,
+    name: profile.displayName,
+    provider: 'microsoft',
+    accessToken,
+    refreshToken
+  });
+}));
+
 // ✅ ADMIN: EGEN GOOGLE-STRATEGI FÖR /admin/connect-calendar
 // KRITISKT: passport-google-oauth20 binder EN callbackURL per
 // strategi-instans. Att återanvända den vanliga 'google'-strategin här
@@ -2471,6 +2850,98 @@ app.get('/admin/connect-calendar/callback', (req, res, next) => {
 app.get('/admin/connect-calendar-failed', (req, res) => {
   res.status(400).send('Google-inloggningen misslyckades. Gå tillbaka till /admin/connect-calendar?secret=... och försök igen.');
 });
+
+// ===== DIREKTÅTKOMST: KOPPLA DEN INLOGGADE ANVÄNDARENS EGEN KALENDER =====
+// Startas från Team-sidan när man skickar ELLER accepterar en
+// direktåtkomst-förfrågan och ännu inte har en refresh-token sparad
+// (backend svarar då 409 NEEDS_CALENDAR_LINK, se /api/direct-access/*
+// nedan). Kräver uttryckligt access_type=offline + prompt=consent, av
+// samma skäl som /admin/connect-calendar — annars ger Google ingen
+// refresh-token alls vid en vanlig omkoppling.
+function directAccessConnectHandler(strategyName, scope, extraAuthParams = {}) {
+  return (req, res, next) => {
+    if (!req.user?.email) {
+      return res.redirect(`${CONFIG.urls.frontend}/?error=not_authenticated`);
+    }
+    const state = randomUUID();
+    // ✅ returnTo måste vara en relativ path på vår egen frontend — annars
+    // öppnar det för en open-redirect (?returnTo=https://evil.com/...).
+    const requestedReturnTo = req.query.returnTo;
+    const safeReturnTo = (typeof requestedReturnTo === 'string' && requestedReturnTo.startsWith('/') && !requestedReturnTo.startsWith('//'))
+      ? requestedReturnTo
+      : '/?view=team';
+    req.session.directAccessState = state;
+    req.session.directAccessLinkingFor = req.user.email;
+    req.session.directAccessReturnTo = safeReturnTo;
+    req.session.save((err) => {
+      if (err) console.error('❌ Direct-access connect session save error:', err);
+      passport.authenticate(strategyName, { scope, state, ...extraAuthParams })(req, res, next);
+    });
+  };
+}
+
+app.get('/auth/google/direct-access', authLimiter, directAccessConnectHandler(
+  'google-direct-access',
+  ['profile', 'email', 'https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly'],
+  { accessType: 'offline', prompt: 'consent' }
+));
+
+app.get('/auth/microsoft/direct-access', authLimiter, directAccessConnectHandler(
+  'microsoft-direct-access',
+  ['user.read', 'calendars.readwrite', 'offline_access'],
+  { prompt: 'consent' }
+));
+
+function directAccessConnectCallback(strategyName) {
+  return (req, res, next) => {
+    const { state } = req.query;
+    const returnTo = req.session.directAccessReturnTo || '/?view=team';
+    const linkingFor = req.session.directAccessLinkingFor;
+    const sep = returnTo.includes('?') ? '&' : '?';
+
+    if (!state || state !== req.session.directAccessState || !linkingFor) {
+      console.warn('⚠️ Direct-access CSRF state mismatch eller saknad session');
+      delete req.session.directAccessState;
+      delete req.session.directAccessLinkingFor;
+      delete req.session.directAccessReturnTo;
+      return res.redirect(`${CONFIG.urls.frontend}${returnTo}${sep}directAccessLink=failed`);
+    }
+    delete req.session.directAccessState;
+    delete req.session.directAccessLinkingFor;
+    delete req.session.directAccessReturnTo;
+
+    passport.authenticate(strategyName, { session: false, failureRedirect: `${CONFIG.urls.frontend}${returnTo}${sep}directAccessLink=failed` }, async (err, user) => {
+      if (err || !user) {
+        console.error('❌ Direct-access callback error:', err);
+        return res.redirect(`${CONFIG.urls.frontend}${returnTo}${sep}directAccessLink=failed`);
+      }
+      if (!user.refreshToken) {
+        // T.ex. Google: händer om appen redan haft samtycke sedan tidigare
+        // utan att prompt=consent tvingade fram en ny refresh_token.
+        return res.redirect(`${CONFIG.urls.frontend}${returnTo}${sep}directAccessLink=noRefreshToken`);
+      }
+      // ✅ Säkerhet: kopplingen måste gälla samma e-post som bad om den —
+      // annars skulle man kunna koppla in NÅGON ANNANS kalender under sitt
+      // eget BookR-konto (t.ex. genom att logga in med ett annat
+      // Google-konto i steget ovan).
+      if (user.email?.toLowerCase().trim() !== linkingFor.toLowerCase().trim()) {
+        console.warn(`⚠️ Direct-access: e-postmatchning misslyckades (${anonymizeEmail(linkingFor)} startade, ${anonymizeEmail(user.email)} loggade in)`);
+        return res.redirect(`${CONFIG.urls.frontend}${returnTo}${sep}directAccessLink=emailMismatch`);
+      }
+      try {
+        await saveDirectAccessToken(linkingFor, { provider: user.provider, refreshToken: encryptToken(user.refreshToken) });
+        gdprLog('Direct-access calendar connected', { email: anonymizeEmail(linkingFor), provider: user.provider });
+        res.redirect(`${CONFIG.urls.frontend}${returnTo}${sep}directAccessLink=success`);
+      } catch (error) {
+        console.error('❌ Failed to save direct-access token:', error);
+        res.redirect(`${CONFIG.urls.frontend}${returnTo}${sep}directAccessLink=saveFailed`);
+      }
+    })(req, res, next);
+  };
+}
+
+app.get('/auth/google/direct-access/callback', directAccessConnectCallback('google-direct-access'));
+app.get('/auth/microsoft/direct-access/callback', directAccessConnectCallback('microsoft-direct-access'));
 
 // ===== GDPR-SÄKER GRUPPLAGRING MED SYNLIG EMAIL FÖR DELTAGARE =====
 function createSecureGroup(groupData) {

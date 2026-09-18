@@ -33,7 +33,7 @@ const Integritetspolicy = () => {
           Integritetspolicy
         </Typography>
         <Typography variant="body2" sx={{ color: '#6b7c93', mb: 1 }}>
-          Senast uppdaterad: 14 juli 2026
+          Senast uppdaterad: 18 september 2026
         </Typography>
         <Typography variant="body2" sx={{ color: '#6b7c93', mb: 4 }}>
           Personuppgiftsansvarig: OneBookR · info@onebookr.se
@@ -60,7 +60,22 @@ const Integritetspolicy = () => {
           <P>Vi samlar inte in personnummer, betalningsinformation, platsdata eller känsliga personuppgifter.</P>
         </Section>
 
-        <Section title="3. Varför vi behandlar dina uppgifter (rättslig grund)">
+        <Section title="3. Direktåtkomst — en separat, frivillig funktion">
+          <P>
+            Om du väljer att aktivera <strong>Direktåtkomst</strong> med en kontakt (under Team) ber vi om ett
+            extra, tydligt separat samtycke: en varaktig (s.k. "offline") koppling till din kalender, så att BookR
+            kan hämta ledig/upptagen-status åt dig utan att du behöver logga in varje gång. Det här är ett
+            uttryckligt undantag från vad vi annars gör (punkt 2 ovan) och kräver ett eget, aktivt godkännande —
+            det aktiveras aldrig automatiskt.
+          </P>
+          <Box component="ul" sx={{ pl: 3, color: '#425466', lineHeight: 2 }}>
+            <li>Gäller bara personer du själv väljer att koppla ihop dig med, och bara efter att båda parter godkänt.</li>
+            <li>Vi läser fortfarande bara ledigt/upptaget för att hitta gemensamma tider — aldrig titel, plats eller deltagare.</li>
+            <li>Kan stängas av när som helst, av endera parten, under Team i appen.</li>
+          </Box>
+        </Section>
+
+        <Section title="4. Varför vi behandlar dina uppgifter (rättslig grund)">
           <Box component="ul" sx={{ pl: 3, color: '#425466', lineHeight: 2 }}>
             <li><strong>Avtal (Art. 6.1b GDPR)</strong> — för att tillhandahålla tjänsten du begärt (jämföra kalendrar, skicka inbjudningar).</li>
             <li><strong>Berättigat intresse (Art. 6.1f GDPR)</strong> — för att logga säkerhetshändelser och förebygga missbruk.</li>
@@ -68,7 +83,7 @@ const Integritetspolicy = () => {
           </Box>
         </Section>
 
-        <Section title="4. Hur länge vi sparar uppgifter">
+        <Section title="5. Hur länge vi sparar uppgifter">
           <Box component="ul" sx={{ pl: 3, color: '#425466', lineHeight: 2 }}>
             <li><strong>Gruppsessioner</strong> — raderas automatiskt 24 timmar efter att de skapades.</li>
             <li><strong>Sessions-cookie</strong> — upphör när du loggar ut eller efter 24 timmar.</li>
@@ -77,7 +92,7 @@ const Integritetspolicy = () => {
           </Box>
         </Section>
 
-        <Section title="5. Tredje parter vi delar data med (underleverantörer)">
+        <Section title="6. Tredje parter vi delar data med (underleverantörer)">
           <P>Vi anlitar följande underleverantörer som kan behandla personuppgifter för vår räkning:</P>
           <Box component="ul" sx={{ pl: 3, color: '#425466', lineHeight: 2 }}>
             <li><strong>Google LLC</strong> — OAuth-inloggning och Google Calendar API. Standardavtalsklausuler (SCC) används för överföring till USA.</li>
@@ -89,7 +104,7 @@ const Integritetspolicy = () => {
           <P>Vi säljer aldrig personuppgifter till tredje part.</P>
         </Section>
 
-        <Section title="6. Dina rättigheter">
+        <Section title="7. Dina rättigheter">
           <P>Du har enligt GDPR rätt att:</P>
           <Box component="ul" sx={{ pl: 3, color: '#425466', lineHeight: 2 }}>
             <li><strong>Tillgång (Art. 15)</strong> — begära ett utdrag av alla uppgifter vi har om dig. Använd knappen "Exportera mina data" i appen.</li>
@@ -104,7 +119,7 @@ const Integritetspolicy = () => {
           </P>
         </Section>
 
-        <Section title="7. Klagomål">
+        <Section title="8. Klagomål">
           <P>
             Om du anser att vi behandlar dina personuppgifter på ett felaktigt sätt har du rätt att lämna in
             ett klagomål till <strong>Integritetsskyddsmyndigheten (IMY)</strong> på{' '}
@@ -114,7 +129,7 @@ const Integritetspolicy = () => {
           </P>
         </Section>
 
-        <Section title="8. Cookies" id="cookies">
+        <Section title="9. Cookies" id="cookies">
           <P>
             Vi använder en nödvändig sessions-cookie (<code>bookr_session</code>) för att hålla dig inloggad.
             Med ditt samtycke använder vi även Google Analytics för att förstå hur tjänsten används.
@@ -122,7 +137,7 @@ const Integritetspolicy = () => {
           </P>
         </Section>
 
-        <Section title="9. Kontakt">
+        <Section title="10. Kontakt">
           <P>
             OneBookR<br />
             E-post: <a href="mailto:info@onebookr.se" style={{ color: '#635bff' }}>info@onebookr.se</a>

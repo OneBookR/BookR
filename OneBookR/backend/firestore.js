@@ -677,6 +677,109 @@ async function getAdminCalendarToken() {
   return docSnap.data();
 }
 
+// ===== DIREKTÅTKOMST — engångskoppling av en ANVÄNDARES egen kalender =====
+// Samma idé som admin_calendar ovan (offline refresh-token så BookR kan
+// hämta färsk data utan att personen är inloggad just då), men per
+// kontaktperson och helt frivilligt — sätts bara efter att personen själv
+// skickat eller accepterat en direktåtkomst-förfrågan. refreshToken kommer
+// redan krypterad från anroparen (server.js), precis som admin-varianten.
+async function saveDirectAccessToken(email, { provider, refreshToken }) {
+  if (!refreshToken) throw new Error('refreshToken is required');
+  if (!provider || !['google', 'microsoft'].includes(provider)) {
+    throw new Error('provider must be "google" or "microsoft"');
+  }
+  await getDb().collection('users').doc(email.toLowerCase().trim()).set({
+    directAccessProvider: provider,
+    directAccessRefreshToken: refreshToken,
+    directAccessConnectedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+async function getStoredDirectAccessToken(email) {
+  const docSnap = await getDb().collection('users').doc(email.toLowerCase().trim()).get();
+  if (!docSnap.exists) return null;
+  const d = docSnap.data();
+  if (!d.directAccessRefreshToken) return null;
+  return { provider: d.directAccessProvider || 'google', refreshToken: d.directAccessRefreshToken };
+}
+
+// ✅ Förfrågningar om direktåtkomst — samma form/mönster som `invitations`
+// (createInvitation ovan), egen collection eftersom det är en annan sorts
+// relation (varaktig, ömsesidig kalenderkoppling — inte en engångs
+// gruppinbjudan).
+async function createDirectAccessRequest(fromEmail, toEmail) {
+  const docRef = getDb().collection('direct_access_requests').doc();
+  await docRef.set({
+    fromEmail: fromEmail.toLowerCase().trim(),
+    toEmail: toEmail.toLowerCase().trim(),
+    status: 'pending',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    respondedAt: null
+  });
+  return docRef.id;
+}
+
+// Obesvarade förfrågningar — både mottagna och skickade, så Team-sidan kan
+// visa båda ("väntar på svar" respektive "väntar på dig").
+async function getDirectAccessRequestsFor(email) {
+  const e = email.toLowerCase().trim();
+  const [received, sent] = await Promise.all([
+    getDb().collection('direct_access_requests').where('toEmail', '==', e).where('status', '==', 'pending').get(),
+    getDb().collection('direct_access_requests').where('fromEmail', '==', e).where('status', '==', 'pending').get()
+  ]);
+  const toDoc = (doc) => ({ id: doc.id, ...doc.data(), createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt });
+  return {
+    received: received.docs.map(toDoc),
+    sent: sent.docs.map(toDoc)
+  };
+}
+
+async function getDirectAccessRequest(requestId) {
+  const docSnap = await getDb().collection('direct_access_requests').doc(requestId).get();
+  if (!docSnap.exists) return null;
+  return { id: docSnap.id, ...docSnap.data() };
+}
+
+async function respondToDirectAccessRequest(requestId, response) {
+  await getDb().collection('direct_access_requests').doc(requestId).update({
+    status: response === 'accept' ? 'accepted' : 'declined',
+    respondedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+// sortedPairKey: deterministisk nyckel oavsett vem som frågar — gör "har A
+// och B aktiv direktåtkomst?" till en enda dokument-läsning, ingen query.
+function directAccessPairKey(emailA, emailB) {
+  return [emailA.toLowerCase().trim(), emailB.toLowerCase().trim()].sort().join('__');
+}
+
+async function createDirectAccessLink(emailA, emailB) {
+  const key = directAccessPairKey(emailA, emailB);
+  await getDb().collection('direct_access_links').doc(key).set({
+    emails: [emailA.toLowerCase().trim(), emailB.toLowerCase().trim()],
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return key;
+}
+
+async function getDirectAccessLink(emailA, emailB) {
+  const docSnap = await getDb().collection('direct_access_links').doc(directAccessPairKey(emailA, emailB)).get();
+  return docSnap.exists ? docSnap.data() : null;
+}
+
+async function listDirectAccessLinksFor(email) {
+  const e = email.toLowerCase().trim();
+  const snapshot = await getDb().collection('direct_access_links').where('emails', 'array-contains', e).get();
+  return snapshot.docs.map(doc => {
+    const data = doc.data();
+    return { pairKey: doc.id, withEmail: data.emails.find(x => x !== e), createdAt: data.createdAt?.toDate?.() || data.createdAt };
+  });
+}
+
+async function revokeDirectAccessLink(emailA, emailB) {
+  await getDb().collection('direct_access_links').doc(directAccessPairKey(emailA, emailB)).delete();
+}
+
 // ✅ DEMO BOOKINGS (leads från "Boka demo"-formuläret + bokningsstatus)
 async function createDemoBooking(data) {
   if (!data.email || !data.email.includes('@')) {
@@ -849,6 +952,18 @@ export {
   // Admin Calendar Token (demo flow)
   saveAdminCalendarToken,
   getAdminCalendarToken,
+
+  // Direktåtkomst
+  saveDirectAccessToken,
+  getStoredDirectAccessToken,
+  createDirectAccessRequest,
+  getDirectAccessRequestsFor,
+  getDirectAccessRequest,
+  respondToDirectAccessRequest,
+  createDirectAccessLink,
+  getDirectAccessLink,
+  listDirectAccessLinksFor,
+  revokeDirectAccessLink,
 
   // Demo Bookings
   createDemoBooking,
