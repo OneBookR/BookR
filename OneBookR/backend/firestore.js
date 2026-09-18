@@ -378,14 +378,29 @@ async function updateBusiness(businessId, updateData) {
 }
 
 // ✅ USER OPERATIONS
+// 🐛 KRITISK BUGFIX: körde tidigare .set() UTAN merge:true — dvs en total
+// dokumentöverskrivning. Eftersom detta anropas vid VARJE inloggning
+// (Google/Microsoft OAuth-callbacken, oavsett om användaren redan fanns)
+// raderade det tyst plan, billingStatus, appAccess, calendarDetailsConsent,
+// leadProfileStatus och directAccessRefreshToken/-Provider för ALLA
+// användare varje gång de loggade in igen — upptäckt när gustav@onebookr.se
+// och av.goransson@gmail.com (manuellt satta till Enterprise för test)
+// föll tillbaka till Free direkt efter nästa inloggning. Motsvarande hade
+// tystat riktiga betalande kunders plan/appAccess i produktion. Nu: läs
+// först, skriv bara firstLogin en gång, merge:true på allt annat så
+// befintliga fält aldrig rörs. Docid lowercased för att garanterat matcha
+// samma nyckel som getUserBilling/setUserBilling m.fl. använder.
 async function createUser(email, provider = 'google') {
   try {
-    await getDb().collection('users').doc(email).set({
-      email,
+    const key = email.toLowerCase().trim();
+    const docRef = getDb().collection('users').doc(key);
+    const docSnap = await docRef.get();
+    await docRef.set({
+      email: key,
       provider,
-      firstLogin: admin.firestore.FieldValue.serverTimestamp(),
-      lastLogin: admin.firestore.FieldValue.serverTimestamp()
-    });
+      lastLogin: admin.firestore.FieldValue.serverTimestamp(),
+      ...(docSnap.exists ? {} : { firstLogin: admin.firestore.FieldValue.serverTimestamp() })
+    }, { merge: true });
   } catch (err) {
     console.error('Error creating user:', err);
     throw err;
@@ -394,7 +409,7 @@ async function createUser(email, provider = 'google') {
 
 async function getUser(email) {
   try {
-    const docRef = getDb().collection('users').doc(email);
+    const docRef = getDb().collection('users').doc(email.toLowerCase().trim());
     const docSnap = await docRef.get();
     return docSnap.exists ? { id: docSnap.id, ...docSnap.data() } : null;
   } catch (err) {
@@ -405,10 +420,14 @@ async function getUser(email) {
 
 async function updateUserLastLogin(email) {
   try {
-    const docRef = getDb().collection('users').doc(email);
-    await docRef.update({
+    // set+merge (inte update) och samma lowercased docid som createUser —
+    // annars kastar update() "No document to update" för alla vars raw
+    // e-post skiljer sig i skiftläge från den lowercasade nyckeln createUser
+    // skriver under.
+    const docRef = getDb().collection('users').doc(email.toLowerCase().trim());
+    await docRef.set({
       lastLogin: admin.firestore.FieldValue.serverTimestamp()
-    });
+    }, { merge: true });
   } catch (err) {
     console.error('Error updating user login:', err);
     throw err;
