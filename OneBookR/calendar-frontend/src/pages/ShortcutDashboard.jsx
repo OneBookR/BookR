@@ -704,6 +704,14 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
             ut hela sidan när den är kollapsad.) */}
         {feedItems.length > 0 && (
           <Box sx={{ mb: 4.5 }}>
+            <Box sx={{ mb: 1.5 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Väntar på dig
+              </Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--text-secondary)', mt: 0.25 }}>
+                Inbjudningar till kalenderjämförelse och tidsförslag som väntar på ditt svar
+              </Typography>
+            </Box>
             <Box
               sx={
                 feedExpanded
