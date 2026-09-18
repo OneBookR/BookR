@@ -110,6 +110,11 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
     return user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || '';
   };
 
+  // Självbetjänad fakturering (Stripes kundportal) finns bara från Business
+  // och uppåt — Free och Pro har inget att förvalta där, så alternativet
+  // visas inte alls för dem.
+  const canManageBilling = user?.plan === 'business' || user?.plan === 'enterprise';
+
   if (!user) return null;
 
   return (
@@ -286,7 +291,7 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
                 </MenuItem>
               )}
 
-              {!isInGroup && (
+              {!isInGroup && canManageBilling && (
                 <MenuItem onClick={handleBilling}>
                   <CreditCard sx={{ mr: 1 }} />
                   Fakturering
