@@ -992,18 +992,34 @@ async function fetchMicrosoftCalendarEvents(token, timeMin, timeMax, userEmail) 
 // minimering: färre händelsers titlar lämnar Google/Microsofts API över
 // huvud taget. maxResults höjs till 25 för att kompensera bortfallet —
 // listan visar ändå max 5.
+//
+// 🐛 BUGFIX: möten BookR SJÄLV bokar (createMeetingEvents) sätter aldrig
+// hangoutLink/conferenceData eller Microsofts onlineMeeting på själva
+// eventet — Meet-länken skapas separat och skrivs bara in som RENA TEXTEN
+// i location/description. Filtret ovan missade därför alla BookR-bokade
+// möten (inklusive allt som bokas direkt via Direktåtkomst), inte bara
+// slumpmässiga kalenderposter. looksLikeMeetingLink fångar även det fallet
+// genom att godkänna en location som ÄR en http(s)-länk (en fysisk adress
+// är aldrig det).
+function looksLikeMeetingLink(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
+
 async function fetchUpcomingMeetingsWithDetails(token, provider, timeMin, timeMax) {
   if (provider === 'microsoft') {
     const url = `https://graph.microsoft.com/v1.0/me/calendarView?` +
       `startDateTime=${encodeURIComponent(timeMin)}&endDateTime=${encodeURIComponent(timeMax)}&` +
-      `$select=subject,start,end,isAllDay,isCancelled,onlineMeeting,onlineMeetingUrl&` +
+      `$select=subject,start,end,isAllDay,isCancelled,onlineMeeting,onlineMeetingUrl,location&` +
       `$orderby=start/dateTime&$top=25`;
     const response = await fetchWithRetry(url, {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Prefer': 'outlook.timezone="UTC"' }
     });
     const data = await response.json();
     return (data.value || [])
-      .filter(e => !e.isCancelled && !e.isAllDay && e.start?.dateTime && (e.onlineMeetingUrl || e.onlineMeeting?.joinUrl))
+      .map(e => ({ ...e, _link: e.onlineMeetingUrl || e.onlineMeeting?.joinUrl || looksLikeMeetingLink(e.location?.displayName) }))
+      .filter(e => !e.isCancelled && !e.isAllDay && e.start?.dateTime && e._link)
       .slice(0, 5)
       .map(e => ({
         id: e.id,
@@ -1011,20 +1027,21 @@ async function fetchUpcomingMeetingsWithDetails(token, provider, timeMin, timeMa
         start: e.start.dateTime.includes('Z') ? e.start.dateTime : `${e.start.dateTime.split('.')[0]}Z`,
         end: e.end?.dateTime ? (e.end.dateTime.includes('Z') ? e.end.dateTime : `${e.end.dateTime.split('.')[0]}Z`) : null,
         hangoutLink: null,
-        conferenceUri: e.onlineMeetingUrl || e.onlineMeeting?.joinUrl || null
+        conferenceUri: e._link
       }));
   }
 
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
     `timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&` +
     `singleEvents=true&orderBy=startTime&maxResults=25&showDeleted=false&` +
-    `fields=items(id,summary,start,end,status,hangoutLink,conferenceData/entryPoints)`;
+    `fields=items(id,summary,start,end,status,hangoutLink,location,conferenceData/entryPoints)`;
   const response = await fetchWithRetry(url, {
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
   });
   const data = await response.json();
   return (data.items || [])
-    .filter(e => e.status !== 'cancelled' && e.start?.dateTime && (e.hangoutLink || e.conferenceData?.entryPoints?.some(p => p.entryPointType === 'video')))
+    .map(e => ({ ...e, _link: e.hangoutLink || e.conferenceData?.entryPoints?.find(p => p.entryPointType === 'video')?.uri || looksLikeMeetingLink(e.location) }))
+    .filter(e => e.status !== 'cancelled' && e.start?.dateTime && e._link)
     .slice(0, 5)
     .map(e => ({
       id: e.id,
@@ -1032,7 +1049,7 @@ async function fetchUpcomingMeetingsWithDetails(token, provider, timeMin, timeMa
       start: e.start.dateTime,
       end: e.end?.dateTime || null,
       hangoutLink: e.hangoutLink || null,
-      conferenceUri: e.conferenceData?.entryPoints?.find(p => p.entryPointType === 'video')?.uri || null
+      conferenceUri: e.hangoutLink ? null : e._link
     }));
 }
 
