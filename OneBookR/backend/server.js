@@ -21,7 +21,8 @@ import {
   saveActiveGroup, deleteActiveGroup, loadAllActiveGroups, getActiveGroupsByEmail,
   saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking,
   markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed,
-  setUserBilling, getUserBilling, checkAndConsumeSession, getMonthlyUsage
+  setUserBilling, getUserBilling, checkAndConsumeSession, getMonthlyUsage,
+  saveLeadProfile, setLeadProfileStatus
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken } from './token-refresh.js';
@@ -1489,11 +1490,13 @@ app.get('/api/auth/me', async (req, res) => {
   // på 'free' om Firebase saknas eller inget billing skrivits än.
   let plan = 'free';
   let billingStatus = null;
+  let leadProfileStatus = null;
   if (db && req.user.email) {
     try {
       const b = await getUserBilling(req.user.email);
       plan = b.plan;
       billingStatus = b.billingStatus;
+      leadProfileStatus = b.leadProfileStatus;
     } catch { /* free */ }
   }
 
@@ -1506,7 +1509,62 @@ app.get('/api/auth/me', async (req, res) => {
   }
   const demoOnly = Boolean(req.session.demoOnly) && !paid;
 
-  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus });
+  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus, leadProfileStatus });
+});
+
+// ===== LEAD-PROFIL (inbjudna via delad länk) =====
+// Marknadsföringsviktig fångst: en INBJUDEN person (inte gruppens skapare)
+// som kommer in via en delad länk ombeds en gång om bransch, antal
+// anställda och företagsnamn. invitedBy sätts från den aktiva gruppens
+// creator — ger viral-loop-attribution (vilka kunder som faktiskt drar
+// in flest nya).
+app.post('/api/lead-profile', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) {
+    return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+  }
+
+  const { groupId, bransch, employees, companyName } = req.body || {};
+  if (!bransch || typeof bransch !== 'string') {
+    return res.status(400).json({ error: 'Bransch krävs', code: 'MISSING_BRANSCH' });
+  }
+  if (!employees || typeof employees !== 'string') {
+    return res.status(400).json({ error: 'Antal anställda krävs', code: 'MISSING_EMPLOYEES' });
+  }
+  if (!companyName || typeof companyName !== 'string' || !companyName.trim()) {
+    return res.status(400).json({ error: 'Företagsnamn krävs', code: 'MISSING_COMPANY_NAME' });
+  }
+
+  try {
+    const group = groupId ? activeGroups.get(groupId) : null;
+    const invitedBy = group?.creator && group.creator.toLowerCase() !== email.toLowerCase() ? group.creator : null;
+
+    await saveLeadProfile({
+      email,
+      name: req.user.name || req.user.displayName || null,
+      provider: req.user.provider || null,
+      groupId: groupId || null,
+      invitedBy,
+      bransch: bransch.trim().substring(0, 100),
+      employees: employees.trim().substring(0, 20),
+      companyName: companyName.trim().substring(0, 200)
+    });
+    await setLeadProfileStatus(email, 'completed');
+
+    gdprLog('Lead profile saved', { email: anonymizeEmail(email), bransch, employees, invitedBy: invitedBy ? anonymizeEmail(invitedBy) : null });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Lead profile save failed:', err.message);
+    res.status(500).json({ error: 'Kunde inte spara. Försök igen.', code: 'SAVE_FAILED' });
+  }
+});
+
+app.post('/api/lead-profile/skip', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (db) await setLeadProfileStatus(email, 'skipped').catch(() => {});
+  res.json({ success: true });
 });
 
 // ===== BILLING (Stripe) =====

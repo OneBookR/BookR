@@ -411,7 +411,7 @@ async function setUserBilling(email, data) {
 async function getUserBilling(email) {
   try {
     const docSnap = await getDb().collection('users').doc(email.toLowerCase().trim()).get();
-    if (!docSnap.exists) return { plan: 'free', billingStatus: null, appAccess: false };
+    if (!docSnap.exists) return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null };
     const d = docSnap.data();
     return {
       plan: d.plan || 'free',
@@ -423,11 +423,50 @@ async function getUserBilling(email) {
       // ✅ Permanent flagga: kontot har en gång beviljats åtkomst (Free-
       // signup fullföljd, eller betald plan) — skiljer det från en
       // user-doc som bara skapades av att någon FÖRSÖKTE logga in.
-      appAccess: Boolean(d.appAccess)
+      appAccess: Boolean(d.appAccess),
+      // ✅ 'completed' | 'skipped' | null — om lead-profil-popupen redan
+      // besvarats/avfärdats, så vi aldrig frågar samma person igen.
+      leadProfileStatus: d.leadProfileStatus || null
     };
   } catch (err) {
     console.error('Error getting user billing:', err);
-    return { plan: 'free', billingStatus: null, appAccess: false };
+    return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null };
+  }
+}
+
+// ✅ LEAD-PROFIL — viktig marknadsföringskanal: när en INBJUDEN person (inte
+// skaparen) kommer in i BookR via en delad länk, fångar vi en snabb
+// företagsprofil (bransch, antal anställda, företagsnamn) + vem som bjöd
+// in dem (invitedBy — viral-loop-attribution: vilka kunder som faktiskt
+// drar in nya). Egen collection, ett dokument per besvarad popup.
+async function saveLeadProfile(data) {
+  try {
+    const docRef = getDb().collection('lead_profiles').doc();
+    await docRef.set({
+      email: data.email.toLowerCase().trim(),
+      name: data.name || null,
+      provider: data.provider || null,
+      groupId: data.groupId || null,
+      invitedBy: data.invitedBy ? data.invitedBy.toLowerCase().trim() : null,
+      bransch: data.bransch,
+      employees: data.employees,
+      companyName: data.companyName,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    return docRef.id;
+  } catch (err) {
+    console.error('Error saving lead profile:', err);
+    throw err;
+  }
+}
+
+async function setLeadProfileStatus(email, status) {
+  try {
+    await getDb().collection('users').doc(email.toLowerCase().trim()).set({
+      leadProfileStatus: status // 'completed' | 'skipped'
+    }, { merge: true });
+  } catch (err) {
+    console.error('Error setting lead profile status:', err);
   }
 }
 
@@ -745,6 +784,10 @@ export {
   // Usage (plan-gränser)
   checkAndConsumeSession,
   getMonthlyUsage,
+
+  // Lead-profil (inbjudna via länk)
+  saveLeadProfile,
+  setLeadProfileStatus,
 
   // GDPR & Audit
   deleteUserData,

@@ -15,6 +15,7 @@ import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { trackEvent, trackEventOnce, EVENTS, bucket, daysBetween } from '../utils/analytics.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
 import InviteFriend from './InviteFriend';
+import LeadProfileModal from '../components/LeadProfileModal.jsx';
 import { useNotifications } from '../hooks/useNotifications.js';
 
 moment.locale('sv');
@@ -185,6 +186,22 @@ export default function CompareCalendar({
   // ✅ GROUP MANAGEMENT STATE (BEHÅLL BARA EN GÅNG)
   const [groupInfo, setGroupInfo] = useState(null);
   const [hasJoinedGroup, setHasJoinedGroup] = useState(false);
+
+  // ✅ LEAD-PROFIL: fångar bransch/antal anställda/företagsnamn från
+  // INBJUDNA (ej skaparen) som kommer in via en delad länk — en av
+  // BookRs viktigaste marknadsföringskanaler. Visas en gång per konto
+  // (styrs av user.leadProfileStatus från /api/auth/me), med en kort
+  // fördröjning så den inte poppar upp innan sidan ens hunnit rendera.
+  const [showLeadProfileModal, setShowLeadProfileModal] = useState(false);
+  useEffect(() => {
+    if (!propGroupId || !hasJoinedGroup || !groupInfo?.creator || !userData.email) return;
+    if (user?.leadProfileStatus) return; // redan besvarad eller hoppad över
+    const isCreator = groupInfo.creator.toLowerCase() === userData.email.toLowerCase();
+    if (isCreator) return;
+
+    const timer = setTimeout(() => setShowLeadProfileModal(true), 1400);
+    return () => clearTimeout(timer);
+  }, [propGroupId, hasJoinedGroup, groupInfo?.creator, userData.email, user?.leadProfileStatus]);
 
   // ✅ LÄGG TILL INCLUDE ALL OPTION
   const [includeAllEvents, setIncludeAllEvents] = useState(false);
@@ -1981,6 +1998,13 @@ export default function CompareCalendar({
           </Box>
         )}
       </Dialog>
+
+      <LeadProfileModal
+        open={showLeadProfileModal}
+        onClose={() => setShowLeadProfileModal(false)}
+        groupId={propGroupId}
+        userEmail={userData.email}
+      />
 
       {/* ✅ TOAST NOTIFICATIONS */}
       <Snackbar
