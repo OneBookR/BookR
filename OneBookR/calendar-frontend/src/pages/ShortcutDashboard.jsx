@@ -15,6 +15,7 @@ import InvitationSidebar from './InvitationSidebar.jsx';
 import ContactSettings from '../components/ContactSettings.jsx';
 import ContactManager from './ContactManager.jsx';
 import Team from './Team.jsx';
+import UpcomingMeetingsCard from '../components/UpcomingMeetingsCard.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 
 // Exportera kontakter så att andra komponenter kan använda dem
@@ -65,7 +66,6 @@ function TeamIcon({ size = 20 }) {
 
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [invites, setInvites] = useState([]);
-  const [upcomingMeetings, setUpcomingMeetings] = useState([]);
   const [timeProposals, setTimeProposals] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState('invitations');
@@ -118,18 +118,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     
     setInvites(prev => [...prev, ...formattedRequests]);
 
-    // Hämta upcoming meetings via backend-proxy — accessToken hanteras server-side
-    apiRequest('/api/calendar/upcoming')
-      .then(res => res.json())
-      .then(data => {
-        const meetings = (data.events || []).filter(event =>
-          event.hangoutLink ||
-          event.conferenceUri ||
-          (event.location && event.location.includes('meet.google.com'))
-        );
-        setUpcomingMeetings(meetings);
-      })
-      .catch(err => console.log('Failed to fetch calendar events:', err));
+    // ✅ "Kommande möten" (riktiga mötestitlar) hämtas numera av
+    // UpcomingMeetingsCard själv, och bara efter uttryckligt samtycke —
+    // se komponenten för varför.
 
     // Hämta tidsförslag (samma logik som CompareCalendar)
     if (userEmail) {
@@ -497,12 +488,6 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     setToast({ open: true, message: 'Kontakt borttagen', severity: 'info' });
   };
 
-  const formatDateTime = (dateTime) => {
-    if (!dateTime) return '';
-    const date = new Date(dateTime.dateTime || dateTime);
-    return date.toLocaleDateString('sv-SE') + ' ' + date.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
-  };
-
   const formatProposalDateTime = (proposal) => {
     if (!proposal) return '';
     // Hantera olika format för tidsförslag
@@ -511,37 +496,6 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     const date = new Date(startTime);
     return date.toLocaleDateString('sv-SE') + ' ' + date.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
   };
-
-  const getTimeUntilMeeting = (startTime) => {
-    if (!startTime) return '';
-    const now = new Date();
-    const meetingStart = new Date(startTime.dateTime || startTime);
-    const diffMs = meetingStart - now;
-    
-    if (diffMs < 0) {
-      return 'Nu';
-    } else {
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMinutes = Math.floor(diffMs / (1000 * 60));
-      
-      if (diffDays > 0) {
-        return `${diffDays} dag${diffDays > 1 ? 'ar' : ''}`;
-      } else if (diffHours > 0) {
-        const remainingMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-        if (remainingMinutes > 0) {
-          return `${diffHours} h ${remainingMinutes} min`;
-        } else {
-          return `${diffHours} h`;
-        }
-      } else if (diffMinutes > 0) {
-        return `${diffMinutes} min`;
-      } else {
-        return 'Nu';
-      }
-    }
-  };
-
 
   const currentUserEmail = user?.email || user?.emails?.[0]?.value || user?.emails?.[0] || '';
 
@@ -776,45 +730,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           ))}
         </Box>
 
-        {/* Kommande möten — kompakt lista */}
-        <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1.5 }}>
-          Kommande möten
-        </Typography>
-        {upcomingMeetings.length === 0 ? (
-          <Box sx={{ py: 4, px: 2, textAlign: 'center', borderRadius: 3.5, bgcolor: 'rgba(17,24,39,0.02)', border: '1px dashed rgba(17,24,39,0.12)', mb: 4.5 }}>
-            <Typography sx={{ color: 'var(--text-secondary)', fontSize: 14 }}>Inga kommande möten</Typography>
-          </Box>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, mb: 4.5 }}>
-            {upcomingMeetings.slice(0, 5).map((meeting) => {
-              const timeUntil = getTimeUntilMeeting(meeting.start);
-              const meetUrl = meeting.hangoutLink || meeting.conferenceUri;
-              return (
-                <Box
-                  key={meeting.id}
-                  sx={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2,
-                    p: '14px 18px', borderRadius: 3.5, bgcolor: 'rgba(17,24,39,0.025)', border: '1px solid rgba(17,24,39,0.05)'
-                  }}
-                >
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }} noWrap>
-                      {meeting.title || 'Untitled Meeting'}
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, color: 'var(--text-secondary)', mt: 0.25 }} noWrap>
-                      {formatDateTime(meeting.start)} · om {timeUntil}
-                    </Typography>
-                  </Box>
-                  {meetUrl && (
-                    <Button size="small" variant="contained" onClick={() => window.open(meetUrl, '_blank')} sx={{ bgcolor: 'var(--text)', borderRadius: 2.5, flexShrink: 0, '&:hover': { bgcolor: '#000' } }}>
-                      Gå med
-                    </Button>
-                  )}
-                </Box>
-              );
-            })}
-          </Box>
-        )}
+        {/* Kommande möten — GDPR-vänligt samtyckesflöde, se UpcomingMeetingsCard.jsx */}
+        <Box sx={{ mb: 4.5 }}>
+          <UpcomingMeetingsCard initialConsent={user?.calendarDetailsConsent} />
+        </Box>
 
         {/* Öppna möten — behållen från tidigare layout, egen sektion */}
         {leftMeetings.length > 0 && (

@@ -411,7 +411,7 @@ async function setUserBilling(email, data) {
 async function getUserBilling(email) {
   try {
     const docSnap = await getDb().collection('users').doc(email.toLowerCase().trim()).get();
-    if (!docSnap.exists) return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null };
+    if (!docSnap.exists) return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null, calendarDetailsConsent: false };
     const d = docSnap.data();
     return {
       plan: d.plan || 'free',
@@ -426,11 +426,16 @@ async function getUserBilling(email) {
       appAccess: Boolean(d.appAccess),
       // ✅ 'completed' | 'skipped' | null — om lead-profil-popupen redan
       // besvarats/avfärdats, så vi aldrig frågar samma person igen.
-      leadProfileStatus: d.leadProfileStatus || null
+      leadProfileStatus: d.leadProfileStatus || null,
+      // ✅ Explicit, återkalleligt samtycke till att BookR läser TITEL och
+      // tid på kalenderhändelser för "Kommande möten"-kortet på
+      // dashboarden — helt separat från kärnfunktionen (kalenderjämförelse),
+      // som aldrig läser mer än ledigt/upptaget. Se /api/calendar/upcoming.
+      calendarDetailsConsent: Boolean(d.calendarDetailsConsent)
     };
   } catch (err) {
     console.error('Error getting user billing:', err);
-    return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null };
+    return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null, calendarDetailsConsent: false };
   }
 }
 
@@ -467,6 +472,22 @@ async function setLeadProfileStatus(email, status) {
     }, { merge: true });
   } catch (err) {
     console.error('Error setting lead profile status:', err);
+  }
+}
+
+// ✅ Sätter/återkallar samtycket till att läsa mötestitlar för
+// "Kommande möten"-kortet. En egen, granulär flagga — skild från kontots
+// grundläggande åtkomst — eftersom det är ett explicit undantag från
+// integritetspolicyns löfte om att aldrig läsa kalenderinnehåll.
+async function setCalendarDetailsConsent(email, consent) {
+  try {
+    await getDb().collection('users').doc(email.toLowerCase().trim()).set({
+      calendarDetailsConsent: Boolean(consent),
+      calendarDetailsConsentAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Error setting calendar details consent:', err);
+    throw err;
   }
 }
 
@@ -788,6 +809,9 @@ export {
   // Lead-profil (inbjudna via länk)
   saveLeadProfile,
   setLeadProfileStatus,
+
+  // Kommande möten — samtycke till att läsa mötestitlar
+  setCalendarDetailsConsent,
 
   // GDPR & Audit
   deleteUserData,

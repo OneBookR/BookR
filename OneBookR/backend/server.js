@@ -22,7 +22,7 @@ import {
   saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking,
   markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed,
   setUserBilling, getUserBilling, checkAndConsumeSession, getMonthlyUsage,
-  saveLeadProfile, setLeadProfileStatus
+  saveLeadProfile, setLeadProfileStatus, setCalendarDetailsConsent
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken } from './token-refresh.js';
@@ -874,6 +874,57 @@ async function fetchMicrosoftCalendarEvents(token, timeMin, timeMax, userEmail) 
   }
 }
 
+// ===== KOMMANDE MÖTEN (dashboard-översikt) =====
+// Medvetet SKILD från jämförelse-hämtningen ovan (fetchCalendarById,
+// fetchMicrosoftCalendarEvents m.fl.), som aldrig hämtar titel/plats — det
+// är kärnlöftet i vår integritetspolicy ("Vi läser inte titel, plats eller
+// deltagare på dina kalenderhändelser"). Den här funktionen gör precis det
+// undantaget, och får därför BARA anropas efter uttryckligt samtycke
+// (calendarDetailsConsent) — se /api/calendar/upcoming nedan.
+async function fetchUpcomingMeetingsWithDetails(token, provider, timeMin, timeMax) {
+  if (provider === 'microsoft') {
+    const url = `https://graph.microsoft.com/v1.0/me/calendarView?` +
+      `startDateTime=${encodeURIComponent(timeMin)}&endDateTime=${encodeURIComponent(timeMax)}&` +
+      `$select=subject,start,end,isAllDay,isCancelled,onlineMeeting,onlineMeetingUrl&` +
+      `$orderby=start/dateTime&$top=10`;
+    const response = await fetchWithRetry(url, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Prefer': 'outlook.timezone="UTC"' }
+    });
+    const data = await response.json();
+    return (data.value || [])
+      .filter(e => !e.isCancelled && !e.isAllDay && e.start?.dateTime)
+      .slice(0, 5)
+      .map(e => ({
+        id: e.id,
+        title: e.subject || 'Möte',
+        start: e.start.dateTime.includes('Z') ? e.start.dateTime : `${e.start.dateTime.split('.')[0]}Z`,
+        end: e.end?.dateTime ? (e.end.dateTime.includes('Z') ? e.end.dateTime : `${e.end.dateTime.split('.')[0]}Z`) : null,
+        hangoutLink: null,
+        conferenceUri: e.onlineMeetingUrl || e.onlineMeeting?.joinUrl || null
+      }));
+  }
+
+  const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
+    `timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&` +
+    `singleEvents=true&orderBy=startTime&maxResults=10&showDeleted=false&` +
+    `fields=items(id,summary,start,end,status,hangoutLink,conferenceData/entryPoints)`;
+  const response = await fetchWithRetry(url, {
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+  });
+  const data = await response.json();
+  return (data.items || [])
+    .filter(e => e.status !== 'cancelled' && e.start?.dateTime)
+    .slice(0, 5)
+    .map(e => ({
+      id: e.id,
+      title: e.summary || 'Möte',
+      start: e.start.dateTime,
+      end: e.end?.dateTime || null,
+      hangoutLink: e.hangoutLink || null,
+      conferenceUri: e.conferenceData?.entryPoints?.find(p => p.entryPointType === 'video')?.uri || null
+    }));
+}
+
 // ===== FETCH INVITED EVENTS - HÄMTA INBJUDNA EVENTS FRÅN PRIMÄRA KALENDERN =====
 async function fetchInvitedEvents(token, userEmail, timeMin, timeMax) {
   try {
@@ -1491,12 +1542,14 @@ app.get('/api/auth/me', async (req, res) => {
   let plan = 'free';
   let billingStatus = null;
   let leadProfileStatus = null;
+  let calendarDetailsConsent = false;
   if (db && req.user.email) {
     try {
       const b = await getUserBilling(req.user.email);
       plan = b.plan;
       billingStatus = b.billingStatus;
       leadProfileStatus = b.leadProfileStatus;
+      calendarDetailsConsent = b.calendarDetailsConsent;
     } catch { /* free */ }
   }
 
@@ -1509,7 +1562,7 @@ app.get('/api/auth/me', async (req, res) => {
   }
   const demoOnly = Boolean(req.session.demoOnly) && !paid;
 
-  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus, leadProfileStatus });
+  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus, leadProfileStatus, calendarDetailsConsent });
 });
 
 // ===== LEAD-PROFIL (inbjudna via delad länk) =====
@@ -1565,6 +1618,56 @@ app.post('/api/lead-profile/skip', async (req, res) => {
   if (!email) return;
   if (db) await setLeadProfileStatus(email, 'skipped').catch(() => {});
   res.json({ success: true });
+});
+
+// ===== KOMMANDE MÖTEN (dashboard-översikt) =====
+// Explicit, granulärt och återkalleligt samtycke krävs innan vi någonsin
+// läser mötestitlar — se fetchUpcomingMeetingsWithDetails ovan för varför.
+app.post('/api/calendar/details-consent', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) {
+    return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+  }
+  const consent = Boolean(req.body?.consent);
+  try {
+    await setCalendarDetailsConsent(email, consent);
+    gdprLog('Calendar details consent changed', { email: anonymizeEmail(email), consent });
+    res.json({ success: true, consent });
+  } catch (err) {
+    console.error('❌ Kunde inte spara samtycke:', err.message);
+    res.status(500).json({ error: 'Kunde inte spara. Försök igen.', code: 'SAVE_FAILED' });
+  }
+});
+
+app.get('/api/calendar/upcoming', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  let consent = false;
+  if (db) {
+    try {
+      consent = Boolean((await getUserBilling(email)).calendarDetailsConsent);
+    } catch { /* ingen lagrad samtyckesstatus — behandla som ej beviljat */ }
+  }
+  if (!consent) {
+    return res.status(403).json({ error: 'Kräver samtycke för att visa mötesdetaljer', code: 'CONSENT_REQUIRED' });
+  }
+
+  try {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const events = await fetchUpcomingMeetingsWithDetails(
+      req.user.accessToken,
+      req.user.provider || 'google',
+      now.toISOString(),
+      horizon.toISOString()
+    );
+    res.json({ events });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta kommande möten:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta kommande möten', code: 'CALENDAR_FETCH_FAILED' });
+  }
 });
 
 // ===== BILLING (Stripe) =====
