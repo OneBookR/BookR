@@ -3773,13 +3773,21 @@ app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
     };
 
     // ✅ INITIERA RÖSTER FÖR ALLA MEDLEMMAR
+    // Medlemmar som gick med via Direktåtkomst (viaDirectAccess — se
+    // /api/direct-access/start-session) har redan gett sitt förhandssamtycke
+    // genom att aktivera direktåtkomsten i sig — de ska inte behöva
+    // godkänna varje enskilt möte en gång till, det vore exakt det
+    // inbjudningssteg direktåtkomst finns för att slippa. Deras röst sätts
+    // därför direkt till 'accepted' istället för 'pending'.
     group.members.forEach(member => {
       const memberEmail = member.email.toLowerCase();
-      if (memberEmail !== email.toLowerCase()) {
-        suggestion.votes[memberEmail] = 'pending'; // pending, accepted, rejected
-      } else {
+      if (memberEmail === email.toLowerCase()) {
         // Proposer automatically accepts their own proposal
         suggestion.votes[memberEmail] = 'accepted';
+      } else if (member.viaDirectAccess) {
+        suggestion.votes[memberEmail] = 'accepted';
+      } else {
+        suggestion.votes[memberEmail] = 'pending'; // pending, accepted, rejected
       }
     });
 
@@ -3790,6 +3798,22 @@ app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
     console.log(`   Title: ${suggestion.title}`);
     console.log(`   Time: ${suggestion.start} - ${suggestion.end}`);
     console.log(`   Pending votes: ${Object.keys(suggestion.votes).length}`);
+
+    // ✅ Om alla röster (inklusive auto-accepterade direktåtkomst-medlemmar)
+    // redan är 'accepted' — boka direkt, ingen väntar på ett svar som
+    // aldrig efterfrågas.
+    let eventCreationResult = null;
+    if (Object.values(suggestion.votes).every(v => v === 'accepted')) {
+      suggestion.status = 'accepted';
+      eventCreationResult = await createMeetingEvents(suggestion, group);
+      if (eventCreationResult.success) {
+        suggestion.eventIds = eventCreationResult.eventIds;
+        suggestion.meetLink = eventCreationResult.meetLink;
+        console.log(`📅 Direktåtkomst: bokat direkt, ${Object.keys(eventCreationResult.eventIds).length} kalenderhändelser skapade`);
+      } else {
+        console.warn(`⚠️ Direktåtkomst: bokning delvis misslyckad:`, eventCreationResult.errors);
+      }
+    }
 
     res.json({
       success: true,
@@ -3802,7 +3826,8 @@ app.post('/api/group/:groupId/suggest', validateGroup, async (req, res) => {
         location: suggestion.location,
         status: suggestion.status,
         suggestedBy: suggestion.suggestedBy,
-        votes: suggestion.votes
+        votes: suggestion.votes,
+        eventCreationResult
       }
     });
 

@@ -778,12 +778,20 @@ export default function CompareCalendar({
         participant_count: Object.keys(data.suggestion?.votes || {}).length || null,
       });
 
-      setToast({
-        open: true,
-        message: `✅ Mötesförslag skickat! Väntar på svar från ${Object.keys(data.suggestion.votes).length} deltagare.`,
-        severity: 'success'
-      });
-      
+      // ✅ Direktåtkomst: motparten godkänner automatiskt (se
+      // viaDirectAccess-hanteringen i /api/group/:groupId/suggest) —
+      // mötet är då redan bokat i båda kalendrarna direkt, ingen väntar.
+      if (data.suggestion.status === 'accepted') {
+        trackEvent(EVENTS.BOOKING_CONFIRMED, { via: 'direct_access' });
+        setToast({ open: true, message: '✅ Möte bokat direkt — ingen väntar på svar.', severity: 'success' });
+      } else {
+        setToast({
+          open: true,
+          message: `✅ Mötesförslag skickat! Väntar på svar från ${Object.keys(data.suggestion.votes).length} deltagare.`,
+          severity: 'success'
+        });
+      }
+
       setSuggestDialog({ open: false, slot: null });
       setMeetingTitle('');
       setMeetingLocation('');
