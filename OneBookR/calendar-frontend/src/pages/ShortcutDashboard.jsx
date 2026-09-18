@@ -181,7 +181,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   };
 
   const handleInviteResponse = async (groupId, inviteeId, response) => {
-    const invitation = invites.find(inv => inv.inviteeId === inviteeId || inv.id === groupId);
+    // ✅ BUGFIX: matcha kontaktförfrågningar via inv.id (de saknar groupId —
+    // anropas medvetet med invite.id som "groupId"-argumentet, se onClick-
+    // handlerna ovan) och riktiga kalenderinbjudningar via inv.groupId.
+    // Tidigare jämfördes mot inv.inviteeId, som aldrig sattes på Firestore-
+    // inbjudningar — då matchade .find() alltid FÖRSTA inbjudan i listan
+    // istället för den man faktiskt klickade på.
+    const invitation = invites.find(inv => inv.groupId === groupId || inv.id === groupId);
     if (!invitation) return;
     
     // Hantera kontaktförfrågningar
@@ -255,7 +261,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
       setLeftMeetings(updatedMeetings);
       
-      setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
+      setInvites(prev => prev.filter(invite => invite.id !== invitation.id));
       window.location.href = `/?group=${groupId}&invitee=${inviteeId}`;
     } else if (response === 'accept_passive') {
       // Acceptera utan att gå in i kalenderjämföraren - ge direktåtkomst
@@ -326,7 +332,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           localStorage.setItem('leftMeetings', JSON.stringify(updatedMeetings));
           setLeftMeetings(updatedMeetings);
           
-          setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
+          setInvites(prev => prev.filter(invite => invite.id !== invitation.id));
           setToast({ open: true, message: `Du har gett ${invitation.fromEmail} direktåtkomst till din kalender!`, severity: 'success' });
         } else {
           setToast({ open: true, message: 'Kunde inte acceptera inbjudan.', severity: 'error' });
@@ -342,12 +348,12 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
           method: 'POST',
           body: JSON.stringify({ response: 'decline' })
         });
-        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
+        setInvites(prev => prev.filter(invite => invite.id !== invitation.id));
         setToast({ open: true, message: 'Inbjudan nekad.', severity: 'info' });
       } catch (err) {
         console.log('Failed to decline invite:', err);
         // Ta bort lokalt som fallback
-        setInvites(prev => prev.filter(invite => invite.inviteeId !== inviteeId && invite.id !== invitation.id));
+        setInvites(prev => prev.filter(invite => invite.id !== invitation.id));
         setToast({ open: true, message: 'Inbjudan nekad.', severity: 'info' });
       }
     }

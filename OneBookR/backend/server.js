@@ -22,7 +22,8 @@ import {
   saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking,
   markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed,
   setUserBilling, getUserBilling, checkAndConsumeSession, getMonthlyUsage,
-  saveLeadProfile, setLeadProfileStatus, setCalendarDetailsConsent
+  saveLeadProfile, setLeadProfileStatus, setCalendarDetailsConsent,
+  getInvitationsByEmail, respondToInvitation
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken } from './token-refresh.js';
@@ -1493,9 +1494,26 @@ const validateAuth = (req, res, next) => {
 
 // ===== API ROUTES =====
 
-// ✅ MISSING ENDPOINTS THAT FRONTEND EXPECTS
-app.get('/api/invitations/:email', (req, res) => {
-  res.json([]);
+// ✅ Väntande inbjudningar till kalenderjämförelse (visas i "Väntar på
+// dig"-flödet på dashboarden). Var tidigare en stub som alltid returnerade
+// tomt — inbjudningarna sparades i Firestore (createInvitation, /api/invite)
+// men lästes aldrig ut igen. Kräver inloggning och att man bara kan läsa
+// sina EGNA inbjudningar (inte vem som helsts, via path-parametern).
+app.get('/api/invitations/:email', async (req, res) => {
+  const authedEmail = requireUser(req, res);
+  if (!authedEmail) return;
+  const requestedEmail = decodeURIComponent(req.params.email || '').toLowerCase().trim();
+  if (requestedEmail !== authedEmail.toLowerCase().trim()) {
+    return res.status(403).json({ error: 'Forbidden', code: 'EMAIL_MISMATCH' });
+  }
+  if (!db) return res.json({ invitations: [] });
+  try {
+    const invitations = await getInvitationsByEmail(requestedEmail);
+    res.json({ invitations });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta inbjudningar:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta inbjudningar', code: 'FETCH_FAILED' });
+  }
 });
 
 app.post('/api/errors', (req, res) => {
@@ -1508,9 +1526,25 @@ app.post('/api/contact-request', (req, res) => {
   res.json({ success: true, message: 'Contact request processed' });
 });
 
-app.post('/api/invitation/:id/respond', (req, res) => {
-  console.log('Invitation response:', req.params.id, req.body);
-  res.json({ success: true });
+// ✅ Markerar en inbjudan som accepterad/nekad — så den försvinner ur
+// mottagarens lista. Var tidigare en stub som bara loggade och svarade
+// success utan att skriva något, så avböjda/accepterade inbjudningar kom
+// tillbaka igen vid nästa hämtning.
+app.post('/api/invitation/:id/respond', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  const { response } = req.body || {};
+  if (response !== 'accept' && response !== 'decline') {
+    return res.status(400).json({ error: 'response måste vara accept eller decline', code: 'INVALID_RESPONSE' });
+  }
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+  try {
+    await respondToInvitation(req.params.id, response);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Kunde inte uppdatera inbjudan:', err.message);
+    res.status(500).json({ error: 'Kunde inte uppdatera inbjudan', code: 'UPDATE_FAILED' });
+  }
 });
 
 app.get('/api/auth/me', async (req, res) => {

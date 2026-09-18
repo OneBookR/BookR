@@ -246,6 +246,18 @@ async function updateInvitation(invitationId, updateData) {
   await docRef.update(updateData);
 }
 
+// ✅ Markerar en inbjudan som besvarad (accept/decline) — så den slutar
+// dyka upp i mottagarens "Väntar på dig"-lista. Gör INTE själva
+// gruppmedlemskapet (det sker separat, via /api/group/:groupId/join).
+async function respondToInvitation(invitationId, response) {
+  const docRef = getDb().collection('invitations').doc(invitationId);
+  await docRef.update({
+    responded: true,
+    accepted: response === 'accept',
+    respondedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+}
+
 async function validateAndAcceptInvitation(invitationId) {
   try {
     const docRef = getDb().collection('invitations').doc(invitationId);
@@ -773,6 +785,7 @@ export {
   getInvitationsByEmail,
   getInvitationsByGroup,
   updateInvitation,
+  respondToInvitation,
   validateAndAcceptInvitation,
   getInvitation,
   
