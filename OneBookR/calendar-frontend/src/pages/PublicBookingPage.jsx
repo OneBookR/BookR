@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Box, Typography, Button, TextField, CircularProgress } from '@mui/material';
 import { apiRequest } from '../utils/apiConfig.js';
 import { GoogleIcon, MicrosoftIcon } from '../assets/ProviderIcons.jsx';
+import CalendarPrivacyNote from '../components/CalendarPrivacyNote.jsx';
 
 const GOOGLE_FONT_URLS = {
   Manrope: 'Manrope:wght@400;600;700;800',
@@ -221,6 +222,18 @@ export default function PublicBookingPage() {
                   <a href={booked.meetLink} target="_blank" rel="noopener noreferrer" style={{ color: accent, fontWeight: 700 }}>Möteslänk</a>
                 </Typography>
               )}
+              <Button
+                onClick={() => {
+                  setBooked(null);
+                  setSelectedSlot(null);
+                  setError('');
+                  setForm((f) => ({ ...f, message: '' }));
+                  if (selectedDate) loadSlots(selectedDate);
+                }}
+                sx={{ mt: 2.5, fontSize: 13, color: accent, textTransform: 'none', fontWeight: 700 }}
+              >
+                ← Boka en till tid
+              </Button>
             </Box>
           ) : authMode === 'choosing' ? (
             <Box sx={{ mt: 3.5 }}>
@@ -228,6 +241,7 @@ export default function PublicBookingPage() {
                 Logga in med din egen kalender så visar vi bara tider som passar er <strong>båda</strong> — annars ser
                 du {page.displayName.split(' ')[0]}s lediga tider och väljer själv.
               </Typography>
+              <CalendarPrivacyNote phase="before" maxWidth="100%" sx={{ mb: 2.5 }} />
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Button
                   onClick={() => startLogin('google')}

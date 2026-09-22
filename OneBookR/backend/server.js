@@ -1332,11 +1332,19 @@ if (IS_PRODUCTION) {
 // ("så enkelt som möjligt att lägga till på sin egna hemsida"). Helmet
 // ovan sätter annars X-Frame-Options: SAMEORIGIN + frame-ancestors 'self'
 // (klickjacknings-skydd) på HELA appen, vilket skulle blockera det.
-// Släpper bara igenom just den här pathen — resten av appen (inloggning,
-// dashboard, etc.) förblir skyddad som innan.
+// 🐛 BUGFIX: bara X-Frame-Options/CSP räckte inte — Cross-Origin-Opener-
+// Policy och Cross-Origin-Resource-Policy är ISOLERINGS-headers (skyddar
+// mot att en annan origin läser ut/öppnar fönster mot sidan), och båda
+// sätts fortfarande strikt av helmet ovan på den här pathen. Från en sida
+// inbäddad cross-origin gjorde det att även en helt vanlig länk härifrån
+// (target="_blank" till onebookr.se självt) kunde blockeras av Chrome med
+// ERR_BLOCKED_BY_RESPONSE. Släpper igenom alla fyra bara på /boka — resten
+// av appen (inloggning, dashboard, etc.) förblir skyddad som innan.
 app.use('/boka', (req, res, next) => {
   res.removeHeader('X-Frame-Options');
   res.setHeader('Content-Security-Policy', "frame-ancestors *");
+  res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 });
 
