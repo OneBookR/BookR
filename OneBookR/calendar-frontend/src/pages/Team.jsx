@@ -86,6 +86,7 @@ export default function Team({ user, onNavigateBack }) {
     const tab = params.get('tab');
     if (tab === 'requests') setCurrentTab(2);
     else if (tab === 'teams') setCurrentTab(1);
+    else if (tab === 'direct-access') setCurrentTab(3);
 
     const linkResult = params.get('directAccessLink');
     if (linkResult) {
@@ -448,6 +449,7 @@ export default function Team({ user, onNavigateBack }) {
             <Tab label={`Kontakter (${contacts.length})`} icon={<PersonIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
             <Tab label={`Team (${teams.length})`} icon={<GroupsIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
             <Tab label={`Förfrågningar (${directAccessRequests.received.length})`} icon={<NotificationsIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
+            <Tab label={`Direktåtkomst (${directAccessLinks.length})`} icon={<LinkIcon />} sx={{ minHeight: 56, zIndex: 1, textTransform: 'none', fontWeight: 700, color: 'var(--text)' }} />
           </Tabs>
         </Box>
 
@@ -705,6 +707,73 @@ export default function Team({ user, onNavigateBack }) {
                     </Box>
                   </Box>
                 )}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {/* Direktåtkomst — vem du är kopplad med. Ömsesidigt: samma lista
+            svarar på "vem har jag åtkomst till" OCH "vem har åtkomst till
+            mig" — det är en och samma relation åt båda hållen. */}
+        {currentTab === 3 && (
+          <Box>
+            <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 3, maxWidth: 560 }}>
+              Ömsesidigt — ni har full åtkomst till varandras kalendrar. Ingen aktiveras utan att båda har godkänt,
+              och du kan stänga av när som helst.
+            </Typography>
+            {directAccessLinks.length === 0 ? (
+              <Card sx={{ ...pageCardSx, p: 4, textAlign: 'center' }}>
+                <LinkIcon sx={{ fontSize: 48, color: 'rgba(17,24,39,0.18)', mb: 2 }} />
+                <Typography variant="h6" sx={{ color: 'var(--text)', fontWeight: 700 }}>Ingen direktåtkomst aktiv än</Typography>
+                <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+                  Begär direktåtkomst från en kontakt under Kontakter-fliken för att komma igång.
+                </Typography>
+              </Card>
+            ) : (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {directAccessLinks.map((link) => {
+                  const matchedContact = contacts.find(c => c.email?.toLowerCase() === link.withEmail?.toLowerCase());
+                  const isBusy = directAccessBusyEmail === link.withEmail;
+                  return (
+                    <Paper key={link.pairKey} sx={{ ...pageCardSx, p: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                        <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(31,122,77,0.12)', color: 'var(--success)' }}>
+                          {(matchedContact?.name || link.withEmail)?.charAt(0)?.toUpperCase() || '?'}
+                        </Avatar>
+                        <Box>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'var(--text)' }}>
+                            {matchedContact?.name || link.withEmail}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+                            {matchedContact?.name ? link.withEmail : 'Ömsesidig direktåtkomst'}
+                            {link.createdAt && ` · Sedan ${new Date(link.createdAt).toLocaleDateString('sv-SE')}`}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={<BoltIcon />}
+                          disabled={isBusy}
+                          onClick={() => startDirectSession([link.withEmail], `Möte med ${matchedContact?.name || link.withEmail}`)}
+                          sx={primaryButtonSx}
+                        >
+                          Boka möte direkt
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          disabled={isBusy}
+                          onClick={() => handleRevokeDirectAccess(link.withEmail)}
+                          sx={secondaryButtonSx}
+                        >
+                          Stäng av
+                        </Button>
+                      </Box>
+                    </Paper>
+                  );
+                })}
               </Box>
             )}
           </Box>
