@@ -33,13 +33,17 @@ const fieldSx = {
 //  - Fortsätt utan att logga in — ser bara ägarens lediga tider och bokar
 //    manuellt (namn + e-post), ingen inloggning krävs alls.
 //
-// Inloggningen görs via window.top (bryter ut ur ett ev. iframe) istället
-// för att navigera iframen själv — annars hamnar sessionscookien i en
-// cross-site-iframe-kontext där webbläsare i allt högre grad blockerar
-// tredjepartscookies, och inloggningen skulle se ut att lyckas men aldrig
-// hålla i sig. Efter inloggning ser besökaren sidan som en vanlig,
-// förstaparts onebookr.se-sida istället — helt okej, och tydligare att
-// lita på än att logga in inuti en okänd inbäddning.
+// Inloggningen öppnas i en NY FLIK (window.open), inte via window.top.
+// window.top.location fungerade inte: sajtbyggare som Wix lägger sina
+// iframes i en sandbox UTAN allow-top-navigation, så ett försök att byta
+// ut hela toppfönstret blockeras helt tyst av webbläsaren — inloggningen
+// hamnade då kvar INUTI den sandboxade iframen, och Googles egna
+// inloggningssidor vägrar helt att renderas i ett iframe (anti-
+// clickjacking, deras policy, inget vi kan ändra på) — därav 403:an. Att
+// öppna en ny flik är en annan sorts operation som tillåts även i en
+// sandboxad iframe (kräver bara allow-popups, standard i de flesta
+// sajtbyggare) och ger en helt vanlig, oinbäddad flik där Google-
+// inloggningen fungerar precis som väntat.
 export default function PublicBookingPage() {
   const slug = useMemo(() => window.location.pathname.split('/')[2] || '', []);
   const embed = useMemo(() => new URLSearchParams(window.location.search).get('embed') === '1', []);
@@ -56,6 +60,7 @@ export default function PublicBookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [booked, setBooked] = useState(null); // { meetLink } | null
   const [error, setError] = useState('');
+  const [loginPopupUrl, setLoginPopupUrl] = useState(null); // reservlänk om window.open blockerades
 
   const dates = useMemo(() => {
     const list = [];
@@ -123,8 +128,13 @@ export default function PublicBookingPage() {
   const startLogin = (provider) => {
     const returnTo = encodeURIComponent(`/boka/${slug}`);
     const target = `/auth/${provider}?returnTo=${returnTo}`;
-    // window.top för att bryta ut ur ett ev. iframe — se kommentaren högst upp.
-    try { window.top.location.href = target; } catch { window.location.href = target; }
+    // Ny flik, inte window.top — se kommentaren högst upp för varför.
+    const win = window.open(target, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      // Popup blockerad av webbläsaren (ovanligt för ett direkt klick, men
+      // händer) — visa en vanlig klickbar länk som reservväg istället.
+      setLoginPopupUrl(target);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -239,7 +249,7 @@ export default function PublicBookingPage() {
             <Box sx={{ mt: 3.5 }}>
               <Typography sx={{ fontSize: 13.5, color: '#5f6470', mb: 2, lineHeight: 1.6 }}>
                 Logga in med din egen kalender så visar vi bara tider som passar er <strong>båda</strong> — annars ser
-                du {page.displayName.split(' ')[0]}s lediga tider och väljer själv.
+                du {page.displayName.split(' ')[0]}s lediga tider och väljer själv. Inloggningen öppnas i en ny flik.
               </Typography>
               <CalendarPrivacyNote phase="before" maxWidth="100%" sx={{ mb: 2.5 }} />
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -267,6 +277,14 @@ export default function PublicBookingPage() {
               >
                 Fortsätt utan att logga in
               </Button>
+              {loginPopupUrl && (
+                <Typography sx={{ fontSize: 12.5, color: '#5f6470', mt: 1.5, textAlign: 'center' }}>
+                  Din webbläsare blockerade fönstret —{' '}
+                  <a href={loginPopupUrl} target="_blank" rel="noopener noreferrer" style={{ color: accent, fontWeight: 700 }}>
+                    klicka här för att logga in
+                  </a>.
+                </Typography>
+              )}
             </Box>
           ) : !selectedSlot ? (
             <>
@@ -360,17 +378,9 @@ export default function PublicBookingPage() {
             Bokat med{' '}
             <a
               href="https://www.onebookr.se"
-              onClick={(e) => {
-                // ✅ BUGFIX: target="_blank" härifrån (en sida som kan sitta
-                // cross-origin-inbäddad i ett <iframe>) triggade
-                // ERR_BLOCKED_BY_RESPONSE i Chrome — samma klass av problem
-                // som löstes för inloggningsknapparna. window.top bryter ut
-                // ur ett ev. iframe helt, precis som där.
-                e.preventDefault();
-                try { window.top.location.href = 'https://www.onebookr.se'; }
-                catch { window.open('https://www.onebookr.se', '_blank', 'noopener,noreferrer'); }
-              }}
-              style={{ color: '#9ca3af', fontWeight: 700, cursor: 'pointer' }}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#9ca3af', fontWeight: 700 }}
             >
               BookR
             </a>
