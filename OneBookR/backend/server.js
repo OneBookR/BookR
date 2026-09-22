@@ -26,7 +26,8 @@ import {
   getInvitationsByEmail, respondToInvitation,
   saveDirectAccessToken, getStoredDirectAccessToken, createDirectAccessRequest, getDirectAccessRequestsFor,
   getDirectAccessRequest, respondToDirectAccessRequest, createDirectAccessLink,
-  getDirectAccessLink, listDirectAccessLinksFor, revokeDirectAccessLink
+  getDirectAccessLink, listDirectAccessLinksFor, revokeDirectAccessLink,
+  setBookingPage, getBookingPage, deleteBookingPage, setUserBookingPageSlug, getUserBookingPageSlug
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken, getDirectAccessToken } from './token-refresh.js';
@@ -1306,6 +1307,19 @@ if (IS_PRODUCTION) {
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 }
 
+// ✅ Publika bokningssidor (/boka/:slug) måste gå att bädda in i ett
+// <iframe> på en godtycklig extern hemsida — det är hela poänget
+// ("så enkelt som möjligt att lägga till på sin egna hemsida"). Helmet
+// ovan sätter annars X-Frame-Options: SAMEORIGIN + frame-ancestors 'self'
+// (klickjacknings-skydd) på HELA appen, vilket skulle blockera det.
+// Släpper bara igenom just den här pathen — resten av appen (inloggning,
+// dashboard, etc.) förblir skyddad som innan.
+app.use('/boka', (req, res, next) => {
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Security-Policy', "frame-ancestors *");
+  next();
+});
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -1463,6 +1477,16 @@ const pollingLimiter = rateLimit({
 const demoLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 20,
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Publika bokningssidor — ingen inloggning krävs, så striktare gräns per
+// IP mot spam/skrapning än övriga limiters.
+const bookingPageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
   message: { error: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -1887,6 +1911,291 @@ app.post('/api/direct-access/start-session', async (req, res) => {
   } catch (err) {
     console.error('❌ Kunde inte starta direktåtkomst-session:', err.message);
     res.status(500).json({ error: 'Kunde inte starta kalenderjämförelsen', code: 'START_SESSION_FAILED' });
+  }
+});
+
+// ===== BOKNINGSSIDOR (Pro: egen sida, Business+: white-label) =====
+// Publik, enkelriktad bokning à la Calendly — besökaren loggar aldrig in,
+// kopplar aldrig sin egen kalender. Mötet skapas på ÄGARENS kalender med
+// besökaren som deltagare (samma sätt createMeetingEvents redan bjuder
+// in deltagare via bara deras e-post). Kräver att ägaren har en
+// direktåtkomst-koppling (samma lagrade refresh-token som Direktåtkomst
+// — se getDirectAccessToken/getStoredDirectAccessToken) eftersom sidan
+// måste kunna visa lediga tider och boka NÄR SOM HELST, inte bara när
+// ägaren råkar vara inloggad.
+const BOOKING_SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const BOOKING_FONTS = ['Manrope', 'Inter', 'Poppins', 'Playfair Display', 'Roboto'];
+
+function sanitizeBookingPageInput(body, plan) {
+  const errors = [];
+  const slug = String(body?.slug || '').toLowerCase().trim();
+  if (!BOOKING_SLUG_REGEX.test(slug) || slug.length < 3 || slug.length > 40) {
+    errors.push('Ogiltig webbadress — använd bara små bokstäver, siffror och bindestreck (3–40 tecken).');
+  }
+  const displayName = String(body?.displayName || '').trim().substring(0, 100);
+  if (!displayName) errors.push('Namn krävs.');
+  const bio = String(body?.bio || '').trim().substring(0, 300);
+  const durationMinutes = [15, 30, 45, 60].includes(Number(body?.durationMinutes)) ? Number(body.durationMinutes) : 30;
+  const bufferMinutes = [0, 5, 10, 15, 30].includes(Number(body?.bufferMinutes)) ? Number(body.bufferMinutes) : 0;
+  const activeWeekdays = Array.isArray(body?.activeWeekdays)
+    ? [...new Set(body.activeWeekdays.map(Number).filter(d => d >= 1 && d <= 5))]
+    : [1, 2, 3, 4, 5];
+  const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
+  const startTime = timeRe.test(body?.startTime) ? body.startTime : '09:00';
+  const endTime = timeRe.test(body?.endTime) ? body.endTime : '17:00';
+  if (startTime >= endTime) errors.push('Starttiden måste vara innan sluttiden.');
+
+  // ✅ Branding kan bara sparas på Business/Enterprise — kollas server-
+  // side så det aldrig går att kringgå planspärren från klienten.
+  const canBrand = plan === 'business' || plan === 'enterprise';
+  const branding = canBrand
+    ? {
+        logoUrl: /^https?:\/\//.test(body?.branding?.logoUrl || '') ? String(body.branding.logoUrl).substring(0, 500) : null,
+        primaryColor: /^#[0-9a-fA-F]{6}$/.test(body?.branding?.primaryColor || '') ? body.branding.primaryColor : '#111827',
+        font: BOOKING_FONTS.includes(body?.branding?.font) ? body.branding.font : 'Manrope',
+        hideBookrBranding: Boolean(body?.branding?.hideBookrBranding)
+      }
+    : { logoUrl: null, primaryColor: '#111827', font: 'Manrope', hideBookrBranding: false };
+
+  return {
+    errors,
+    data: {
+      slug, displayName, bio, durationMinutes, bufferMinutes,
+      activeWeekdays: activeWeekdays.length ? activeWeekdays : [1, 2, 3, 4, 5],
+      startTime, endTime, branding
+    }
+  };
+}
+
+app.get('/api/booking-page/me', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) return res.json({ page: null });
+  try {
+    const slug = await getUserBookingPageSlug(email);
+    const page = slug ? await getBookingPage(slug) : null;
+    res.json({ page });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta bokningssida:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta bokningssida', code: 'FETCH_FAILED' });
+  }
+});
+
+app.post('/api/booking-page/slug-check', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  const slug = String(req.body?.slug || '').toLowerCase().trim();
+  if (!BOOKING_SLUG_REGEX.test(slug) || slug.length < 3 || slug.length > 40) {
+    return res.json({ available: false, reason: 'INVALID_FORMAT' });
+  }
+  if (!db) return res.json({ available: true });
+  try {
+    const existing = await getBookingPage(slug);
+    const available = !existing || existing.ownerEmail === email.toLowerCase().trim();
+    res.json({ available });
+  } catch (err) {
+    console.error('❌ Kunde inte kolla webbadress:', err.message);
+    res.status(500).json({ error: 'Kunde inte kolla webbadressen', code: 'CHECK_FAILED' });
+  }
+});
+
+app.post('/api/booking-page', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+
+  try {
+    const { plan } = await getUserBilling(email);
+    if (plan === 'free') {
+      return res.status(403).json({ error: 'Bokningssida kräver Pro eller högre', code: 'PLAN_REQUIRED' });
+    }
+
+    const { errors, data } = sanitizeBookingPageInput(req.body, plan);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors[0], errors, code: 'INVALID_INPUT' });
+    }
+
+    const myToken = await getStoredDirectAccessToken(email);
+    if (!myToken) {
+      return res.status(409).json({ error: 'Koppla din kalender först', code: 'NEEDS_CALENDAR_LINK' });
+    }
+
+    const existing = await getBookingPage(data.slug);
+    if (existing && existing.ownerEmail !== email.toLowerCase().trim()) {
+      return res.status(400).json({ error: 'Den webbadressen är upptagen', code: 'SLUG_TAKEN' });
+    }
+
+    // Om slugen byts: ta bort det gamla dokumentet så det inte blir en
+    // föräldralös kopia som fortfarande går att nå.
+    const previousSlug = await getUserBookingPageSlug(email);
+    if (previousSlug && previousSlug !== data.slug) {
+      await deleteBookingPage(previousSlug).catch(() => {});
+    }
+
+    await setBookingPage(data.slug, { ...data, ownerEmail: email.toLowerCase().trim(), enabled: true });
+    await setUserBookingPageSlug(email, data.slug);
+
+    gdprLog('Booking page saved', { email: anonymizeEmail(email), slug: data.slug });
+    res.json({ success: true, slug: data.slug });
+  } catch (err) {
+    console.error('❌ Kunde inte spara bokningssida:', err.message);
+    res.status(500).json({ error: 'Kunde inte spara bokningssida', code: 'SAVE_FAILED' });
+  }
+});
+
+// ----- Publika routes — ingen inloggning, rate-limiterade -----
+
+app.get('/api/public/booking-page/:slug', bookingPageLimiter, async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+  try {
+    const page = await getBookingPage(req.params.slug.toLowerCase().trim());
+    if (!page || page.enabled === false) {
+      return res.status(404).json({ error: 'Sidan hittades inte', code: 'NOT_FOUND' });
+    }
+    // Läcker ALDRIG ägarens e-post till klienten.
+    res.json({
+      slug: page.slug,
+      displayName: page.displayName,
+      bio: page.bio,
+      durationMinutes: page.durationMinutes,
+      branding: page.branding
+    });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta publik bokningssida:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta sidan', code: 'FETCH_FAILED' });
+  }
+});
+
+app.get('/api/public/booking-page/:slug/availability', bookingPageLimiter, async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+  const dateStr = req.query.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr || '')) {
+    return res.status(400).json({ error: 'Ogiltigt datum (YYYY-MM-DD)', code: 'INVALID_DATE' });
+  }
+  try {
+    const page = await getBookingPage(req.params.slug.toLowerCase().trim());
+    if (!page || page.enabled === false) {
+      return res.status(404).json({ error: 'Sidan hittades inte', code: 'NOT_FOUND' });
+    }
+
+    // 🐛 BUGFIX (hittad under test): new Date(`${dateStr}T00:00:00`) tolkas
+    // som LOKAL servertid. stockholmTimeOnDate (och findFreeTimeSlots
+    // internt) läser sedan datumet via UTC-getters — på en server som INTE
+    // kör UTC (t.ex. denna Mac, CEST = UTC+2) pekade det hela dagen fel:
+    // ett "2026-09-23"-anrop gav luckor daterade 2026-09-22. Bygg dayDate
+    // UTC-ankrat direkt istället, så UTC-getters läser exakt det efterfrågade
+    // datumet oavsett serverns tidszon.
+    const [dYear, dMonth, dDay] = dateStr.split('-').map(Number);
+    const dayDate = new Date(Date.UTC(dYear, dMonth - 1, dDay));
+    if (isNaN(dayDate.getTime())) {
+      return res.status(400).json({ error: 'Ogiltigt datum', code: 'INVALID_DATE' });
+    }
+    if (!page.activeWeekdays.includes(dayDate.getUTCDay())) {
+      return res.json({ slots: [] });
+    }
+
+    const ownerToken = await getDirectAccessToken(page.ownerEmail);
+    if (!ownerToken) {
+      return res.status(503).json({ error: 'Den här sidan är tillfälligt otillgänglig', code: 'OWNER_TOKEN_UNAVAILABLE' });
+    }
+
+    const dayStartUtc = stockholmTimeOnDate(dayDate, 0, 0);
+    const dayEndUtc = stockholmTimeOnDate(dayDate, 23, 59);
+    const rawEvents = await fetchAllCalendarEvents(
+      ownerToken.accessToken, dayStartUtc.toISOString(), dayEndUtc.toISOString(), page.ownerEmail, ownerToken.provider
+    );
+
+    const bufferMs = (page.bufferMinutes || 0) * 60 * 1000;
+    const busyTimes = rawEvents
+      .filter(e => e.status !== 'cancelled' && e.transparency !== 'transparent' && (e.start?.dateTime || e.start?.date))
+      .map(e => {
+        const start = new Date(e.start.dateTime || e.start.date);
+        const end = new Date(e.end.dateTime || e.end.date);
+        return {
+          email: page.ownerEmail,
+          start: new Date(start.getTime() - bufferMs).toISOString(),
+          end: new Date(end.getTime() + bufferMs).toISOString()
+        };
+      });
+
+    const freeSlots = findFreeTimeSlots(dayDate, dayDate, busyTimes, page.durationMinutes, page.startTime, page.endTime, [page.ownerEmail]);
+    const now = new Date();
+    const slots = freeSlots.filter(s => new Date(s.start) > now).map(s => ({ start: s.start, end: s.end }));
+
+    res.json({ slots });
+  } catch (err) {
+    console.error('❌ Kunde inte beräkna lediga tider:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta lediga tider', code: 'AVAILABILITY_FAILED' });
+  }
+});
+
+app.post('/api/public/booking-page/:slug/book', bookingPageLimiter, async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+  const { start, end, visitorName, visitorEmail, message } = req.body || {};
+  if (!start || !end || !visitorName || !visitorEmail) {
+    return res.status(400).json({ error: 'Namn, e-post och tid krävs', code: 'MISSING_FIELDS' });
+  }
+  if (!validateEmail(visitorEmail)) {
+    return res.status(400).json({ error: 'Ogiltig e-postadress', code: 'INVALID_EMAIL' });
+  }
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || startDate >= endDate) {
+    return res.status(400).json({ error: 'Ogiltig tid', code: 'INVALID_TIME' });
+  }
+  if (startDate < new Date()) {
+    return res.status(400).json({ error: 'Den tiden har redan passerat', code: 'TIME_IN_PAST' });
+  }
+
+  try {
+    const page = await getBookingPage(req.params.slug.toLowerCase().trim());
+    if (!page || page.enabled === false) {
+      return res.status(404).json({ error: 'Sidan hittades inte', code: 'NOT_FOUND' });
+    }
+
+    const ownerToken = await getDirectAccessToken(page.ownerEmail);
+    if (!ownerToken) {
+      return res.status(503).json({ error: 'Den här sidan är tillfälligt otillgänglig', code: 'OWNER_TOKEN_UNAVAILABLE' });
+    }
+
+    // ✅ Kolla på nytt att tiden fortfarande är ledig — undviker
+    // dubbelbokning om två besökare väljer samma lucka nästan samtidigt.
+    const bufferMs = (page.bufferMinutes || 0) * 60 * 1000;
+    const checkStart = new Date(startDate.getTime() - bufferMs);
+    const checkEnd = new Date(endDate.getTime() + bufferMs);
+    const rawEvents = await fetchAllCalendarEvents(
+      ownerToken.accessToken, checkStart.toISOString(), checkEnd.toISOString(), page.ownerEmail, ownerToken.provider
+    );
+    const conflict = rawEvents.some(e => {
+      if (e.status === 'cancelled' || e.transparency === 'transparent') return false;
+      const evStart = new Date(e.start?.dateTime || e.start?.date);
+      const evEnd = new Date(e.end?.dateTime || e.end?.date);
+      return startDate < evEnd && endDate > evStart;
+    });
+    if (conflict) {
+      return res.status(409).json({ error: 'Den tiden är tyvärr redan bokad — välj en annan.', code: 'SLOT_TAKEN' });
+    }
+
+    const result = await createBookingPageEvent({
+      ownerToken: ownerToken.accessToken,
+      provider: ownerToken.provider,
+      title: `${String(visitorName).substring(0, 100)} × ${page.displayName}`,
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+      visitorName: String(visitorName).substring(0, 100),
+      visitorEmail: visitorEmail.toLowerCase().trim(),
+      message: message ? String(message).substring(0, 500) : ''
+    });
+
+    if (!result.success) {
+      return res.status(500).json({ error: 'Kunde inte boka mötet. Försök igen.', code: 'BOOK_FAILED' });
+    }
+
+    gdprLog('Booking page: meeting booked', { slug: page.slug, ownerEmail: anonymizeEmail(page.ownerEmail), visitorEmail: anonymizeEmail(visitorEmail) });
+    res.json({ success: true, meetLink: result.meetLink || null });
+  } catch (err) {
+    console.error('❌ Kunde inte boka via bokningssida:', err.message);
+    res.status(500).json({ error: 'Kunde inte boka mötet', code: 'BOOK_FAILED' });
   }
 });
 
@@ -4246,6 +4555,64 @@ async function createMeetingEvents(suggestion, group) {
       errors: [error.message],
       message: 'Failed to create calendar events'
     };
+  }
+}
+
+// ✅ Bokning via en publik bokningssida — en förenklad variant av
+// createMeetingEvents ovan (ingen röstning/förslagslogik behövs, bara EN
+// part väljer en tid). Till skillnad från createMeetingEvents sätts
+// conferenceData/isOnlineMeeting DIREKT på det riktiga eventet — inte
+// via ett separat kasta-bort-event efteråt — så hangoutLink/onlineMeeting
+// faktiskt populeras på eventet som skapas. (Samma bugg som fick
+// BookR-bokade möten att inte dyka upp i "Kommande möten" undviks alltså
+// från början här istället för att ärvas.)
+async function createBookingPageEvent({ ownerToken, provider, title, start, end, visitorName, visitorEmail, message }) {
+  try {
+    if (provider === 'microsoft') {
+      const msEventData = {
+        subject: title,
+        body: { contentType: 'text', content: `Bokat via BookR${message ? `\n\nMeddelande: ${message}` : ''}` },
+        start: { dateTime: start, timeZone: 'Europe/Stockholm' },
+        end: { dateTime: end, timeZone: 'Europe/Stockholm' },
+        attendees: [{ emailAddress: { address: visitorEmail, name: visitorName }, type: 'required' }],
+        isOnlineMeeting: true,
+        onlineMeetingProvider: 'teamsForBusiness'
+      };
+      const response = await fetchWithRetry('https://graph.microsoft.com/v1.0/me/events', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(msEventData)
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      const event = await response.json();
+      return { success: true, eventId: event.id, meetLink: event.onlineMeeting?.joinUrl || null };
+    }
+
+    const eventData = {
+      summary: title,
+      description: `Bokat via BookR${message ? `\n\nMeddelande: ${message}` : ''}`,
+      start: { dateTime: start, timeZone: 'Europe/Stockholm' },
+      end: { dateTime: end, timeZone: 'Europe/Stockholm' },
+      attendees: [{ email: visitorEmail, displayName: visitorName }],
+      reminders: { useDefault: true },
+      conferenceData: {
+        createRequest: { requestId: `booking_${randomUUID()}`, conferenceSolutionKey: { type: 'hangoutsMeet' } }
+      }
+    };
+    const response = await fetchWithRetry(
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(eventData)
+      }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    const event = await response.json();
+    return { success: true, eventId: event.id, meetLink: event.hangoutLink || event.conferenceData?.entryPoints?.[0]?.uri || null };
+  } catch (error) {
+    console.error('❌ createBookingPageEvent error:', error.message);
+    return { success: false, error: error.message };
   }
 }
 

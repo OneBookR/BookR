@@ -899,6 +899,35 @@ async function updateDemoBooking(leadId, updateData) {
   await docRef.update(updateData);
 }
 
+// ===== BOKNINGSSIDOR (Pro: egen sida, Business+: white-label) =====
+// slug är dokument-id — globalt unikt, valt av ägaren (t.ex. namnet i
+// bookr.se/boka/{slug}). users/{email}.bookingPageSlug pekar tillbaka så
+// ägarens egen sida kan slås upp snabbt utan en query.
+async function setBookingPage(slug, data) {
+  await getDb().collection('booking_pages').doc(slug).set({
+    ...data,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+async function getBookingPage(slug) {
+  const docSnap = await getDb().collection('booking_pages').doc(slug).get();
+  return docSnap.exists ? { slug: docSnap.id, ...docSnap.data() } : null;
+}
+
+async function deleteBookingPage(slug) {
+  await getDb().collection('booking_pages').doc(slug).delete();
+}
+
+async function setUserBookingPageSlug(email, slug) {
+  await getDb().collection('users').doc(email.toLowerCase().trim()).set({ bookingPageSlug: slug }, { merge: true });
+}
+
+async function getUserBookingPageSlug(email) {
+  const docSnap = await getDb().collection('users').doc(email.toLowerCase().trim()).get();
+  return docSnap.exists ? (docSnap.data().bookingPageSlug || null) : null;
+}
+
 // ✅ EXPORT ALL FUNCTIONS - ENDAST EN GÅNG!
 export {
   // Waitlist
@@ -983,6 +1012,13 @@ export {
   getDirectAccessLink,
   listDirectAccessLinksFor,
   revokeDirectAccessLink,
+
+  // Bokningssidor
+  setBookingPage,
+  getBookingPage,
+  deleteBookingPage,
+  setUserBookingPageSlug,
+  getUserBookingPageSlug,
 
   // Demo Bookings
   createDemoBooking,

@@ -15,6 +15,7 @@ import BusinessAdmin from './pages/BusinessAdmin.jsx';
 import VenueAdmin from './pages/VenueAdmin.jsx';
 import VenueBooking from './pages/VenueBooking.jsx';
 import BokaDemo from './pages/BokaDemo.jsx';
+import PublicBookingPage from './pages/PublicBookingPage.jsx';
 import Pricing from './pages/Pricing.jsx';
 import EnterpriseKontakt from './pages/EnterpriseKontakt.jsx';
 import Footer from './components/Footer.jsx';
@@ -304,7 +305,7 @@ function App() {
 
   // ✅ SPECIAL ROUTES CHECK
   const path = window.location.pathname;
-  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/anvandarvillkor', '/boka-demo', '/priser', '/enterprise'].includes(path) || path.startsWith('/venue/');
+  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/anvandarvillkor', '/boka-demo', '/priser', '/enterprise'].includes(path) || path.startsWith('/venue/') || path.startsWith('/boka/');
 
   // ✅ RENDER SPECIAL ROUTES
   if (isSpecialRoute) {
@@ -323,7 +324,7 @@ function App() {
       '/boka-demo': BokaDemo,
       '/priser': Pricing,
       '/enterprise': EnterpriseKontakt
-    }[path] || (path.startsWith('/venue/') ? VenueBooking : null);
+    }[path] || (path.startsWith('/venue/') ? VenueBooking : (path.startsWith('/boka/') ? PublicBookingPage : null));
 
     if (RouteComponent) {
       return <RouteComponent user={user} />;

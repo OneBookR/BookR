@@ -15,6 +15,7 @@ import InvitationSidebar from './InvitationSidebar.jsx';
 import ContactSettings from '../components/ContactSettings.jsx';
 import ContactManager from './ContactManager.jsx';
 import Team from './Team.jsx';
+import BookingPageSettings from './BookingPageSettings.jsx';
 import UpcomingMeetingsCard from '../components/UpcomingMeetingsCard.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 
@@ -63,6 +64,16 @@ function TeamIcon({ size = 20 }) {
     </svg>
   );
 }
+function BookingPageIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="3.5" y="4" width="17" height="16" rx="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M3.5 9.5H20.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M8 4V7M16 4V7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M9 14.5L11 16.5L15.5 12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [invites, setInvites] = useState([]);
@@ -81,13 +92,15 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [billingStatus, setBillingStatus] = useState(null); // plan + usage.sessionsUsed/-Limit/maxParticipants
   const [feedExpanded, setFeedExpanded] = useState(false); // "Väntar på dig" — visa fler än de första 4
 
-  // ✅ ?view=team i URL:en (t.ex. tillbaka från kalenderkopplingen för
-  // Direktåtkomst, se Team.jsx) växlar direkt till Team-vyn — det finns
-  // ingen egen /team-route, bara detta interna view-state.
+  // ✅ ?view=team|booking-page i URL:en (t.ex. tillbaka från
+  // kalenderkopplingen för Direktåtkomst/Bokningssida) växlar direkt till
+  // rätt vy — det finns ingen egen /team-route, bara detta interna
+  // view-state.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('view') === 'team') {
-      setCurrentView('team');
+    const view = params.get('view');
+    if (view === 'team' || view === 'booking-page') {
+      setCurrentView(view);
       params.delete('view');
       const rest = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
@@ -188,6 +201,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const handleNavigateToMeeting = (type) => {
     if (type === 'team') {
       setCurrentView('team');
+    } else if (type === 'booking-page') {
+      setCurrentView('booking-page');
     } else {
       // Befintlig logik för 1v1, group, task
       window.location.href = `/?meetingType=${type}`;
@@ -548,6 +563,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       accent: hasDirectAccessTeam ? 'Direktåtkomst aktiv' : 'Bygg ett återanvändbart teamflöde',
       icon: <TeamIcon size={22} />,
       onClick: () => handleNavigateToMeeting('team')
+    },
+    {
+      title: 'Bokningssida',
+      description: 'En egen sida där andra kan boka en tid direkt i din kalender — utan inbjudan.',
+      accent: billingStatus?.plan && billingStatus.plan !== 'free' ? 'Din egen bokningslänk' : 'Kräver Pro eller högre',
+      icon: <BookingPageIcon size={22} />,
+      onClick: () => handleNavigateToMeeting('booking-page')
     }
   ];
 
@@ -555,6 +577,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
   if (currentView === 'team') {
     return <Team user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
+  }
+
+  if (currentView === 'booking-page') {
+    return <BookingPageSettings user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
   }
 
   // ✅ REDESIGN: "DashboardMixNarrow" — vald riktning ur designcanvasen
