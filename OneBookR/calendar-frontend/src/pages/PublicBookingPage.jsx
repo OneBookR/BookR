@@ -358,7 +358,20 @@ export default function PublicBookingPage() {
         {!hideBranding && (
           <Typography sx={{ textAlign: 'center', fontSize: 11.5, color: '#9ca3af', mt: 2 }}>
             Bokat med{' '}
-            <a href="https://www.onebookr.se" target="_blank" rel="noopener noreferrer" style={{ color: '#9ca3af', fontWeight: 700 }}>
+            <a
+              href="https://www.onebookr.se"
+              onClick={(e) => {
+                // ✅ BUGFIX: target="_blank" härifrån (en sida som kan sitta
+                // cross-origin-inbäddad i ett <iframe>) triggade
+                // ERR_BLOCKED_BY_RESPONSE i Chrome — samma klass av problem
+                // som löstes för inloggningsknapparna. window.top bryter ut
+                // ur ett ev. iframe helt, precis som där.
+                e.preventDefault();
+                try { window.top.location.href = 'https://www.onebookr.se'; }
+                catch { window.open('https://www.onebookr.se', '_blank', 'noopener,noreferrer'); }
+              }}
+              style={{ color: '#9ca3af', fontWeight: 700, cursor: 'pointer' }}
+            >
               BookR
             </a>
           </Typography>
