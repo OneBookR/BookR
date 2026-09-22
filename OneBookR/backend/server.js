@@ -776,6 +776,26 @@ async function fetchAllCalendarEvents(token, timeMin, timeMax, userEmail, provid
   }
 }
 
+// ✅ Hämtar en persons upptagna block (transparency !== 'transparent',
+// aldrig 'cancelled') i formen findFreeTimeSlots förväntar sig — { email,
+// start, end } med buffert applicerad på var sida. Delad av bokningssidans
+// vanliga och "logga in för gemensam tid"-tillgänglighet nedan, så samma
+// tolkning av "upptaget" används på båda ställena.
+async function fetchBusyTimesFor(email, token, provider, timeMinDate, timeMaxDate, bufferMs = 0) {
+  const rawEvents = await fetchAllCalendarEvents(token, timeMinDate.toISOString(), timeMaxDate.toISOString(), email, provider);
+  return rawEvents
+    .filter(e => e.status !== 'cancelled' && e.transparency !== 'transparent' && (e.start?.dateTime || e.start?.date))
+    .map(e => {
+      const start = new Date(e.start.dateTime || e.start.date);
+      const end = new Date(e.end.dateTime || e.end.date);
+      return {
+        email,
+        start: new Date(start.getTime() - bufferMs).toISOString(),
+        end: new Date(end.getTime() + bufferMs).toISOString()
+      };
+    });
+}
+
 // ===== CALENDAR EVENT PROCESSING - GDPR-SÄKER =====
 function processCalendarEvents(events, userEmail, includeAll = false) {
   const busyTimes = [];
@@ -2101,22 +2121,8 @@ app.get('/api/public/booking-page/:slug/availability', bookingPageLimiter, async
 
     const dayStartUtc = stockholmTimeOnDate(dayDate, 0, 0);
     const dayEndUtc = stockholmTimeOnDate(dayDate, 23, 59);
-    const rawEvents = await fetchAllCalendarEvents(
-      ownerToken.accessToken, dayStartUtc.toISOString(), dayEndUtc.toISOString(), page.ownerEmail, ownerToken.provider
-    );
-
     const bufferMs = (page.bufferMinutes || 0) * 60 * 1000;
-    const busyTimes = rawEvents
-      .filter(e => e.status !== 'cancelled' && e.transparency !== 'transparent' && (e.start?.dateTime || e.start?.date))
-      .map(e => {
-        const start = new Date(e.start.dateTime || e.start.date);
-        const end = new Date(e.end.dateTime || e.end.date);
-        return {
-          email: page.ownerEmail,
-          start: new Date(start.getTime() - bufferMs).toISOString(),
-          end: new Date(end.getTime() + bufferMs).toISOString()
-        };
-      });
+    const busyTimes = await fetchBusyTimesFor(page.ownerEmail, ownerToken.accessToken, ownerToken.provider, dayStartUtc, dayEndUtc, bufferMs);
 
     const freeSlots = findFreeTimeSlots(dayDate, dayDate, busyTimes, page.durationMinutes, page.startTime, page.endTime, [page.ownerEmail]);
     const now = new Date();
@@ -2125,6 +2131,66 @@ app.get('/api/public/booking-page/:slug/availability', bookingPageLimiter, async
     res.json({ slots });
   } catch (err) {
     console.error('❌ Kunde inte beräkna lediga tider:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta lediga tider', code: 'AVAILABILITY_FAILED' });
+  }
+});
+
+// ✅ Samma sak, men om BESÖKAREN väljer att logga in med sin egen kalender
+// ("logga in med Google/Microsoft för att hitta en tid som passar er
+// båda") — kärnan i BookRs faktiska teknik, återanvänd här istället för
+// att bara visa ägarens råa lediga tider. Besökaren behöver inte finnas i
+// whitelisten (se isDemoFlow-undantaget för returnTo.startsWith('/boka/')
+// vid /auth/google|microsoft-callbacken) och blir aldrig en riktig
+// BookR-användare — bara en kort inloggning för att läsa ledigt/upptaget.
+app.get('/api/public/booking-page/:slug/mutual-availability', bookingPageLimiter, async (req, res) => {
+  const visitorEmail = requireUser(req, res);
+  if (!visitorEmail) return;
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+  const dateStr = req.query.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr || '')) {
+    return res.status(400).json({ error: 'Ogiltigt datum (YYYY-MM-DD)', code: 'INVALID_DATE' });
+  }
+  try {
+    const page = await getBookingPage(req.params.slug.toLowerCase().trim());
+    if (!page || page.enabled === false) {
+      return res.status(404).json({ error: 'Sidan hittades inte', code: 'NOT_FOUND' });
+    }
+    if (visitorEmail.toLowerCase().trim() === page.ownerEmail) {
+      return res.status(400).json({ error: 'Du kan inte boka din egen sida', code: 'SELF_BOOKING' });
+    }
+
+    const [dYear, dMonth, dDay] = dateStr.split('-').map(Number);
+    const dayDate = new Date(Date.UTC(dYear, dMonth - 1, dDay));
+    if (isNaN(dayDate.getTime())) {
+      return res.status(400).json({ error: 'Ogiltigt datum', code: 'INVALID_DATE' });
+    }
+    if (!page.activeWeekdays.includes(dayDate.getUTCDay())) {
+      return res.json({ slots: [] });
+    }
+
+    const ownerToken = await getDirectAccessToken(page.ownerEmail);
+    if (!ownerToken) {
+      return res.status(503).json({ error: 'Den här sidan är tillfälligt otillgänglig', code: 'OWNER_TOKEN_UNAVAILABLE' });
+    }
+
+    const dayStartUtc = stockholmTimeOnDate(dayDate, 0, 0);
+    const dayEndUtc = stockholmTimeOnDate(dayDate, 23, 59);
+    const bufferMs = (page.bufferMinutes || 0) * 60 * 1000;
+    const [ownerBusy, visitorBusy] = await Promise.all([
+      fetchBusyTimesFor(page.ownerEmail, ownerToken.accessToken, ownerToken.provider, dayStartUtc, dayEndUtc, bufferMs),
+      fetchBusyTimesFor(visitorEmail, req.user.accessToken, req.user.provider || 'google', dayStartUtc, dayEndUtc, bufferMs)
+    ]);
+
+    const freeSlots = findFreeTimeSlots(
+      dayDate, dayDate, [...ownerBusy, ...visitorBusy], page.durationMinutes, page.startTime, page.endTime,
+      [page.ownerEmail, visitorEmail.toLowerCase().trim()]
+    );
+    const now = new Date();
+    const slots = freeSlots.filter(s => new Date(s.start) > now).map(s => ({ start: s.start, end: s.end }));
+
+    res.json({ slots });
+  } catch (err) {
+    console.error('❌ Kunde inte beräkna gemensamma lediga tider:', err.message);
     res.status(500).json({ error: 'Kunde inte hämta lediga tider', code: 'AVAILABILITY_FAILED' });
   }
 });
@@ -2160,18 +2226,17 @@ app.post('/api/public/booking-page/:slug/book', bookingPageLimiter, async (req, 
 
     // ✅ Kolla på nytt att tiden fortfarande är ledig — undviker
     // dubbelbokning om två besökare väljer samma lucka nästan samtidigt.
+    // Om besökaren råkar vara inloggad (kom via "logga in för att hitta en
+    // tid som passar er båda") kollas ÄVEN deras egen kalender — annars
+    // bara ägarens, precis som innan.
     const bufferMs = (page.bufferMinutes || 0) * 60 * 1000;
     const checkStart = new Date(startDate.getTime() - bufferMs);
     const checkEnd = new Date(endDate.getTime() + bufferMs);
-    const rawEvents = await fetchAllCalendarEvents(
-      ownerToken.accessToken, checkStart.toISOString(), checkEnd.toISOString(), page.ownerEmail, ownerToken.provider
-    );
-    const conflict = rawEvents.some(e => {
-      if (e.status === 'cancelled' || e.transparency === 'transparent') return false;
-      const evStart = new Date(e.start?.dateTime || e.start?.date);
-      const evEnd = new Date(e.end?.dateTime || e.end?.date);
-      return startDate < evEnd && endDate > evStart;
-    });
+    const busyLists = [await fetchBusyTimesFor(page.ownerEmail, ownerToken.accessToken, ownerToken.provider, checkStart, checkEnd, 0)];
+    if (req.user?.email && req.user.accessToken && req.user.email.toLowerCase().trim() === visitorEmail.toLowerCase().trim()) {
+      busyLists.push(await fetchBusyTimesFor(req.user.email, req.user.accessToken, req.user.provider || 'google', checkStart, checkEnd, 0));
+    }
+    const conflict = busyLists.flat().some(b => startDate < new Date(b.end) && endDate > new Date(b.start));
     if (conflict) {
       return res.status(409).json({ error: 'Den tiden är tyvärr redan bokad — välj en annan.', code: 'SLOT_TAKEN' });
     }
@@ -2568,7 +2633,10 @@ app.get('/auth/google/callback', (req, res, next) => {
     // /boka-demo och /enterprise = samma sorts flöde: besökaren loggar in med
     // sin egen kalender för att boka ett möte med oss, blir INTE en riktig
     // app-användare (får en demoOnly-session).
-    const isDemoFlow = returnTo.startsWith('/boka-demo') || returnTo.startsWith('/enterprise');
+    // ✅ /boka/:slug (en publik bokningssida) hör till samma kategori:
+    // besökaren loggar in med sin EGEN kalender bara för att hitta en tid
+    // som passar båda parter — inte för att bli en riktig BookR-användare.
+    const isDemoFlow = returnTo.startsWith('/boka-demo') || returnTo.startsWith('/enterprise') || returnTo.startsWith('/boka/');
     // ✅ SIGNUP via /priser släpps alltid in (ingen whitelist krävs).
     //   Free-signup → full åtkomst direkt (på Free-nivå).
     //   Pro/Business-checkout (?checkout=pro|business) → begränsad session
@@ -2694,7 +2762,10 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
     // /boka-demo och /enterprise = samma sorts flöde: besökaren loggar in med
     // sin egen kalender för att boka ett möte med oss, blir INTE en riktig
     // app-användare (får en demoOnly-session).
-    const isDemoFlow = returnTo.startsWith('/boka-demo') || returnTo.startsWith('/enterprise');
+    // ✅ /boka/:slug (en publik bokningssida) hör till samma kategori:
+    // besökaren loggar in med sin EGEN kalender bara för att hitta en tid
+    // som passar båda parter — inte för att bli en riktig BookR-användare.
+    const isDemoFlow = returnTo.startsWith('/boka-demo') || returnTo.startsWith('/enterprise') || returnTo.startsWith('/boka/');
     // ✅ SIGNUP via /priser släpps alltid in (ingen whitelist krävs).
     //   Free-signup → full åtkomst direkt (på Free-nivå).
     //   Pro/Business-checkout (?checkout=pro|business) → begränsad session

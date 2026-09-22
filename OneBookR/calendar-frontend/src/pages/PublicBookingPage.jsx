@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Box, Typography, Button, TextField, CircularProgress } from '@mui/material';
 import { apiRequest } from '../utils/apiConfig.js';
+import { GoogleIcon, MicrosoftIcon } from '../assets/ProviderIcons.jsx';
 
 const GOOGLE_FONT_URLS = {
   Manrope: 'Manrope:wght@400;600;700;800',
   Inter: 'Inter:wght@400;600;700;800',
   Poppins: 'Poppins:wght@400;600;700;800',
   'Playfair Display': 'Playfair+Display:wght@400;600;700;800',
-  Roboto: 'Roboto:wght@400;600;700;900',
+  Roboto: 'Roboto:wght@400;600;900',
 };
 
 const fieldSx = {
@@ -20,17 +21,32 @@ const fieldSx = {
   },
 };
 
-// ✅ Publik, enkelriktad bokningssida (à la Calendly) — ingen inloggning,
-// ingen egen kalenderkoppling krävs av besökaren. /boka/:slug, wirad i
-// App.jsx (path.startsWith('/boka/')) precis som /venue/:id sedan innan.
-// ?embed=1 gör layouten tajtare för <iframe>-inbäddning på en extern
-// hemsida — det är hela poängen med sidan.
+// ✅ Publik bokningssida (à la Calendly), /boka/:slug — wirad i App.jsx
+// (path.startsWith('/boka/')) precis som /venue/:id sedan innan. ?embed=1
+// gör layouten tajtare för <iframe>-inbäddning på en extern hemsida.
+//
+// Besökaren väljer mellan två vägar:
+//  - "Logga in med Google/Microsoft" — BookRs egen styrka: en RIKTIG
+//    kalenderjämförelse mellan besökaren och sidans ägare, bara ömsesidigt
+//    lediga tider visas, och mötet bokas in i BÅDA kalendrarna.
+//  - Fortsätt utan att logga in — ser bara ägarens lediga tider och bokar
+//    manuellt (namn + e-post), ingen inloggning krävs alls.
+//
+// Inloggningen görs via window.top (bryter ut ur ett ev. iframe) istället
+// för att navigera iframen själv — annars hamnar sessionscookien i en
+// cross-site-iframe-kontext där webbläsare i allt högre grad blockerar
+// tredjepartscookies, och inloggningen skulle se ut att lyckas men aldrig
+// hålla i sig. Efter inloggning ser besökaren sidan som en vanlig,
+// förstaparts onebookr.se-sida istället — helt okej, och tydligare att
+// lita på än att logga in inuti en okänd inbäddning.
 export default function PublicBookingPage() {
   const slug = useMemo(() => window.location.pathname.split('/')[2] || '', []);
   const embed = useMemo(() => new URLSearchParams(window.location.search).get('embed') === '1', []);
 
   const [page, setPage] = useState(null);
   const [notFound, setNotFound] = useState(false);
+  const [authMode, setAuthMode] = useState('checking'); // 'checking' | 'choosing' | 'manual' | 'loggedIn'
+  const [visitor, setVisitor] = useState(null); // { email, name, provider } när inloggad
   const [selectedDate, setSelectedDate] = useState(null);
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -58,6 +74,22 @@ export default function PublicBookingPage() {
       .catch(() => setNotFound(true));
   }, [slug]);
 
+  // Redan inloggad (t.ex. tillbaka från /auth/google)? Hoppa förbi valet.
+  useEffect(() => {
+    apiRequest('/api/auth/me')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (data?.email) {
+          setVisitor({ email: data.email, name: data.displayName || data.name || '', provider: data.provider });
+          setAuthMode('loggedIn');
+          setForm((f) => ({ ...f, name: data.displayName || data.name || f.name, email: data.email }));
+        } else {
+          setAuthMode('choosing');
+        }
+      })
+      .catch(() => setAuthMode('choosing'));
+  }, []);
+
   // Ladda vald typsnitt från Google Fonts (redan tillåtet i appens CSP).
   useEffect(() => {
     const font = page?.branding?.font;
@@ -74,17 +106,25 @@ export default function PublicBookingPage() {
     setSelectedSlot(null);
     setLoadingSlots(true);
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    apiRequest(`/api/public/booking-page/${encodeURIComponent(slug)}/availability?date=${dateStr}`)
+    const endpoint = authMode === 'loggedIn' ? 'mutual-availability' : 'availability';
+    apiRequest(`/api/public/booking-page/${encodeURIComponent(slug)}/${endpoint}?date=${dateStr}`)
       .then(res => (res.ok ? res.json() : { slots: [] }))
       .then(data => setSlots(data.slots || []))
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false));
-  }, [slug]);
+  }, [slug, authMode]);
 
   useEffect(() => {
-    if (page && dates.length > 0) loadSlots(dates[0]);
+    if (page && (authMode === 'manual' || authMode === 'loggedIn') && dates.length > 0) loadSlots(dates[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, authMode]);
+
+  const startLogin = (provider) => {
+    const returnTo = encodeURIComponent(`/boka/${slug}`);
+    const target = `/auth/${provider}?returnTo=${returnTo}`;
+    // window.top för att bryta ut ur ett ev. iframe — se kommentaren högst upp.
+    try { window.top.location.href = target; } catch { window.location.href = target; }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -137,7 +177,7 @@ export default function PublicBookingPage() {
     );
   }
 
-  if (!page) {
+  if (!page || authMode === 'checking') {
     return (
       <Box sx={{ ...pageStyle, display: 'flex', justifyContent: 'center', pt: 10 }}>
         <CircularProgress size={28} sx={{ color: accent }} />
@@ -182,9 +222,46 @@ export default function PublicBookingPage() {
                 </Typography>
               )}
             </Box>
+          ) : authMode === 'choosing' ? (
+            <Box sx={{ mt: 3.5 }}>
+              <Typography sx={{ fontSize: 13.5, color: '#5f6470', mb: 2, lineHeight: 1.6 }}>
+                Logga in med din egen kalender så visar vi bara tider som passar er <strong>båda</strong> — annars ser
+                du {page.displayName.split(' ')[0]}s lediga tider och väljer själv.
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Button
+                  onClick={() => startLogin('google')}
+                  startIcon={<GoogleIcon size={18} />}
+                  fullWidth
+                  sx={{ py: 1.2, borderRadius: 2.5, border: '1px solid rgba(17,24,39,0.14)', color: '#111827', fontWeight: 700, textTransform: 'none', justifyContent: 'flex-start', px: 2 }}
+                >
+                  Logga in med Google
+                </Button>
+                <Button
+                  onClick={() => startLogin('microsoft')}
+                  startIcon={<MicrosoftIcon size={18} />}
+                  fullWidth
+                  sx={{ py: 1.2, borderRadius: 2.5, border: '1px solid rgba(17,24,39,0.14)', color: '#111827', fontWeight: 700, textTransform: 'none', justifyContent: 'flex-start', px: 2 }}
+                >
+                  Logga in med Microsoft
+                </Button>
+              </Box>
+              <Button
+                onClick={() => setAuthMode('manual')}
+                fullWidth
+                sx={{ mt: 2, py: 1, fontSize: 13, color: '#5f6470', textTransform: 'none', fontWeight: 600 }}
+              >
+                Fortsätt utan att logga in
+              </Button>
+            </Box>
           ) : !selectedSlot ? (
             <>
-              <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', mt: 3, pb: 1 }}>
+              {authMode === 'loggedIn' && (
+                <Typography sx={{ fontSize: 12, color: accent, fontWeight: 700, mt: 2 }}>
+                  Inloggad som {visitor?.email} — visar tider som passar er båda.
+                </Typography>
+              )}
+              <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', mt: 2, pb: 1 }}>
                 {dates.map((d) => {
                   const active = selectedDate && d.toDateString() === selectedDate.toDateString();
                   return (
@@ -243,7 +320,12 @@ export default function PublicBookingPage() {
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 <TextField label="Namn" required fullWidth value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} sx={fieldSx} />
-                <TextField label="E-post" type="email" required fullWidth value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} sx={fieldSx} />
+                <TextField
+                  label="E-post" type="email" required fullWidth value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  disabled={authMode === 'loggedIn'}
+                  sx={fieldSx}
+                />
                 <TextField label="Meddelande (valfritt)" multiline minRows={2} fullWidth value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} sx={fieldSx} />
               </Box>
               {error && <Typography sx={{ fontSize: 13, color: '#b42318', mt: 1.5 }}>{error}</Typography>}
