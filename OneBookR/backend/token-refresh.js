@@ -5,8 +5,17 @@
 // BookR-kalender för demo-flödet sluta fungera så fort dess access-token
 // gick ut (~1h för Google). Denna modul är den enda källan för "vad är
 // BookRs kalender-token just nu".
-import { getAdminCalendarToken as fetchStoredAdminCalendarToken, saveAdminCalendarToken, getStoredDirectAccessToken, saveDirectAccessToken } from './firestore.js';
+import { getAdminCalendarToken as fetchStoredAdminCalendarToken, saveAdminCalendarToken, getStoredDirectAccessToken, saveDirectAccessToken, clearStoredDirectAccessToken } from './firestore.js';
 import { decryptToken, encryptToken } from './gdpr-utils.js';
+
+// ✅ Skiljer på "token permanent död" (personen återkallade åtkomsten,
+// bytte lösenord, eller Google rensade en gammal token) från andra fel
+// (nätverksblip, Googles/Microsofts API nere) — bara den förra ska tolkas
+// som "ingen koppling finns längre", inte kastas vidare som ett vanligt
+// fel. invalid_grant är samma felkod för både Google och Microsoft.
+function isPermanentGrantFailure(error) {
+  return typeof error?.message === 'string' && error.message.includes('invalid_grant');
+}
 
 // ✅ In-memory cache — undviker att förnya token på varje enskilt anrop.
 // Ligger i processminnet (inte Firestore) eftersom access-tokens är
@@ -144,9 +153,31 @@ export async function getDirectAccessToken(email) {
     throw new Error(`Direktåtkomst-refreshToken för ${key} kunde inte dekrypteras`);
   }
 
-  const refreshed = stored.provider === 'microsoft'
-    ? await refreshMicrosoftAccessToken(refreshToken)
-    : await refreshGoogleAccessToken(refreshToken);
+  let refreshed;
+  try {
+    refreshed = stored.provider === 'microsoft'
+      ? await refreshMicrosoftAccessToken(refreshToken)
+      : await refreshGoogleAccessToken(refreshToken);
+  } catch (err) {
+    // 🐛 BUGFIX: en död refresh-token (t.ex. personen själv återkallade
+    // BookRs åtkomst via myaccount.google.com/connections) kastades tidigare
+    // rätt igenom till anroparen som ett generiskt fel — /api/direct-access/
+    // start-session (och bokningssidorna) fick då ett odiagnostiserbart
+    // 500 istället för den redan byggda 'X behöver koppla om sin kalender'-
+    // hanteringen (som bara triggas när denna funktion returnerar null).
+    // Nollställ den döda tokenen i Firestore samtidigt, annars fortsätter
+    // systemet tro att kopplingen finns och samma fel upprepas i evighet
+    // vid varje nytt försök.
+    if (isPermanentGrantFailure(err)) {
+      console.warn(`⚠️ Direktåtkomst-token för ${key} är återkallad/utgången — nollställer`, err.message);
+      directAccessCache.delete(key);
+      clearStoredDirectAccessToken(key).catch(clearErr =>
+        console.warn(`⚠️ Kunde inte nollställa direktåtkomst-token för ${key}:`, clearErr.message)
+      );
+      return null;
+    }
+    throw err;
+  }
 
   const result = { accessToken: refreshed.accessToken, expiresAt: refreshed.expiresAt, provider: stored.provider };
   directAccessCache.set(key, result);

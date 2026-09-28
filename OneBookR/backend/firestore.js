@@ -722,6 +722,20 @@ async function getStoredDirectAccessToken(email) {
   return { provider: d.directAccessProvider || 'google', refreshToken: d.directAccessRefreshToken };
 }
 
+// ✅ Nollställer en död refresh-token (Google/Microsoft svarade
+// invalid_grant — vanligtvis för att personen själv återkallat BookRs
+// åtkomst via myaccount.google.com/connections, bytt lösenord, eller
+// Google roterat bort en gammal token). Anropas av getDirectAccessToken
+// i token-refresh.js när förnyelsen misslyckas permanent, så att
+// "har den här personen direktåtkomst kopplad?" svarar sanningsenligt
+// (nej) istället för att fortsätta tro sig ha en fungerande koppling.
+async function clearStoredDirectAccessToken(email) {
+  await getDb().collection('users').doc(email.toLowerCase().trim()).set({
+    directAccessRefreshToken: null,
+    directAccessRevokedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
 // ✅ Förfrågningar om direktåtkomst — samma form/mönster som `invitations`
 // (createInvitation ovan), egen collection eftersom det är en annan sorts
 // relation (varaktig, ömsesidig kalenderkoppling — inte en engångs
@@ -1004,6 +1018,7 @@ export {
   // Direktåtkomst
   saveDirectAccessToken,
   getStoredDirectAccessToken,
+  clearStoredDirectAccessToken,
   createDirectAccessRequest,
   getDirectAccessRequestsFor,
   getDirectAccessRequest,
