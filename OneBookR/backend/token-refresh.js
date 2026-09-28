@@ -7,6 +7,13 @@
 // BookRs kalender-token just nu".
 import { getAdminCalendarToken as fetchStoredAdminCalendarToken, saveAdminCalendarToken, getStoredDirectAccessToken, saveDirectAccessToken, clearStoredDirectAccessToken } from './firestore.js';
 import { decryptToken, encryptToken } from './gdpr-utils.js';
+import { Resend } from 'resend';
+
+// ✅ Egen, liten Resend-klient här istället för att importera hela
+// server.js (skulle bli en tung/cirkulär import bara för att skicka ett
+// mejl) — samma mönster (ett npm-paket, ingen egen modul) som server.js
+// egen instans.
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ✅ Skiljer på "token permanent död" (personen återkallade åtkomsten,
 // bytte lösenord, eller Google rensade en gammal token) från andra fel
@@ -15,6 +22,48 @@ import { decryptToken, encryptToken } from './gdpr-utils.js';
 // fel. invalid_grant är samma felkod för både Google och Microsoft.
 function isPermanentGrantFailure(error) {
   return typeof error?.message === 'string' && error.message.includes('invalid_grant');
+}
+
+// ✅ Mejlar personen vars direktåtkomst-koppling precis dog (upptäcks i
+// samma ögonblick förnyelsen misslyckas — se getDirectAccessToken nedan).
+// Utan detta märker man bara att det är trasigt när NÅGON ANNAN råkar
+// försöka starta en session med en och det kraschar hos dem, inte hos den
+// som faktiskt behöver koppla om. Fire-and-forget, ska aldrig fördröja
+// eller fälla anropet som upptäckte det.
+async function sendDirectAccessExpiredEmail(email) {
+  if (!process.env.RESEND_API_KEY) return;
+  const base = process.env.FRONTEND_URL || 'https://www.onebookr.se';
+  const link = `${base}/?view=team&tab=direct-access`;
+  try {
+    await resend.emails.send({
+      from: 'BookR <noreply@onebookr.se>',
+      to: [email],
+      subject: '🔗 Din kalenderkoppling för Direktåtkomst har slutat fungera - BookR',
+      html: `<!DOCTYPE html><html><body style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;margin:0;padding:0;background-color:#f5f7fa;">
+        <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.1);">
+          <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:30px;text-align:center;">
+            <h1 style="color:#fff;margin:0;font-size:28px;font-weight:300;">📅 BookR</h1>
+          </div>
+          <div style="padding:40px 30px;">
+            <h2 style="color:#2c3e50;margin:0 0 20px 0;font-size:22px;font-weight:400;">Din kalenderkoppling har slutat fungera</h2>
+            <p style="color:#34495e;font-size:16px;line-height:1.6;margin:0 0 15px 0;">
+              Direktåtkomst för din kalender fungerar inte längre — troligen för att du själv (eller Google/Microsoft) återkallat BookRs åtkomst.
+              Dina kontakter kan inte längre boka möten direkt med dig förrän du kopplar om kalendern.
+            </p>
+            <div style="text-align:center;margin:30px 0;">
+              <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:15px 30px;text-decoration:none;border-radius:25px;font-weight:500;font-size:16px;">Koppla om kalendern</a>
+            </div>
+            <p style="color:#7f8c8d;font-size:14px;line-height:1.5;margin:25px 0 0 0;">
+              Vill du inte längre använda Direktåtkomst kan du bara ignorera det här mejlet — inget mer händer.
+            </p>
+          </div>
+        </div>
+      </body></html>`,
+      text: `Din kalenderkoppling för Direktåtkomst har slutat fungera.\n\nKoppla om: ${link}\n\nVill du inte längre använda Direktåtkomst kan du ignorera det här mejlet.`,
+    });
+  } catch (err) {
+    console.warn(`⚠️ Kunde inte mejla ${email} om utgången direktåtkomst-token:`, err.message);
+  }
 }
 
 // ✅ In-memory cache — undviker att förnya token på varje enskilt anrop.
@@ -174,6 +223,9 @@ export async function getDirectAccessToken(email) {
       clearStoredDirectAccessToken(key).catch(clearErr =>
         console.warn(`⚠️ Kunde inte nollställa direktåtkomst-token för ${key}:`, clearErr.message)
       );
+      // ✅ Annars märker bara den som FÖRSÖKER boka med den här personen
+      // att något är trasigt — aldrig personen vars koppling faktiskt dog.
+      sendDirectAccessExpiredEmail(key).catch(() => {});
       return null;
     }
     throw err;

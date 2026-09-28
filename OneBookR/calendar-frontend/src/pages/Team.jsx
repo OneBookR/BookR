@@ -745,7 +745,14 @@ export default function Team({ user, onNavigateBack }) {
                             {matchedContact?.name || link.withEmail}
                           </Typography>
                           <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
-                            {matchedContact?.name ? link.withEmail : 'Ömsesidig direktåtkomst'}
+                            {/* ✅ BUGFIX: visade tidigare e-post ELLER "Ömsesidig
+                                direktåtkomst" beroende på om DU råkat spara
+                                personen som lokal kontakt — samma relation kunde
+                                alltså se olika ut på ditt och motpartens konto.
+                                Sidans intro-text ovanför listan förklarar redan
+                                att det är ömsesidigt en gång för alla, så här
+                                visas alltid bara e-posten, konsekvent. */}
+                            {link.withEmail}
                             {link.createdAt && ` · Sedan ${new Date(link.createdAt).toLocaleDateString('sv-SE')}`}
                           </Typography>
                         </Box>
