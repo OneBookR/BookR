@@ -1995,6 +1995,33 @@ function sanitizeBookingPageInput(body, plan) {
   };
 }
 
+// 🐛 BUGFIX: de publika routerna (GET :slug, .../availability,
+// .../mutual-availability, POST .../book) läste branding/existens direkt
+// från Firestore utan att någonsin kolla ägarens NUVARANDE plan — en
+// bokningssida (och all white-label-branding) fortsatte alltså fungera
+// för evigt även om ägaren senare sa upp Pro/Business, eller aldrig ens
+// hade Pro (planen kollas bara vid SPARA, inte vid varje läsning). Denna
+// funktion är den enda vägen in till en bokningssida för alla fyra
+// publika routerna — sidan "finns inte" (404) om ägaren är på Free, och
+// branding tvingas tillbaka till BookRs standardutseende om ägaren gått
+// från Business/Enterprise ner till Pro (som bara får eget namn, inte
+// white-label).
+async function getActiveBookingPage(slug) {
+  const page = await getBookingPage(slug);
+  if (!page || page.enabled === false) return null;
+
+  const { plan } = await getUserBilling(page.ownerEmail);
+  if (plan === 'free') return null; // nedgraderad — sidan är inte längre tillgänglig
+
+  if (plan !== 'business' && plan !== 'enterprise') {
+    // Nedgraderad Business→Pro: behåll den sparade brandingen i Firestore
+    // (syns igen om de uppgraderar tillbaka) men servera aldrig den så
+    // länge planen bara ger rätt till eget namn.
+    return { ...page, branding: { logoUrl: null, primaryColor: '#111827', font: 'Manrope', hideBookrBranding: false } };
+  }
+  return page;
+}
+
 app.get('/api/booking-page/me', async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
@@ -2076,8 +2103,8 @@ app.post('/api/booking-page', async (req, res) => {
 app.get('/api/public/booking-page/:slug', bookingPageLimiter, async (req, res) => {
   if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
   try {
-    const page = await getBookingPage(req.params.slug.toLowerCase().trim());
-    if (!page || page.enabled === false) {
+    const page = await getActiveBookingPage(req.params.slug.toLowerCase().trim());
+    if (!page) {
       return res.status(404).json({ error: 'Sidan hittades inte', code: 'NOT_FOUND' });
     }
     // Läcker ALDRIG ägarens e-post till klienten.
@@ -2101,8 +2128,8 @@ app.get('/api/public/booking-page/:slug/availability', bookingPageLimiter, async
     return res.status(400).json({ error: 'Ogiltigt datum (YYYY-MM-DD)', code: 'INVALID_DATE' });
   }
   try {
-    const page = await getBookingPage(req.params.slug.toLowerCase().trim());
-    if (!page || page.enabled === false) {
+    const page = await getActiveBookingPage(req.params.slug.toLowerCase().trim());
+    if (!page) {
       return res.status(404).json({ error: 'Sidan hittades inte', code: 'NOT_FOUND' });
     }
 
@@ -2159,8 +2186,8 @@ app.get('/api/public/booking-page/:slug/mutual-availability', bookingPageLimiter
     return res.status(400).json({ error: 'Ogiltigt datum (YYYY-MM-DD)', code: 'INVALID_DATE' });
   }
   try {
-    const page = await getBookingPage(req.params.slug.toLowerCase().trim());
-    if (!page || page.enabled === false) {
+    const page = await getActiveBookingPage(req.params.slug.toLowerCase().trim());
+    if (!page) {
       return res.status(404).json({ error: 'Sidan hittades inte', code: 'NOT_FOUND' });
     }
     if (visitorEmail.toLowerCase().trim() === page.ownerEmail) {
@@ -2222,8 +2249,8 @@ app.post('/api/public/booking-page/:slug/book', bookingPageLimiter, async (req, 
   }
 
   try {
-    const page = await getBookingPage(req.params.slug.toLowerCase().trim());
-    if (!page || page.enabled === false) {
+    const page = await getActiveBookingPage(req.params.slug.toLowerCase().trim());
+    if (!page) {
       return res.status(404).json({ error: 'Sidan hittades inte', code: 'NOT_FOUND' });
     }
 
@@ -2449,22 +2476,35 @@ function requireUser(req, res) {
 }
 
 // GET /api/billing/config  → publik: styr om Pro/Business går att köpa
-const PAID_PLANS_ENABLED = () => process.env.PAID_PLANS_ENABLED === 'true';
+// ✅ Två SEPARATA flaggor (inte en delad) — annars går det inte att öppna
+// Pro för köp utan att Business öppnas samtidigt, trots att Business har
+// en känd lucka (sätesfördelning inte byggd än, se firestore.js/team-
+// diskussionen) och medvetet ska hållas låst tills vidare.
+const PAID_PLANS_ENABLED = () => process.env.PAID_PLANS_ENABLED === 'true'; // Pro
+const BUSINESS_PLAN_ENABLED = () => process.env.BUSINESS_PLAN_ENABLED === 'true'; // Business
 app.get('/api/billing/config', (req, res) => {
-  res.json({ paidPlansEnabled: PAID_PLANS_ENABLED(), billingConfigured: isBillingConfigured() });
+  res.json({
+    paidPlansEnabled: PAID_PLANS_ENABLED(),
+    businessPlanEnabled: BUSINESS_PLAN_ENABLED(),
+    billingConfigured: isBillingConfigured()
+  });
 });
 
 // POST /api/billing/checkout  { plan: 'pro'|'business', period: 'monthly'|'yearly' }
 app.post('/api/billing/checkout', billingLimiter, async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
-  if (!PAID_PLANS_ENABLED()) {
-    return res.status(403).json({ error: 'Pro och Business öppnar snart', code: 'PAID_PLANS_LOCKED' });
+  const { plan, period } = req.body || {};
+  const planUnlocked = plan === 'business' ? BUSINESS_PLAN_ENABLED() : PAID_PLANS_ENABLED();
+  if (!planUnlocked) {
+    return res.status(403).json({
+      error: plan === 'business' ? 'Business öppnar snart' : 'Pro öppnar snart',
+      code: 'PAID_PLANS_LOCKED'
+    });
   }
   if (!isBillingConfigured()) {
     return res.status(503).json({ error: 'Billing är inte konfigurerat än', code: 'BILLING_NOT_CONFIGURED' });
   }
-  const { plan, period } = req.body || {};
   try {
     const base = CONFIG.urls.frontend;
     const url = await createCheckoutSession({

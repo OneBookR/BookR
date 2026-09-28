@@ -83,17 +83,24 @@ export default function Pricing({ user }) {
   const billingParam = new URLSearchParams(window.location.search).get('billing');
   const cancelled = billingParam === 'cancelled';
   const [activating, setActivating] = useState(billingParam === 'success');
-  // Pro/Business är låsta tills PAID_PLANS_ENABLED=true på servern. Default
-  // låst — vi visar "Kommer snart" och döljer priset.
+  // Pro och Business låses upp OBEROENDE av varandra (två separata
+  // env-flaggor server-side) — så Pro kan öppnas för köp utan att Business
+  // öppnas samtidigt (Business har en känd lucka, sätesfördelning, och
+  // hålls medvetet låst tills den är byggd). Default låst för båda — vi
+  // visar "Kommer snart" och döljer priset tills respektive flagga sätts.
   const [paidEnabled, setPaidEnabled] = useState(false);
+  const [businessPlanEnabled, setBusinessPlanEnabled] = useState(false);
 
   const period = yearly ? 'yearly' : 'monthly';
 
   useEffect(() => {
     apiRequest('/api/billing/config')
       .then((r) => r.json())
-      .then((d) => setPaidEnabled(Boolean(d?.paidPlansEnabled)))
-      .catch(() => setPaidEnabled(false));
+      .then((d) => {
+        setPaidEnabled(Boolean(d?.paidPlansEnabled));
+        setBusinessPlanEnabled(Boolean(d?.businessPlanEnabled));
+      })
+      .catch(() => { setPaidEnabled(false); setBusinessPlanEnabled(false); });
   }, []);
 
   // Kärnlogiken: POSTa checkout och skicka vidare till Stripe. period skickas
@@ -238,7 +245,7 @@ export default function Pricing({ user }) {
           <Typography sx={{ fontSize: { xs: 15, md: 17 }, lineHeight: 1.6, color: 'var(--text-secondary)', fontWeight: 500, mb: 3.5 }}>
             Varje plan har äkta synk mellan Google Kalender och Microsoft Outlook — utan att motparten kopplar in sin kalender. Personer du bjuder in loggar in gratis och betalar aldrig något.
           </Typography>
-          {paidEnabled && (
+          {(paidEnabled || businessPlanEnabled) && (
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, p: 0.5, borderRadius: 999, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)' }}>
               <button type="button" style={seg(!yearly)} onClick={() => setYearly(false)}>Månadsvis</button>
               <button type="button" style={seg(yearly)} onClick={() => setYearly(true)}>Årsvis · spara upp till 22%</button>
@@ -249,7 +256,7 @@ export default function Pricing({ user }) {
         {/* Plan cards */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(4, 1fr)' }, gap: 2.5, alignItems: 'start' }}>
           {PLANS.map((plan) => {
-            const locked = (plan.id === 'pro' || plan.id === 'business') && !paidEnabled;
+            const locked = plan.id === 'pro' ? !paidEnabled : plan.id === 'business' ? !businessPlanEnabled : false;
             const price = locked ? 'Snart' : (yearly ? plan.priceYearly : plan.priceMonthly);
             const note = locked ? '' : (yearly ? plan.noteYearly : plan.noteMonthly);
             const isNum = /^\d/.test(price);
@@ -315,8 +322,10 @@ export default function Pricing({ user }) {
         </Box>
 
         <Typography sx={{ textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)', mt: 3 }}>
-          {paidEnabled
+          {paidEnabled && businessPlanEnabled
             ? 'Priser exkl. moms. Två betalperioder: månad eller år. Byt eller säg upp när du vill.'
+            : paidEnabled
+            ? 'Priser exkl. moms. Pro går att köpa nu — Business öppnar för köp inom kort.'
             : 'Kom igång gratis idag. Pro och Business öppnar för köp inom kort.'}
         </Typography>
 
