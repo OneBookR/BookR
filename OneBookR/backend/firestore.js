@@ -942,6 +942,55 @@ async function getUserBookingPageSlug(email) {
   return docSnap.exists ? (docSnap.data().bookingPageSlug || null) : null;
 }
 
+// ===== UPPGIFTER (Task manager — flera parallella uppgifter per person) =====
+// Egen subcollection per användare (users/{email}/tasks/{taskId}) — till
+// skillnad från bokningssidor behöver ingen annan än ägaren själv slå upp
+// en uppgift, så en global top-level collection med slug-lookup är
+// onödig komplexitet här.
+function tasksCollection(email) {
+  return getDb().collection('users').doc(email.toLowerCase().trim()).collection('tasks');
+}
+
+async function createTask(email, data) {
+  const docRef = await tasksCollection(email).add({
+    ...data,
+    scheduledSlots: [],
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return docRef.id;
+}
+
+async function listTasks(email) {
+  const snap = await tasksCollection(email).orderBy('createdAt', 'asc').get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getTask(email, taskId) {
+  const docSnap = await tasksCollection(email).doc(taskId).get();
+  return docSnap.exists ? { id: docSnap.id, ...docSnap.data() } : null;
+}
+
+async function deleteTask(email, taskId) {
+  await tasksCollection(email).doc(taskId).delete();
+}
+
+// ✅ Transaktion — lägger till nyss bokade pass i taskens scheduledSlots
+// utan att riskera att skriva över en samtidig annan förändring (t.ex. om
+// användaren dubbelklickar "Lägg till i kalender").
+async function appendTaskSlots(email, taskId, newSlots) {
+  const ref = tasksCollection(email).doc(taskId);
+  await getDb().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new Error('Task not found');
+    const existing = snap.data().scheduledSlots || [];
+    tx.update(ref, {
+      scheduledSlots: [...existing, ...newSlots],
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  });
+}
+
 // ✅ EXPORT ALL FUNCTIONS - ENDAST EN GÅNG!
 export {
   // Waitlist
@@ -1034,6 +1083,13 @@ export {
   deleteBookingPage,
   setUserBookingPageSlug,
   getUserBookingPageSlug,
+
+  // Uppgifter (Task manager)
+  createTask,
+  listTasks,
+  getTask,
+  deleteTask,
+  appendTaskSlots,
 
   // Demo Bookings
   createDemoBooking,

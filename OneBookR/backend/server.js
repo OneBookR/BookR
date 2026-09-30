@@ -27,7 +27,8 @@ import {
   saveDirectAccessToken, getStoredDirectAccessToken, createDirectAccessRequest, getDirectAccessRequestsFor,
   getDirectAccessRequest, respondToDirectAccessRequest, createDirectAccessLink,
   getDirectAccessLink, listDirectAccessLinksFor, revokeDirectAccessLink,
-  setBookingPage, getBookingPage, deleteBookingPage, setUserBookingPageSlug, getUserBookingPageSlug
+  setBookingPage, getBookingPage, deleteBookingPage, setUserBookingPageSlug, getUserBookingPageSlug,
+  createTask, listTasks, getTask, deleteTask, appendTaskSlots
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken, getDirectAccessToken } from './token-refresh.js';
@@ -2542,6 +2543,167 @@ app.get('/api/calendar/upcoming', async (req, res) => {
 // istället för egna parallella implementationer.
 const taskLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
 
+// ✅ Delad av POST /api/task/schedule (engångsläge, inget sparat) och
+// POST /api/tasks (skapar en uppgift i uppgiftshanteraren) — samma regler
+// på ett ställe istället för två kopior som kan glida isär.
+function validateTaskParams({ estimatedHours, workStartHour, workEndHour, minSessionHours, maxSessionHours, breakMinutes }) {
+  const est = Number(estimatedHours);
+  const dayStart = Number(workStartHour);
+  const dayEnd = Number(workEndHour);
+  const minH = Number(minSessionHours);
+  const maxH = Number(maxSessionHours);
+  const breakMin = Number(breakMinutes) || 0;
+  const valid = (est > 0) && (dayStart >= 0 && dayStart <= 23) && (dayEnd > dayStart && dayEnd <= 24) &&
+      (minH > 0) && (maxH >= minH) && (breakMin >= 0 && breakMin <= 240);
+  return { valid, est, dayStart, dayEnd, minH, maxH, breakMin };
+}
+
+// ✅ Lägger till serverberäknade scheduledHours/remainingHours/status ovanpå
+// det sparade Firestore-dokumentet — frontend ska aldrig behöva summera
+// scheduledSlots själv (risk att UI och backend tolkar "klar" olika).
+function summarizeTask(task) {
+  const scheduledHours = Math.round((task.scheduledSlots || []).reduce((sum, s) => sum + (Number(s.duration) || 0), 0) * 100) / 100;
+  const remainingHours = Math.max(0, Math.round((task.estimatedHours - scheduledHours) * 100) / 100);
+  const status = remainingHours <= 0.001 ? 'done' : scheduledHours > 0 ? 'in_progress' : 'new';
+  return { ...task, scheduledHours, remainingHours, status };
+}
+
+// GET /api/tasks — alla aktiva uppgifter för inloggad användare
+app.get('/api/tasks', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  try {
+    const tasks = await listTasks(email);
+    res.json({ tasks: tasks.map(summarizeTask) });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta uppgifter:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta uppgifter', code: 'TASKS_FETCH_FAILED' });
+  }
+});
+
+// POST /api/tasks — skapa en ny uppgift
+app.post('/api/tasks', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  const { name, description } = req.body || {};
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Uppgiften behöver ett namn', code: 'INVALID_TASK_NAME' });
+  }
+  const { valid, est, dayStart, dayEnd, minH, maxH, breakMin } = validateTaskParams(req.body || {});
+  if (!valid) {
+    return res.status(400).json({ error: 'Ogiltiga schemaläggningsparametrar', code: 'INVALID_TASK_PARAMS' });
+  }
+
+  try {
+    const taskId = await createTask(email, {
+      name: name.trim(),
+      description: typeof description === 'string' ? description.trim() : '',
+      estimatedHours: est,
+      workStartHour: dayStart,
+      workEndHour: dayEnd,
+      minSessionHours: minH,
+      maxSessionHours: maxH,
+      breakMinutes: breakMin
+    });
+    const task = await getTask(email, taskId);
+    res.json({ task: summarizeTask(task) });
+  } catch (err) {
+    console.error('❌ Kunde inte skapa uppgift:', err.message);
+    res.status(500).json({ error: 'Kunde inte skapa uppgift', code: 'TASK_CREATE_FAILED' });
+  }
+});
+
+// DELETE /api/tasks/:id — tar bort uppgiften ur listan (rör inte redan skapade kalenderhändelser)
+app.delete('/api/tasks/:id', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  try {
+    const task = await getTask(email, req.params.id);
+    if (!task) return res.status(404).json({ error: 'Uppgiften hittades inte', code: 'TASK_NOT_FOUND' });
+    await deleteTask(email, req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Kunde inte ta bort uppgift:', err.message);
+    res.status(500).json({ error: 'Kunde inte ta bort uppgift', code: 'TASK_DELETE_FAILED' });
+  }
+});
+
+// POST /api/tasks/:id/schedule — hitta lediga pass för uppgiftens KVARVARANDE timmar
+app.post('/api/tasks/:id/schedule', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  try {
+    const task = await getTask(email, req.params.id);
+    if (!task) return res.status(404).json({ error: 'Uppgiften hittades inte', code: 'TASK_NOT_FOUND' });
+
+    const summary = summarizeTask(task);
+    if (summary.remainingHours <= 0) {
+      return res.json({ taskSlots: [], scheduled: true, remainingHours: 0 });
+    }
+
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    // ✅ Redan bokade pass (för DENNA och andra uppgifter) ligger redan som
+    // riktiga kalenderhändelser — fetchBusyTimesFor ser dem automatiskt,
+    // så två uppgifter kan aldrig råka få samma lucka föreslagen.
+    const busyTimes = await fetchBusyTimesFor(email, req.user.accessToken, req.user.provider || 'google', now, horizon);
+    const { slots, remainingHours } = scheduleTaskSlots({
+      busyTimes, now, horizon, estimatedHours: summary.remainingHours,
+      workStartHour: task.workStartHour, workEndHour: task.workEndHour,
+      minSessionHours: task.minSessionHours, maxSessionHours: task.maxSessionHours, breakMinutes: task.breakMinutes
+    });
+    res.json({ taskSlots: slots, scheduled: remainingHours <= 0.001, remainingHours });
+  } catch (err) {
+    console.error('❌ Kunde inte schemalägga uppgift:', err.message);
+    res.status(500).json({ error: 'Kunde inte schemalägga uppgift', code: 'TASK_SCHEDULE_FAILED' });
+  }
+});
+
+// POST /api/tasks/:id/confirm { slots: [{start,end,duration}] } — skapar pass i kalendern och sparar på uppgiften
+app.post('/api/tasks/:id/confirm', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  const { slots } = req.body || {};
+  if (!Array.isArray(slots) || slots.length === 0 || slots.some(s => !s?.start || !s?.end || isNaN(new Date(s.start)) || isNaN(new Date(s.end)))) {
+    return res.status(400).json({ error: 'Ogiltiga arbetspass', code: 'INVALID_SLOTS' });
+  }
+
+  try {
+    const task = await getTask(email, req.params.id);
+    if (!task) return res.status(404).json({ error: 'Uppgiften hittades inte', code: 'TASK_NOT_FOUND' });
+
+    const confirmedSlots = [];
+    for (const slot of slots) {
+      const result = await createSimpleCalendarEvent({
+        accessToken: req.user.accessToken,
+        provider: req.user.provider || 'google',
+        title: task.name,
+        description: task.description ? `Arbete med uppgift: ${task.name}\n\n${task.description}` : `Arbete med uppgift: ${task.name}`,
+        start: slot.start,
+        end: slot.end
+      });
+      confirmedSlots.push({
+        start: slot.start,
+        end: slot.end,
+        duration: Number(slot.duration) || Math.round(((new Date(slot.end) - new Date(slot.start)) / 3_600_000) * 100) / 100,
+        eventId: result.eventId
+      });
+    }
+
+    await appendTaskSlots(email, req.params.id, confirmedSlots);
+    const updated = await getTask(email, req.params.id);
+    res.json({ task: summarizeTask(updated) });
+  } catch (err) {
+    console.error('❌ Kunde inte lägga till arbetspass i kalendern:', err.message);
+    res.status(500).json({ error: 'Kunde inte lägga till arbetspass i kalendern', code: 'TASK_CONFIRM_FAILED' });
+  }
+});
+
 // GET /api/calendar/events?start=ISO&end=ISO — inloggad användares upptagna block i intervallet
 app.get('/api/calendar/events', taskLimiter, async (req, res) => {
   const email = requireUser(req, res);
@@ -2567,16 +2729,8 @@ app.post('/api/task/schedule', taskLimiter, async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
 
-  const { estimatedHours, workStartHour, workEndHour, minSessionHours, maxSessionHours, breakMinutes } = req.body || {};
-  const est = Number(estimatedHours);
-  const dayStart = Number(workStartHour);
-  const dayEnd = Number(workEndHour);
-  const minH = Number(minSessionHours);
-  const maxH = Number(maxSessionHours);
-  const breakMin = Number(breakMinutes) || 0;
-
-  if (!(est > 0) || !(dayStart >= 0 && dayStart <= 23) || !(dayEnd > dayStart && dayEnd <= 24) ||
-      !(minH > 0) || !(maxH >= minH) || !(breakMin >= 0 && breakMin <= 240)) {
+  const { valid, est, dayStart, dayEnd, minH, maxH, breakMin } = validateTaskParams(req.body || {});
+  if (!valid) {
     return res.status(400).json({ error: 'Ogiltiga schemaläggningsparametrar', code: 'INVALID_TASK_PARAMS' });
   }
 
