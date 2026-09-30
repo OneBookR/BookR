@@ -203,16 +203,15 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
                 >
                   Gruppmöte
                 </Button>
-                {/* Uppgiftstid — kommande funktion, ännu ej tillgänglig */}
                 <Button
                   color="inherit"
-                  disabled
+                  onClick={() => onNavigate?.('task')}
                   startIcon={<Task />}
                   sx={{
                     fontWeight: 700,
                     borderRadius: 999,
                     px: 1.75,
-                    '&.Mui-disabled': { color: 'var(--text-secondary)', opacity: 0.6 },
+                    '&:hover': { bgcolor: 'rgba(17,24,39,0.04)' }
                   }}
                 >
                   Uppgift

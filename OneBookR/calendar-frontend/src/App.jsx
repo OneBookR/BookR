@@ -29,9 +29,9 @@ import LandingHeader from './components/LandingHeader.jsx';
 import { apiRequest } from './utils/apiConfig.js';
 import { trackEvent, trackEventOnce, setAnalyticsUser, EVENTS } from './utils/analytics.js';
 
-// ✅ Uppgiftstid är en kommande funktion — inte tillgänglig än. Slå på
-// när flödet är klart. Håller även direktlänkar (?view=task) borta.
-const TASK_FEATURE_ENABLED = false;
+// ✅ Backend-endpoints (GET/POST /api/calendar/events, POST /api/task/schedule)
+// byggda i server.js — flödet är nu komplett och påslaget.
+const TASK_FEATURE_ENABLED = true;
 
 function App() {
   // User-state initieras tom — sanningskällan är serverns session-cookie

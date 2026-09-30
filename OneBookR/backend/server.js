@@ -1304,6 +1304,76 @@ function findFreeTimeSlots(startDate, endDate, busyTimes, duration, dayStart = '
   }
 }
 
+// ✅ Uppgiftsplanering (Task.jsx): till skillnad från findFreeTimeSlots
+// ovan (fast möteslängd, flera deltagare som måste vara lediga SAMTIDIGT)
+// ska detta paketera en SUMMA timmar i block vars längd själv varierar
+// mellan min-/maxsessionslängd, för en enda person — därför en egen,
+// enklare implementation istället för att återanvända findFreeTimeSlots.
+function scheduleTaskSlots({ busyTimes, now, horizon, estimatedHours, workStartHour, workEndHour, minSessionHours, maxSessionHours, breakMinutes }) {
+  const breakMs = breakMinutes * 60 * 1000;
+  const minMs = minSessionHours * 60 * 60 * 1000;
+  const maxMs = maxSessionHours * 60 * 60 * 1000;
+  let remainingMs = estimatedHours * 60 * 60 * 1000;
+
+  const mergedBusy = busyTimes
+    .map(b => ({ start: new Date(b.start), end: new Date(b.end) }))
+    .sort((a, b) => a.start - b.start)
+    .reduce((merged, b) => {
+      const last = merged[merged.length - 1];
+      if (last && b.start <= last.end) {
+        last.end = new Date(Math.max(last.end.getTime(), b.end.getTime()));
+      } else {
+        merged.push({ ...b });
+      }
+      return merged;
+    }, []);
+
+  const slots = [];
+  // Skär ut så många sessioner som får plats i en ledig lucka [gapStart, gapEnd) —
+  // en sista, för kort session (< minSessionHours) skapas aldrig, den lämnas
+  // kvar i remainingMs och rapporteras till användaren istället.
+  const carveFromGap = (gapStart, gapEnd) => {
+    let point = new Date(gapStart);
+    while (remainingMs > 60_000 && (gapEnd.getTime() - point.getTime()) >= minMs) {
+      const available = gapEnd.getTime() - point.getTime();
+      const sessionMs = Math.min(maxMs, available, remainingMs);
+      if (sessionMs < minMs) break;
+      const sessionEnd = new Date(point.getTime() + sessionMs);
+      slots.push({
+        start: point.toISOString(),
+        end: sessionEnd.toISOString(),
+        duration: Math.round((sessionMs / 3_600_000) * 100) / 100
+      });
+      remainingMs -= sessionMs;
+      point = new Date(sessionEnd.getTime() + breakMs);
+    }
+  };
+
+  const currentDate = new Date(now);
+  currentDate.setUTCHours(0, 0, 0, 0);
+
+  while (currentDate <= horizon && remainingMs > 60_000) {
+    const weekday = currentDate.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) {
+      const workStart = stockholmTimeOnDate(currentDate, workStartHour, 0);
+      const workEndRaw = stockholmTimeOnDate(currentDate, workEndHour, 0);
+      const workEnd = new Date(Math.min(workEndRaw.getTime(), horizon.getTime()));
+      const cursor = new Date(Math.max(workStart.getTime(), now.getTime()));
+
+      const dayBusy = mergedBusy.filter(b => b.end > cursor && b.start < workEnd);
+      let pointer = cursor;
+      for (const busy of dayBusy) {
+        if (busy.start > pointer) carveFromGap(pointer, busy.start);
+        if (busy.end > pointer) pointer = busy.end;
+      }
+      if (pointer < workEnd) carveFromGap(pointer, workEnd);
+    }
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+  }
+
+  return { slots, remainingHours: Math.round((remainingMs / 3_600_000) * 100) / 100 };
+}
+
 // ===== MIDDLEWARE SETUP =====
 if (IS_PRODUCTION) {
   app.use(helmet({
@@ -2461,6 +2531,91 @@ app.get('/api/calendar/upcoming', async (req, res) => {
   } catch (err) {
     console.error('❌ Kunde inte hämta kommande möten:', err.message);
     res.status(500).json({ error: 'Kunde inte hämta kommande möten', code: 'CALENDAR_FETCH_FAILED' });
+  }
+});
+
+// ===== TASK — planera uppgifter direkt i kalendern =====
+// ✅ Task.jsx anropade dessa tre endpoints sedan länge, men de fanns
+// aldrig i backend — funktionen har därför alltid varit avstängd bakom
+// TASK_FEATURE_ENABLED=false i App.jsx. Byggs nu med samma primitiver
+// som resten av kalenderlogiken (fetchBusyTimesFor, stockholmTimeOnDate)
+// istället för egna parallella implementationer.
+const taskLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+
+// GET /api/calendar/events?start=ISO&end=ISO — inloggad användares upptagna block i intervallet
+app.get('/api/calendar/events', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  const start = new Date(req.query.start);
+  const end = new Date(req.query.end);
+  if (isNaN(start) || isNaN(end) || end <= start) {
+    return res.status(400).json({ error: 'Ogiltigt datumintervall', code: 'INVALID_RANGE' });
+  }
+
+  try {
+    const events = await fetchBusyTimesFor(email, req.user.accessToken, req.user.provider || 'google', start, end);
+    res.json({ events });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta kalenderhändelser för uppgiftsplanering:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta kalenderhändelser', code: 'CALENDAR_FETCH_FAILED' });
+  }
+});
+
+// POST /api/task/schedule — hitta lediga arbetspass för en uppgift, 14 dagar framåt
+app.post('/api/task/schedule', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  const { estimatedHours, workStartHour, workEndHour, minSessionHours, maxSessionHours, breakMinutes } = req.body || {};
+  const est = Number(estimatedHours);
+  const dayStart = Number(workStartHour);
+  const dayEnd = Number(workEndHour);
+  const minH = Number(minSessionHours);
+  const maxH = Number(maxSessionHours);
+  const breakMin = Number(breakMinutes) || 0;
+
+  if (!(est > 0) || !(dayStart >= 0 && dayStart <= 23) || !(dayEnd > dayStart && dayEnd <= 24) ||
+      !(minH > 0) || !(maxH >= minH) || !(breakMin >= 0 && breakMin <= 240)) {
+    return res.status(400).json({ error: 'Ogiltiga schemaläggningsparametrar', code: 'INVALID_TASK_PARAMS' });
+  }
+
+  try {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const busyTimes = await fetchBusyTimesFor(email, req.user.accessToken, req.user.provider || 'google', now, horizon);
+    const { slots, remainingHours } = scheduleTaskSlots({
+      busyTimes, now, horizon, estimatedHours: est,
+      workStartHour: dayStart, workEndHour: dayEnd,
+      minSessionHours: minH, maxSessionHours: maxH, breakMinutes: breakMin
+    });
+    res.json({ taskSlots: slots, scheduled: remainingHours <= 0.001, remainingHours });
+  } catch (err) {
+    console.error('❌ Kunde inte schemalägga uppgift:', err.message);
+    res.status(500).json({ error: 'Kunde inte schemalägga uppgift', code: 'TASK_SCHEDULE_FAILED' });
+  }
+});
+
+// POST /api/calendar/events { title, description, start, end } — lägg ett planerat arbetspass i egen kalender
+app.post('/api/calendar/events', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  const { title, description, start, end } = req.body || {};
+  if (!title || !start || !end || isNaN(new Date(start)) || isNaN(new Date(end))) {
+    return res.status(400).json({ error: 'Ogiltig händelse', code: 'INVALID_EVENT' });
+  }
+
+  try {
+    const result = await createSimpleCalendarEvent({
+      accessToken: req.user.accessToken,
+      provider: req.user.provider || 'google',
+      title, description, start, end
+    });
+    res.json({ success: true, eventId: result.eventId });
+  } catch (err) {
+    console.error('❌ Kunde inte skapa kalenderhändelse:', err.message);
+    res.status(500).json({ error: 'Kunde inte skapa kalenderhändelse', code: 'CALENDAR_CREATE_FAILED' });
   }
 });
 
@@ -4733,6 +4888,43 @@ async function createBookingPageEvent({ ownerToken, provider, title, start, end,
     console.error('❌ createBookingPageEvent error:', error.message);
     return { success: false, error: error.message };
   }
+}
+
+// ✅ Enklare syskon till createBookingPageEvent ovan — Task-flödet skapar
+// bara ett arbetspass i den inloggade personens EGEN kalender, ingen
+// attendee/Meet-länk behövs.
+async function createSimpleCalendarEvent({ accessToken, provider, title, description, start, end }) {
+  if (provider === 'microsoft') {
+    const msEventData = {
+      subject: title,
+      body: { contentType: 'text', content: description || '' },
+      start: { dateTime: start, timeZone: 'Europe/Stockholm' },
+      end: { dateTime: end, timeZone: 'Europe/Stockholm' }
+    };
+    const response = await fetchWithRetry('https://graph.microsoft.com/v1.0/me/events', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(msEventData)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    const event = await response.json();
+    return { eventId: event.id };
+  }
+
+  const eventData = {
+    summary: title,
+    description: description || '',
+    start: { dateTime: start, timeZone: 'Europe/Stockholm' },
+    end: { dateTime: end, timeZone: 'Europe/Stockholm' }
+  };
+  const response = await fetchWithRetry('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(eventData)
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  const event = await response.json();
+  return { eventId: event.id };
 }
 
 // ✅ BUGFIX: createMeetingEvents skapar bara ETT event (hos "proposer",

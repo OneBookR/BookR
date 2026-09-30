@@ -203,8 +203,11 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       setCurrentView('team');
     } else if (type === 'booking-page') {
       setCurrentView('booking-page');
+    } else if (type === 'task') {
+      // ✅ Task-vyn styrs av ?view=task (inte ?meetingType=), se App.jsx
+      window.location.href = '/?view=task';
     } else {
-      // Befintlig logik för 1v1, group, task
+      // Befintlig logik för 1v1, group
       window.location.href = `/?meetingType=${type}`;
     }
   };
@@ -552,10 +555,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     {
       title: 'Uppgiftstid',
       description: 'Schemalägg uppgifter direkt i kalendern och se när de som snabbast kan vara klara utifrån ditt eget schema.',
-      accent: 'Kommer snart',
+      accent: 'Paketera arbetspass runt din kalender',
       icon: <TaskTimeIcon size={22} />,
-      comingSoon: true,
-      onClick: undefined
+      onClick: () => handleNavigateToMeeting('task')
     },
     {
       title: 'Team',
