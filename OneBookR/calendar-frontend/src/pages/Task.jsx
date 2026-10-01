@@ -48,6 +48,10 @@ const Task = ({ user }) => {
   const [scheduling, setScheduling] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [drawerError, setDrawerError] = useState('');
+  // ✅ eventId:n från de pass som senast bekräftades — ger dem en egen
+  // markering på kalendern tills man bekräftar en ny omgång eller laddar
+  // om sidan, så man ser direkt vilka block som precis lagts till.
+  const [recentlyAddedEventIds, setRecentlyAddedEventIds] = useState(() => new Set());
 
   const loadTasks = useCallback(async () => {
     try {
@@ -106,13 +110,17 @@ const Task = ({ user }) => {
       resource: 'busy'
     }));
     const taskBlocks = tasks.flatMap(t =>
-      (t.scheduledSlots || []).map(slot => ({
-        title: t.name,
-        start: new Date(slot.start),
-        end: new Date(slot.end),
-        resource: 'task',
-        color: taskColor(t.id)
-      }))
+      (t.scheduledSlots || []).map(slot => {
+        const isNew = slot.eventId && recentlyAddedEventIds.has(slot.eventId);
+        return {
+          title: isNew ? `Nytt: ${t.name}` : t.name,
+          start: new Date(slot.start),
+          end: new Date(slot.end),
+          resource: 'task',
+          color: taskColor(t.id),
+          isNew
+        };
+      })
     );
     // ✅ Ej bekräftade förslag — ritas ovanpå, egen stil, dragbara/resizebara
     // (se draggableAccessor/resizableAccessor på kalendern). Flaggas som
@@ -134,7 +142,7 @@ const Task = ({ user }) => {
     });
     return [...busy, ...taskBlocks, ...proposed];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busyEvents, tasks, proposedSlots, occupiedIntervals, draftColor]);
+  }, [busyEvents, tasks, proposedSlots, occupiedIntervals, draftColor, recentlyAddedEventIds]);
 
   const proposedTotalHours = useMemo(
     () => Math.round((proposedSlots || []).reduce((sum, s) => sum + (Number(s.duration) || 0), 0) * 100) / 100,
@@ -189,8 +197,19 @@ const Task = ({ user }) => {
     setDrawerOpen(true);
   };
 
+  // ✅ Stänger BARA panelen — behåller förslaget. Man ska kunna gå ut,
+  // titta på hela kalendern i lugn och ro, dra/ändra storlek på blocken
+  // (fungerar oavsett om panelen är öppen), och komma tillbaka senare.
+  // Se den flytande förslagsraden nedan för hur man når tillbaka till
+  // panelen eller bekräftar direkt utan att öppna den igen.
   const closeDrawer = () => {
     setDrawerOpen(false);
+  };
+
+  // ✅ Explicit "ångra" — det enda som faktiskt slänger förslaget.
+  const discardDraft = () => {
+    setDrawerOpen(false);
+    setDrawerTask(null);
     setProposedSlots(null);
     setProposedRemainingHours(null);
     setDrawerError('');
@@ -274,8 +293,13 @@ const Task = ({ user }) => {
       });
       const data = await response.json();
       if (response.ok) {
+        // ✅ De NYA passen är alltid sist i den uppdaterade listan —
+        // appendTaskSlots lägger till i slutet, aldrig om ordning.
+        const addedCount = proposedSlots.length;
+        const newIds = (data.task.scheduledSlots || []).slice(-addedCount).map(s => s.eventId).filter(Boolean);
+        setRecentlyAddedEventIds(new Set(newIds));
         setTasks(prev => prev.map(t => (t.id === data.task.id ? data.task : t)));
-        closeDrawer();
+        discardDraft();
         loadBusyEvents();
       } else {
         setDrawerError('Fel: ' + (data.error || 'Kunde inte lägga till i kalendern'));
@@ -443,7 +467,12 @@ const Task = ({ user }) => {
           </Box>
 
           <Box sx={{
-            flex: 1, px: { xs: 1, md: 2 }, pb: 2,
+            flex: 1, px: { xs: 1, md: 2 }, pb: 2, overflowX: 'auto',
+            // ✅ Dagskolumnerna fick aldrig krympa under läsbar bredd oavsett
+            // hur smal kalendern är (t.ex. med panelen öppen bredvid) —
+            // en för smal kalender klämde ihop flera block i veckovyn till
+            // oläslig, överlappande text istället för att bara skrolla sidled.
+            '& .rbc-calendar, & .rbc-time-view, & .rbc-month-view': { minWidth: 760 },
             '& .rbc-calendar, .rbc-time-view, .rbc-agenda-view, .rbc-month-view': {
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
               background: 'rgba(255,255,255,0.82)', borderRadius: '18px', border: '1px solid var(--border)',
@@ -498,7 +527,16 @@ const Task = ({ user }) => {
                   };
                 }
                 if (event.resource === 'task') {
-                  return {
+                  // ✅ Nyss tillagda pass får en solid, mättad fyllning istället
+                  // för den vanliga ljusa — ska gå att se på en sekund vilka
+                  // block som precis skapades, utan att behöva läsa titeln.
+                  return event.isNew ? {
+                    style: {
+                      backgroundColor: event.color, color: '#ffffff', border: `1.5px solid ${event.color}`,
+                      borderRadius: '6px', fontWeight: 700, fontSize: '12px', padding: '2px 4px',
+                      boxShadow: `0 0 0 2px ${event.color}33`
+                    }
+                  } : {
                     style: {
                       backgroundColor: `${event.color}22`, color: event.color, border: `1.5px solid ${event.color}55`,
                       borderRadius: '6px', fontWeight: 600, fontSize: '12px', padding: '2px 4px'
@@ -519,8 +557,10 @@ const Task = ({ user }) => {
         </Paper>
       </Box>
 
-      {/* Ny uppgift / schemalägg-panel */}
-      <Drawer anchor="right" open={drawerOpen} onClose={closeDrawer} PaperProps={{ sx: { width: { xs: '100%', sm: 440 }, p: 3.5, bgcolor: 'var(--surface-strong)' } }}>
+      {/* Ny uppgift / schemalägg-panel — persistent (ingen mörkläggande backdrop):
+          stängs bara undan, släcker aldrig förslaget. Se den flytande raden
+          nedan för hur man kommer tillbaka när panelen är stängd. */}
+      <Drawer variant="persistent" anchor="right" open={drawerOpen} onClose={closeDrawer} PaperProps={{ sx: { width: { xs: '100%', sm: 440 }, p: 3.5, bgcolor: 'var(--surface-strong)' } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2.5 }}>
           <Typography sx={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>
             {drawerTask ? drawerTask.name : 'Ny uppgift'}
@@ -619,9 +659,42 @@ const Task = ({ user }) => {
             <Button variant="contained" fullWidth onClick={handleConfirmSlots} disabled={confirming} sx={{ ...primaryButtonSx, borderRadius: 999, mt: 1 }}>
               {confirming ? 'Lägger till...' : 'Lägg till i kalender'}
             </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button fullWidth onClick={closeDrawer} sx={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text)', textTransform: 'none' }}>
+                Dölj panelen — titta i kalendern
+              </Button>
+              <Button fullWidth onClick={discardDraft} sx={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text-secondary)', textTransform: 'none' }}>
+                Ångra förslaget
+              </Button>
+            </Box>
           </Box>
         )}
       </Drawer>
+
+      {/* Flytande rad — syns när panelen är dold men ett förslag väntar,
+          så man alltid kan komma tillbaka och bekräfta/justera/ångra utan
+          att behöva öppna panelen igen. */}
+      {!drawerOpen && proposedSlots?.length > 0 && (
+        <Paper elevation={0} sx={{
+          position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 1300,
+          display: 'flex', alignItems: 'center', gap: 2, px: 2.5, py: 1.5, borderRadius: 999,
+          bgcolor: 'var(--surface-strong)', border: '1px solid rgba(17,24,39,0.1)', boxShadow: '0 18px 40px rgba(15,23,42,0.18)'
+        }}>
+          <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: draftColor, flexShrink: 0 }} />
+          <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text)' }}>
+            {drawerTask?.name}: {proposedTotalHours} av {targetHours} h {hasOverlap && <span style={{ color: '#b42318' }}>· krock</span>}
+          </Typography>
+          <Button onClick={() => setDrawerOpen(true)} sx={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text)', textTransform: 'none' }}>
+            Granska
+          </Button>
+          <Button variant="contained" onClick={handleConfirmSlots} disabled={confirming} sx={{ ...primaryButtonSx, borderRadius: 999, px: 2.5, py: 0.75 }}>
+            {confirming ? 'Lägger till...' : 'Lägg till i kalender'}
+          </Button>
+          <IconButton size="small" aria-label="Ångra förslaget" onClick={discardDraft} sx={{ color: 'var(--text-secondary)' }}>
+            <Close sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Paper>
+      )}
     </Container>
   );
 };
