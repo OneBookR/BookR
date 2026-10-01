@@ -28,7 +28,7 @@ import {
   getDirectAccessRequest, respondToDirectAccessRequest, createDirectAccessLink,
   getDirectAccessLink, listDirectAccessLinksFor, revokeDirectAccessLink,
   setBookingPage, getBookingPage, deleteBookingPage, setUserBookingPageSlug, getUserBookingPageSlug,
-  createTask, listTasks, getTask, deleteTask, appendTaskSlots
+  createTask, listTasks, getTask, updateTask, deleteTask, appendTaskSlots
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken, getDirectAccessToken } from './token-refresh.js';
@@ -2600,7 +2600,44 @@ app.post('/api/tasks', taskLimiter, async (req, res) => {
   }
 });
 
-// DELETE /api/tasks/:id — tar bort uppgiften ur listan (rör inte redan skapade kalenderhändelser)
+// PATCH /api/tasks/:id — redigera namn/beskrivning/estimat/arbetstider. Rör aldrig scheduledSlots.
+app.patch('/api/tasks/:id', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  const { name, description } = req.body || {};
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Uppgiften behöver ett namn', code: 'INVALID_TASK_NAME' });
+  }
+  const { valid, est, dayStart, dayEnd, minH, maxH, breakMin } = validateTaskParams(req.body || {});
+  if (!valid) {
+    return res.status(400).json({ error: 'Ogiltiga schemaläggningsparametrar', code: 'INVALID_TASK_PARAMS' });
+  }
+
+  try {
+    const existing = await getTask(email, req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Uppgiften hittades inte', code: 'TASK_NOT_FOUND' });
+
+    await updateTask(email, req.params.id, {
+      name: name.trim(),
+      description: typeof description === 'string' ? description.trim() : '',
+      estimatedHours: est,
+      workStartHour: dayStart,
+      workEndHour: dayEnd,
+      minSessionHours: minH,
+      maxSessionHours: maxH,
+      breakMinutes: breakMin
+    });
+    const updated = await getTask(email, req.params.id);
+    res.json({ task: summarizeTask(updated) });
+  } catch (err) {
+    console.error('❌ Kunde inte uppdatera uppgift:', err.message);
+    res.status(500).json({ error: 'Kunde inte uppdatera uppgift', code: 'TASK_UPDATE_FAILED' });
+  }
+});
+
+// DELETE /api/tasks/:id?removeEvents=true — tar bort uppgiften ur listan.
+// Utan removeEvents (standard) rörs inte redan bokade kalenderhändelser.
 app.delete('/api/tasks/:id', taskLimiter, async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
@@ -2608,6 +2645,22 @@ app.delete('/api/tasks/:id', taskLimiter, async (req, res) => {
   try {
     const task = await getTask(email, req.params.id);
     if (!task) return res.status(404).json({ error: 'Uppgiften hittades inte', code: 'TASK_NOT_FOUND' });
+
+    if (req.query.removeEvents === 'true') {
+      const eventIds = (task.scheduledSlots || []).map(s => s.eventId).filter(Boolean);
+      for (const eventId of eventIds) {
+        try {
+          await deleteCalendarEvent({ accessToken: req.user.accessToken, provider: req.user.provider || 'google', eventId });
+        } catch (deleteErr) {
+          // ✅ Fortsätt med resten även om ett enstaka event inte kunde tas
+          // bort (t.ex. redan borttaget manuellt, eller tillfälligt API-fel)
+          // — uppgiften ska fortfarande försvinna ur listan, hellre än att
+          // en enda krånglande kalenderhändelse blockerar hela borttagningen.
+          console.warn(`⚠️ Kunde inte ta bort kalenderhändelse ${eventId}:`, deleteErr.message);
+        }
+      }
+    }
+
     await deleteTask(email, req.params.id);
     res.json({ success: true });
   } catch (err) {
@@ -5093,6 +5146,23 @@ async function createSimpleCalendarEvent({ accessToken, provider, title, descrip
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
   const event = await response.json();
   return { eventId: event.id };
+}
+
+// ✅ Motsats till createSimpleCalendarEvent ovan — används när man tar bort
+// en uppgift och väljer att även städa bort dess redan bokade pass.
+// 404 (personen har redan tagit bort eventet själv) räknas som lyckat —
+// slutresultatet ("eventet är borta") är redan uppnått.
+async function deleteCalendarEvent({ accessToken, provider, eventId }) {
+  const url = provider === 'microsoft'
+    ? `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`
+    : `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
+  const response = await fetchWithRetry(url, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+  if (!response.ok && response.status !== 404 && response.status !== 410) {
+    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  }
 }
 
 // ✅ BUGFIX: createMeetingEvents skapar bara ETT event (hos "proposer",

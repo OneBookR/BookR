@@ -28,6 +28,7 @@ import CookieBanner from './components/CookieBanner.jsx';
 import LandingHeader from './components/LandingHeader.jsx';
 import { apiRequest } from './utils/apiConfig.js';
 import { trackEvent, trackEventOnce, setAnalyticsUser, EVENTS } from './utils/analytics.js';
+import { confirmLeavingTaskDraft } from './utils/taskDraftGuard.js';
 
 // ✅ Backend-endpoints (GET/POST /api/calendar/events, POST /api/task/schedule)
 // byggda i server.js — flödet är nu komplett och påslaget.
@@ -287,6 +288,15 @@ function App() {
 
   // ✅ NAVIGATION HANDLER
   const handleNavigateToMeeting = useCallback((type) => {
+    // ✅ Läser aktuell vy direkt från URL:en (inte React-state, som denna
+    // callback inte har färska deps för) — samma mönster som resten av
+    // funktionen redan använder window.location för. Ett osparat
+    // uppgiftsförslag (se taskDraftGuard.js) ska inte tystas bort bara för
+    // att man klickar vidare i headern.
+    const currentlyOnTask = new URLSearchParams(window.location.search).get('view') === 'task';
+    if (currentlyOnTask && type !== 'task' && !confirmLeavingTaskDraft()) {
+      return;
+    }
     if (type === 'task') {
       if (!TASK_FEATURE_ENABLED) return; // kommande funktion — ännu ej tillgänglig
       const url = new URL(window.location);

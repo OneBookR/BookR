@@ -3,11 +3,12 @@ import {
   Box, Typography, TextField, Button, Paper, Alert, Container, Chip,
   Drawer, IconButton, CircularProgress
 } from '@mui/material';
-import { Add, DeleteOutline, CheckCircle, ArrowForward, Event, Close, OpenWith, ArrowUpward, ArrowDownward, Visibility } from '@mui/icons-material';
+import { Add, DeleteOutline, CheckCircle, ArrowForward, Event, Close, OpenWith, ArrowUpward, ArrowDownward, Visibility, Edit } from '@mui/icons-material';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import moment from 'moment';
 import { apiRequest } from '../utils/apiConfig.js';
+import { setTaskDraftState } from '../utils/taskDraftGuard.js';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -41,6 +42,8 @@ const Task = ({ user }) => {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTask, setDrawerTask] = useState(null); // null = skapa ny uppgift
+  const [editMode, setEditMode] = useState(false); // true = redigerar drawerTask istället för att schemalägga
+  const [savingEdit, setSavingEdit] = useState(false);
   const [form, setForm] = useState(DEFAULT_FORM);
 
   const [proposedSlots, setProposedSlots] = useState(null);
@@ -85,6 +88,29 @@ const Task = ({ user }) => {
       loadBusyEvents();
     }
   }, [user?.email, loadTasks, loadBusyEvents]);
+
+  // ✅ Håller App.jsx (headerns navigation) informerad om ett osparat
+  // förslag finns, så den kan fråga innan man navigerar bort från sidan
+  // och tappar det — se taskDraftGuard.js.
+  useEffect(() => {
+    setTaskDraftState(proposedSlots?.length > 0 ? drawerTask?.name : null);
+    return () => setTaskDraftState(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposedSlots, drawerTask]);
+
+  // ✅ Täcker de fall App.jsx inte kan fånga — sidomladdning, stängd
+  // flik, eller en skriven URL (t.ex. klick på BookR-loggan, som gör en
+  // riktig window.location-navigering, inte ett internt vybyte).
+  useEffect(() => {
+    const handler = (e) => {
+      if (proposedSlots?.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [proposedSlots]);
 
   const taskColor = (taskId) => {
     const index = tasks.findIndex(t => t.id === taskId);
@@ -182,6 +208,7 @@ const Task = ({ user }) => {
 
   const openCreateDrawer = () => {
     setDrawerTask(null);
+    setEditMode(false);
     setForm(DEFAULT_FORM);
     setProposedSlots(null);
     setProposedRemainingHours(null);
@@ -191,6 +218,26 @@ const Task = ({ user }) => {
 
   const openScheduleDrawer = (task) => {
     setDrawerTask(task);
+    setEditMode(false);
+    setProposedSlots(null);
+    setProposedRemainingHours(null);
+    setDrawerError('');
+    setDrawerOpen(true);
+  };
+
+  const openEditDrawer = (task) => {
+    setDrawerTask(task);
+    setEditMode(true);
+    setForm({
+      name: task.name || '',
+      description: task.description || '',
+      estimatedHours: String(task.estimatedHours ?? ''),
+      workStartHour: String(task.workStartHour ?? DEFAULT_FORM.workStartHour),
+      workEndHour: String(task.workEndHour ?? DEFAULT_FORM.workEndHour),
+      minSessionHours: String(task.minSessionHours ?? DEFAULT_FORM.minSessionHours),
+      maxSessionHours: String(task.maxSessionHours ?? DEFAULT_FORM.maxSessionHours),
+      breakMinutes: String(task.breakMinutes ?? DEFAULT_FORM.breakMinutes)
+    });
     setProposedSlots(null);
     setProposedRemainingHours(null);
     setDrawerError('');
@@ -210,9 +257,45 @@ const Task = ({ user }) => {
   const discardDraft = () => {
     setDrawerOpen(false);
     setDrawerTask(null);
+    setEditMode(false);
     setProposedSlots(null);
     setProposedRemainingHours(null);
     setDrawerError('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!form.name.trim() || !form.estimatedHours) {
+      setDrawerError('Fyll i uppgiftens namn och estimerad tid');
+      return;
+    }
+    setSavingEdit(true);
+    setDrawerError('');
+    try {
+      const response = await apiRequest(`/api/tasks/${drawerTask.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: form.name,
+          description: form.description,
+          estimatedHours: parseFloat(form.estimatedHours),
+          workStartHour: parseInt(form.workStartHour, 10),
+          workEndHour: parseInt(form.workEndHour, 10),
+          minSessionHours: parseFloat(form.minSessionHours),
+          maxSessionHours: parseFloat(form.maxSessionHours),
+          breakMinutes: parseInt(form.breakMinutes, 10)
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setTasks(prev => prev.map(t => (t.id === data.task.id ? data.task : t)));
+        discardDraft();
+      } else {
+        setDrawerError('Fel: ' + (data.error || 'Kunde inte spara ändringarna'));
+      }
+    } catch (error) {
+      setDrawerError('Fel vid sparande');
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const handleFindTime = async () => {
@@ -328,11 +411,20 @@ const Task = ({ user }) => {
     }
   };
 
-  const handleDeleteTask = async (taskId) => {
-    if (!window.confirm('Ta bort uppgiften? Redan inbokade pass i kalendern påverkas inte.')) return;
+  const handleDeleteTask = async (task) => {
+    const slotCount = (task.scheduledSlots || []).length;
+    if (!window.confirm(`Ta bort "${task.name}"?`)) return;
+
+    // ✅ Tidigare lämnades redan bokade pass orörda i kalendern utan att
+    // fråga — ibland önskat (man vill behålla dem), ibland förvirrande
+    // (varför ligger de kvar när uppgiften är borta?). Frågar nu explicit
+    // bara när det faktiskt finns något att ta ställning till.
+    const removeEvents = slotCount > 0 &&
+      window.confirm(`${slotCount} redan inbokade pass finns i din kalender. Ta bort dem också?\n\nOK = ta bort från kalendern också\nAvbryt = behåll dem i kalendern`);
+
     try {
-      const response = await apiRequest(`/api/tasks/${taskId}`, { method: 'DELETE' });
-      if (response.ok) setTasks(prev => prev.filter(t => t.id !== taskId));
+      const response = await apiRequest(`/api/tasks/${task.id}${removeEvents ? '?removeEvents=true' : ''}`, { method: 'DELETE' });
+      if (response.ok) setTasks(prev => prev.filter(t => t.id !== task.id));
     } catch (error) {
       console.error('Error deleting task:', error);
     }
@@ -421,7 +513,10 @@ const Task = ({ user }) => {
                   ) : (
                     <Chip label="Väntar" size="small" sx={{ bgcolor: 'rgba(17,24,39,0.06)', color: 'var(--text-secondary)', fontWeight: 700, fontSize: 11 }} />
                   )}
-                  <IconButton size="small" aria-label="Ta bort uppgift" onClick={() => handleDeleteTask(task.id)} sx={{ color: 'var(--text-secondary)' }}>
+                  <IconButton size="small" aria-label="Redigera uppgift" onClick={() => openEditDrawer(task)} sx={{ color: 'var(--text-secondary)' }}>
+                    <Edit sx={{ fontSize: 16 }} />
+                  </IconButton>
+                  <IconButton size="small" aria-label="Ta bort uppgift" onClick={() => handleDeleteTask(task)} sx={{ color: 'var(--text-secondary)' }}>
                     <DeleteOutline sx={{ fontSize: 17 }} />
                   </IconButton>
                 </Box>
@@ -589,14 +684,14 @@ const Task = ({ user }) => {
         <Box sx={{ p: 3.5, pb: proposedSlots?.length ? 2.5 : 3.5, flexShrink: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2.5 }}>
             <Typography sx={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>
-              {drawerTask ? drawerTask.name : 'Ny uppgift'}
+              {editMode ? 'Redigera uppgift' : drawerTask ? drawerTask.name : 'Ny uppgift'}
             </Typography>
             <IconButton onClick={closeDrawer} size="small" aria-label="Dölj panelen" sx={{ border: '1px solid rgba(17,24,39,0.1)' }}>
               <Close sx={{ fontSize: 16 }} />
             </IconButton>
           </Box>
 
-          {!drawerTask && (
+          {(!drawerTask || editMode) && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2.5 }}>
               <TextField fullWidth label="Uppgiftens namn" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required sx={fieldSx} />
               <TextField fullWidth label="Beskrivning" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} multiline rows={2} sx={fieldSx} />
@@ -622,25 +717,36 @@ const Task = ({ user }) => {
             </Box>
           )}
 
-          {drawerTask && !proposedSlots?.length && (
+          {drawerTask && !editMode && !proposedSlots?.length && (
             <Box sx={{ mb: 2.5, fontSize: 13.5, color: 'var(--text-secondary)', fontWeight: 600 }}>
               {drawerTask.remainingHours} av {drawerTask.estimatedHours} h kvar att schemalägga.
             </Box>
           )}
 
-          <Button
-            variant={proposedSlots?.length ? 'outlined' : 'contained'}
-            fullWidth onClick={handleFindTime} disabled={scheduling}
-            sx={proposedSlots?.length
-              ? { borderRadius: 999, fontWeight: 700, textTransform: 'none', borderColor: 'rgba(17,24,39,0.15)', color: 'var(--text)' }
-              : { ...primaryButtonSx, borderRadius: 999 }}
-          >
-            {scheduling ? 'Söker tid...' : proposedSlots?.length ? 'Hitta tid igen' : 'Hitta tid'}
-          </Button>
+          {editMode ? (
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button fullWidth onClick={discardDraft} sx={{ borderRadius: 999, fontWeight: 700, textTransform: 'none', color: 'var(--text-secondary)' }}>
+                Avbryt
+              </Button>
+              <Button variant="contained" fullWidth onClick={handleSaveEdit} disabled={savingEdit} sx={{ ...primaryButtonSx, borderRadius: 999 }}>
+                {savingEdit ? 'Sparar...' : 'Spara ändringar'}
+              </Button>
+            </Box>
+          ) : (
+            <Button
+              variant={proposedSlots?.length ? 'outlined' : 'contained'}
+              fullWidth onClick={handleFindTime} disabled={scheduling}
+              sx={proposedSlots?.length
+                ? { borderRadius: 999, fontWeight: 700, textTransform: 'none', borderColor: 'rgba(17,24,39,0.15)', color: 'var(--text)' }
+                : { ...primaryButtonSx, borderRadius: 999 }}
+            >
+              {scheduling ? 'Söker tid...' : proposedSlots?.length ? 'Hitta tid igen' : 'Hitta tid'}
+            </Button>
+          )}
 
           {drawerError && <Alert severity="error" sx={{ borderRadius: 3, mt: 2 }}>{drawerError}</Alert>}
 
-          {proposedSlots && proposedSlots.length > 0 && (
+          {!editMode && proposedSlots && proposedSlots.length > 0 && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                 <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>

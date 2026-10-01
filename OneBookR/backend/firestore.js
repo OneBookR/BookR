@@ -983,6 +983,15 @@ async function deleteTask(email, taskId) {
   await tasksCollection(email).doc(taskId).delete();
 }
 
+// ✅ Rör ALDRIG scheduledSlots — redigering ändrar bara planeringsramen
+// (namn/beskrivning/estimat/arbetstider), aldrig redan bokade pass.
+async function updateTask(email, taskId, data) {
+  await tasksCollection(email).doc(taskId).set({
+    ...data,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
 // ✅ Transaktion — lägger till nyss bokade pass i taskens scheduledSlots
 // utan att riskera att skriva över en samtidig annan förändring (t.ex. om
 // användaren dubbelklickar "Lägg till i kalender").
@@ -1096,6 +1105,7 @@ export {
   createTask,
   listTasks,
   getTask,
+  updateTask,
   deleteTask,
   appendTaskSlots,
 
