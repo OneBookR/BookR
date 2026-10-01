@@ -530,6 +530,28 @@ const Task = ({ user }) => {
                   <span>{task.remainingHours} h kvar</span>
                 </Box>
 
+                {/* ✅ "Klar tidigast" — samma simulering som "Hitta tid" körs
+                    i förväg av backend vid listning, så man ser läget direkt
+                    utan att öppna panelen. Bara relevant medan något återstår. */}
+                {task.status !== 'done' && (
+                  task.estimatedCompletion ? (
+                    <Box sx={{
+                      display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12.5, fontWeight: 700,
+                      color, bgcolor: `${color}12`, border: `1px solid ${color}30`, borderRadius: 2.5, px: 1.25, py: 0.85
+                    }}>
+                      <Event sx={{ fontSize: 15 }} />
+                      Klar tidigast {moment(task.estimatedCompletion).format('ddd D MMM, HH:mm')}
+                    </Box>
+                  ) : (
+                    <Box sx={{
+                      fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
+                      bgcolor: 'rgba(17,24,39,0.03)', borderRadius: 2.5, px: 1.25, py: 0.85
+                    }}>
+                      Får inte plats inom 14 dagar med nuvarande arbetstider — justera dem eller boka in tid manuellt.
+                    </Box>
+                  )
+                )}
+
                 {slotSummary ? (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12.5, fontWeight: 600, color: 'var(--text)', borderTop: '1px solid rgba(17,24,39,0.06)', pt: 1.25 }}>
                     <Event sx={{ fontSize: 15, color: 'var(--text-secondary)' }} />

@@ -777,8 +777,12 @@ async function fetchAllCalendarEvents(token, timeMin, timeMax, userEmail, provid
 // start, end } med buffert applicerad på var sida. Delad av bokningssidans
 // vanliga och "logga in för gemensam tid"-tillgänglighet nedan, så samma
 // tolkning av "upptaget" används på båda ställena.
-async function fetchBusyTimesFor(email, token, provider, timeMinDate, timeMaxDate, bufferMs = 0) {
-  const rawEvents = await fetchAllCalendarEvents(token, timeMinDate.toISOString(), timeMaxDate.toISOString(), email, provider);
+// ✅ Ren funktion (ingen nätverksanrop) — bruten ut ur fetchBusyTimesFor så
+// FLERA olika buffertvärden kan appliceras på SAMMA redan hämtade events
+// (se GET /api/tasks nedan, som förhandsvisar "klar tidigast" per uppgift
+// — varje uppgift kan ha sin egen bufferMs, men alla ska kunna dela EN
+// kalenderhämtning istället för en Google/Microsoft-förfrågan per uppgift).
+function busyIntervalsFromEvents(rawEvents, email, bufferMs = 0) {
   const seen = new Set();
   return rawEvents
     .filter(e => e.status !== 'cancelled' && e.transparency !== 'transparent' && (e.start?.dateTime || e.start?.date))
@@ -802,6 +806,11 @@ async function fetchBusyTimesFor(email, token, provider, timeMinDate, timeMaxDat
       seen.add(key);
       return true;
     });
+}
+
+async function fetchBusyTimesFor(email, token, provider, timeMinDate, timeMaxDate, bufferMs = 0) {
+  const rawEvents = await fetchAllCalendarEvents(token, timeMinDate.toISOString(), timeMaxDate.toISOString(), email, provider);
+  return busyIntervalsFromEvents(rawEvents, email, bufferMs);
 }
 
 // ===== CALENDAR EVENT PROCESSING - GDPR-SÄKER =====
@@ -2559,8 +2568,36 @@ app.get('/api/tasks', taskLimiter, async (req, res) => {
   if (!email) return;
 
   try {
-    const tasks = await listTasks(email);
-    res.json({ tasks: tasks.map(summarizeTask) });
+    const tasks = (await listTasks(email)).map(summarizeTask);
+
+    // ✅ "Klar tidigast"-datum per uppgift — samma simulering som POST
+    // /api/tasks/:id/schedule men utan att spara något, så det syns
+    // direkt i listan utan att behöva öppna panelen och klicka "Hitta
+    // tid". EN delad kalenderhämtning för alla uppgifter (inte en
+    // Google/Microsoft-förfrågan per uppgift) — se busyIntervalsFromEvents.
+    const pending = tasks.filter(t => t.remainingHours > 0);
+    if (pending.length > 0) {
+      try {
+        const now = new Date();
+        const horizon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+        const rawEvents = await fetchAllCalendarEvents(req.user.accessToken, now.toISOString(), horizon.toISOString(), email, req.user.provider || 'google');
+        for (const task of pending) {
+          const busyTimes = busyIntervalsFromEvents(rawEvents, email, task.breakMinutes * 60 * 1000);
+          const { slots, remainingHours } = scheduleTaskSlots({
+            busyTimes, now, horizon, estimatedHours: task.remainingHours,
+            workStartHour: task.workStartHour, workEndHour: task.workEndHour,
+            minSessionHours: task.minSessionHours, maxSessionHours: task.maxSessionHours, breakMinutes: task.breakMinutes
+          });
+          task.estimatedCompletion = (slots.length > 0 && remainingHours <= 0.001) ? slots[slots.length - 1].end : null;
+        }
+      } catch (calendarErr) {
+        // ✅ Ett kalenderhack ska inte stoppa hela listan från att laddas —
+        // uppgifterna visas bara utan "klar tidigast" den här gången.
+        console.warn('⚠️ Kunde inte beräkna "klar tidigast" för uppgifter:', calendarErr.message);
+      }
+    }
+
+    res.json({ tasks });
   } catch (err) {
     console.error('❌ Kunde inte hämta uppgifter:', err.message);
     res.status(500).json({ error: 'Kunde inte hämta uppgifter', code: 'TASKS_FETCH_FAILED' });
