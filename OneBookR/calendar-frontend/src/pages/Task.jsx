@@ -294,13 +294,30 @@ const Task = ({ user }) => {
       const data = await response.json();
       if (response.ok) {
         // ✅ De NYA passen är alltid sist i den uppdaterade listan —
-        // appendTaskSlots lägger till i slutet, aldrig om ordning.
-        const addedCount = proposedSlots.length;
-        const newIds = (data.task.scheduledSlots || []).slice(-addedCount).map(s => s.eventId).filter(Boolean);
+        // appendTaskSlots lägger till i slutet, aldrig om ordning. Räknar
+        // ut hur många som FAKTISKT lades till från differensen mot vad
+        // uppgiften hade innan (inte proposedSlots.length — ett pass kan
+        // ha misslyckats, se backendens failedSlots nedan).
+        const addedCount = (data.task.scheduledSlots?.length || 0) - (drawerTask.scheduledSlots?.length || 0);
+        const newIds = addedCount > 0 ? (data.task.scheduledSlots || []).slice(-addedCount).map(s => s.eventId).filter(Boolean) : [];
         setRecentlyAddedEventIds(new Set(newIds));
         setTasks(prev => prev.map(t => (t.id === data.task.id ? data.task : t)));
-        discardDraft();
         loadBusyEvents();
+
+        if (data.warning && data.failedSlots?.length > 0) {
+          // ✅ Partiellt lyckat: behåll bara de pass som FAKTISKT misslyckades
+          // i utkastet så man kan trycka "Lägg till i kalender" igen utan
+          // att skapa dubbletter av dem som redan gick igenom.
+          const failedIds = new Set(data.failedSlots.map(s => s.id));
+          setDrawerTask(data.task);
+          setProposedSlots(prev => (prev || []).filter(s => failedIds.has(s.id)));
+          setDrawerError(data.warning);
+          // ✅ Kan ha triggats från den flytande raden med panelen stängd —
+          // en varning ingen ser hjälper ingen, så panelen öppnas igen.
+          setDrawerOpen(true);
+        } else {
+          discardDraft();
+        }
       } else {
         setDrawerError('Fel: ' + (data.error || 'Kunde inte lägga till i kalendern'));
       }

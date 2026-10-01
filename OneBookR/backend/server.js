@@ -2666,26 +2666,50 @@ app.post('/api/tasks/:id/confirm', taskLimiter, async (req, res) => {
     const task = await getTask(email, req.params.id);
     if (!task) return res.status(404).json({ error: 'Uppgiften hittades inte', code: 'TASK_NOT_FOUND' });
 
+    // ✅ BUGFIX: skapade tidigare ALLA kalenderhändelser i en loop men
+    // sparade dem bara på uppgiften EFTER att hela loopen gått igenom —
+    // om Google/Microsoft nekade ett pass i mitten (t.ex. ett tillfälligt
+    // 429/token-blipp) kastades hela anropet, men de FÖREGÅENDE passen
+    // hade redan skapats som riktiga kalenderhändelser. Resultat: riktiga
+    // möten i kalendern som BookR inte visste om — uppgiftens
+    // framstegsbalk stämde inte, och en omschemaläggning hade kunnat
+    // föreslå samma tid igen. Sparar nu det som faktiskt lyckades även om
+    // något senare i listan misslyckas.
     const confirmedSlots = [];
+    const failures = [];
     for (const slot of slots) {
-      const result = await createSimpleCalendarEvent({
-        accessToken: req.user.accessToken,
-        provider: req.user.provider || 'google',
-        title: task.name,
-        description: task.description ? `Arbete med uppgift: ${task.name}\n\n${task.description}` : `Arbete med uppgift: ${task.name}`,
-        start: slot.start,
-        end: slot.end
-      });
-      confirmedSlots.push({
-        start: slot.start,
-        end: slot.end,
-        duration: Number(slot.duration) || Math.round(((new Date(slot.end) - new Date(slot.start)) / 3_600_000) * 100) / 100,
-        eventId: result.eventId
-      });
+      try {
+        const result = await createSimpleCalendarEvent({
+          accessToken: req.user.accessToken,
+          provider: req.user.provider || 'google',
+          title: task.name,
+          description: task.description ? `Arbete med uppgift: ${task.name}\n\n${task.description}` : `Arbete med uppgift: ${task.name}`,
+          start: slot.start,
+          end: slot.end
+        });
+        confirmedSlots.push({
+          start: slot.start,
+          end: slot.end,
+          duration: Number(slot.duration) || Math.round(((new Date(slot.end) - new Date(slot.start)) / 3_600_000) * 100) / 100,
+          eventId: result.eventId
+        });
+      } catch (slotErr) {
+        console.error(`❌ Kunde inte skapa kalenderhändelse för ett av passen (${slot.start}):`, slotErr.message);
+        failures.push(slot);
+      }
     }
 
-    await appendTaskSlots(email, req.params.id, confirmedSlots);
+    if (confirmedSlots.length > 0) {
+      await appendTaskSlots(email, req.params.id, confirmedSlots);
+    }
     const updated = await getTask(email, req.params.id);
+    if (failures.length > 0) {
+      return res.json({
+        task: summarizeTask(updated),
+        warning: `${confirmedSlots.length} av ${slots.length} pass lades till. ${failures.length} kunde inte skapas.`,
+        failedSlots: failures
+      });
+    }
     res.json({ task: summarizeTask(updated) });
   } catch (err) {
     console.error('❌ Kunde inte lägga till arbetspass i kalendern:', err.message);

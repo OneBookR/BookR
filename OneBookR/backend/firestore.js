@@ -618,6 +618,14 @@ async function deleteUserData(email) {
   const businessSnapshot = await businessQuery.get();
   businessSnapshot.docs.forEach(doc => batch.delete(doc.ref));
 
+  // ✅ BUGFIX (GDPR): batch.delete(userDoc) ovan tar bara bort SJÄLVA
+  // dokumentet — en subcollection under det (som users/{email}/tasks)
+  // försvinner inte automatiskt, Firestore kaskaderar aldrig borttagning
+  // till subcollections. Upptäckt vid genomgång av Uppgiftshanteraren:
+  // utan denna rad låg en persons uppgifter kvar i databasen för alltid
+  // efter en GDPR-radering, trots att de inte längre syntes för kontot.
+  await getDb().recursiveDelete(userDoc.collection('tasks'));
+
   await batch.commit();
 }
 
