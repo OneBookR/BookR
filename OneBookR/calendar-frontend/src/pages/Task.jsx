@@ -531,26 +531,27 @@ const Task = ({ user }) => {
                   };
                 }
                 if (event.resource === 'task') {
-                  // ✅ Nyss tillagda pass får en solid, mättad fyllning istället
-                  // för den vanliga ljusa — ska gå att se på en sekund vilka
-                  // block som precis skapades, utan att behöva läsa titeln.
-                  return event.isNew ? {
+                  // ✅ Tidigare bara en svag ~13 % tint + kantlinje — läste som
+                  // "bara en ram", ingen riktig färg i själva blocket. Nu en
+                  // solid fyllning i uppgiftens färg + vit text, för alla
+                  // bekräftade pass. Nyss tillagda pass sticker ut genom en
+                  // extra vit glödring runt blocket (inte längre genom att
+                  // vara "mer färgade" än de andra — alla är lika mättade nu).
+                  return {
                     style: {
-                      backgroundColor: event.color, color: '#ffffff', border: `1.5px solid ${event.color}`,
-                      borderRadius: '6px', fontWeight: 700, fontSize: '12px', padding: '2px 4px',
-                      boxShadow: `0 0 0 2px ${event.color}33`
-                    }
-                  } : {
-                    style: {
-                      backgroundColor: `${event.color}22`, color: event.color, border: `1.5px solid ${event.color}55`,
-                      borderRadius: '6px', fontWeight: 600, fontSize: '12px', padding: '2px 4px'
+                      backgroundColor: event.color, color: '#ffffff',
+                      border: event.isNew ? '1.5px solid #ffffff' : `1.5px solid ${event.color}`,
+                      boxShadow: event.isNew ? `0 0 0 2px ${event.color}, 0 2px 8px rgba(0,0,0,0.25)` : 'none',
+                      borderRadius: '6px', fontWeight: event.isNew ? 800 : 700, fontSize: '12px', padding: '2px 4px'
                     }
                   };
                 }
+                // ✅ Samma sak för "Upptagen" — solid röd fyllning istället
+                // för en svag tint, så den syns lika tydligt som uppgifterna.
                 return {
                   style: {
-                    backgroundColor: 'rgba(180,35,24,0.12)', color: '#8f2018', border: '1px solid rgba(180,35,24,0.18)',
-                    borderRadius: '4px', fontWeight: 500, fontSize: '12px', padding: '2px 4px'
+                    backgroundColor: '#b42318', color: '#ffffff', border: '1px solid #b42318',
+                    borderRadius: '4px', fontWeight: 600, fontSize: '12px', padding: '2px 4px'
                   }
                 };
               }}
