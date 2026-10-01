@@ -599,8 +599,9 @@ const Task = ({ user }) => {
                 </Box>
               </Box>
 
-              <TextField fullWidth label="Rast mellan pass (minuter)" type="number" value={form.breakMinutes}
-                onChange={e => setForm({ ...form, breakMinutes: e.target.value })} inputProps={{ min: 0, step: 5 }} sx={fieldSx} />
+              <TextField fullWidth label="Buffert mellan pass (minuter)" type="number" value={form.breakMinutes}
+                onChange={e => setForm({ ...form, breakMinutes: e.target.value })} inputProps={{ min: 0, step: 5 }}
+                helperText="Gäller både mellan egna arbetspass och mot sånt du redan har i kalendern" sx={fieldSx} />
             </Box>
           )}
 

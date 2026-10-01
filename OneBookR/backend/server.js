@@ -2635,7 +2635,11 @@ app.post('/api/tasks/:id/schedule', taskLimiter, async (req, res) => {
     // ✅ Redan bokade pass (för DENNA och andra uppgifter) ligger redan som
     // riktiga kalenderhändelser — fetchBusyTimesFor ser dem automatiskt,
     // så två uppgifter kan aldrig råka få samma lucka föreslagen.
-    const busyTimes = await fetchBusyTimesFor(email, req.user.accessToken, req.user.provider || 'google', now, horizon);
+    // ✅ Samma breakMinutes som redan pausar MELLAN egna uppgiftspass
+    // paddar nu även ÄVEN mot det som redan ligger i kalendern (bufferMs) —
+    // annars kunde ett pass börja/sluta exakt i kant med ett riktigt möte.
+    const bufferMs = task.breakMinutes * 60 * 1000;
+    const busyTimes = await fetchBusyTimesFor(email, req.user.accessToken, req.user.provider || 'google', now, horizon, bufferMs);
     const { slots, remainingHours } = scheduleTaskSlots({
       busyTimes, now, horizon, estimatedHours: summary.remainingHours,
       workStartHour: task.workStartHour, workEndHour: task.workEndHour,
@@ -2722,7 +2726,8 @@ app.post('/api/task/schedule', taskLimiter, async (req, res) => {
   try {
     const now = new Date();
     const horizon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    const busyTimes = await fetchBusyTimesFor(email, req.user.accessToken, req.user.provider || 'google', now, horizon);
+    const bufferMs = breakMin * 60 * 1000;
+    const busyTimes = await fetchBusyTimesFor(email, req.user.accessToken, req.user.provider || 'google', now, horizon, bufferMs);
     const { slots, remainingHours } = scheduleTaskSlots({
       busyTimes, now, horizon, estimatedHours: est,
       workStartHour: dayStart, workEndHour: dayEnd,
