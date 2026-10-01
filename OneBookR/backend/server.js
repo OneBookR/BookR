@@ -764,11 +764,6 @@ async function fetchAllCalendarEvents(token, timeMin, timeMax, userEmail, provid
 
     console.log(`   📋 Secondary calendars: ${secondaryEventCount} events`);
 
-    // ✅ HÄMTA INBJUDNA EVENTS (från andra användare)
-    const invitedEvents = await fetchInvitedEvents(token, userEmail, timeMin, timeMax);
-    allEvents.push(...invitedEvents);
-    console.log(`   📋 Invited events: ${invitedEvents.length} events`);
-
     console.log(`📊 TOTAL events fetched for ${userEmail}: ${allEvents.length} events from ALL categories`);
     return allEvents;
   } catch (error) {
@@ -784,6 +779,7 @@ async function fetchAllCalendarEvents(token, timeMin, timeMax, userEmail, provid
 // tolkning av "upptaget" används på båda ställena.
 async function fetchBusyTimesFor(email, token, provider, timeMinDate, timeMaxDate, bufferMs = 0) {
   const rawEvents = await fetchAllCalendarEvents(token, timeMinDate.toISOString(), timeMaxDate.toISOString(), email, provider);
+  const seen = new Set();
   return rawEvents
     .filter(e => e.status !== 'cancelled' && e.transparency !== 'transparent' && (e.start?.dateTime || e.start?.date))
     .map(e => {
@@ -794,6 +790,17 @@ async function fetchBusyTimesFor(email, token, provider, timeMinDate, timeMaxDat
         start: new Date(start.getTime() - bufferMs).toISOString(),
         end: new Date(end.getTime() + bufferMs).toISOString()
       };
+    })
+    // ✅ Samma möte kan dyka upp i mer än en hämtad kalender (t.ex. en delad
+    // kalender som speglar primary) — identiskt start+slut räknas som
+    // samma upptagna block, annars staplas identiska "Upptagen"-rutor på
+    // varandra i UI:t (hände tidigare pga en redundant dubbelhämtning av
+    // primary-kalendern, se fetchAllCalendarEvents).
+    .filter(slot => {
+      const key = `${slot.start}|${slot.end}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
 }
 
@@ -1073,28 +1080,6 @@ async function fetchUpcomingMeetingsWithDetails(token, provider, timeMin, timeMa
       hangoutLink: e.hangoutLink || null,
       conferenceUri: e.hangoutLink ? null : e._link
     }));
-}
-
-// ===== FETCH INVITED EVENTS - HÄMTA INBJUDNA EVENTS FRÅN PRIMÄRA KALENDERN =====
-async function fetchInvitedEvents(token, userEmail, timeMin, timeMax) {
-  try {
-    const searchUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
-      `timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&` +
-      `singleEvents=true&maxResults=1000`;
-
-    const response = await fetchWithRetry(searchUrl, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    const data = await response.json();
-    return (data.items || []).map(event => ({ ...event, calendarId: 'invited', isInvited: true }));
-  } catch (error) {
-    console.warn('⚠️ Could not fetch invited events:', error.message);
-    return [];
-  }
 }
 
 // ✅ Bygger ett Date-objekt för en given klockslag (HH, MM) i Europe/Stockholm

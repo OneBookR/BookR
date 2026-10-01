@@ -125,7 +125,7 @@ const Task = ({ user }) => {
       const overlaps = [...occupiedIntervals, ...others].some(iv => intervalsOverlap(start, end, iv.start, iv.end));
       return {
         id: slot.id,
-        title: `${drawerTask?.name || 'Förslag'} (förslag)`,
+        title: `Förslag: ${drawerTask?.name || 'Ny uppgift'}`,
         start, end,
         resource: 'proposed',
         color: draftColor,
@@ -154,12 +154,22 @@ const Task = ({ user }) => {
     } : s)));
   }, []);
 
-  const nextSlotLabel = (task) => {
-    const upcoming = (task.scheduledSlots || [])
-      .filter(s => new Date(s.end) > new Date())
-      .sort((a, b) => new Date(a.start) - new Date(b.start));
+  // ✅ "Nästa pass" (nästa ändå-kommande arbetspass) är bara meningsfullt
+  // medan det finns MER kvar att göra. När uppgiften är helt klar (0 h kvar)
+  // visar vi istället "Sista pass" — det SENASTE inbokade passet — annars
+  // läste "0 h kvar" + "Nästa pass" som en motsägelse (som om det fanns
+  // mer schemalagt att vänta på, fast allt redan är klart).
+  const slotSummaryLabel = (task) => {
+    const slots = task.scheduledSlots || [];
+    if (slots.length === 0) return null;
+    const sorted = [...slots].sort((a, b) => new Date(a.start) - new Date(b.start));
+    if (task.status === 'done') {
+      const last = sorted[sorted.length - 1];
+      return { kind: 'Sista pass', text: moment(last.start).format('ddd D/M HH:mm') + '–' + moment(last.end).format('HH:mm') };
+    }
+    const upcoming = sorted.filter(s => new Date(s.end) > new Date());
     if (upcoming.length === 0) return null;
-    return moment(upcoming[0].start).format('ddd D/M HH:mm') + '–' + moment(upcoming[0].end).format('HH:mm');
+    return { kind: 'Nästa pass', text: moment(upcoming[0].start).format('ddd D/M HH:mm') + '–' + moment(upcoming[0].end).format('HH:mm') };
   };
 
   const openCreateDrawer = () => {
@@ -356,7 +366,7 @@ const Task = ({ user }) => {
           {tasks.map(task => {
             const color = taskColor(task.id);
             const pct = task.estimatedHours > 0 ? Math.min(100, Math.round((task.scheduledHours / task.estimatedHours) * 100)) : 0;
-            const nextLabel = nextSlotLabel(task);
+            const slotSummary = slotSummaryLabel(task);
             return (
               <Paper key={task.id} elevation={0} sx={{ ...glassCardSx, p: 2.25, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
@@ -384,10 +394,10 @@ const Task = ({ user }) => {
                   <span>{task.remainingHours} h kvar</span>
                 </Box>
 
-                {nextLabel ? (
+                {slotSummary ? (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12.5, fontWeight: 600, color: 'var(--text)', borderTop: '1px solid rgba(17,24,39,0.06)', pt: 1.25 }}>
                     <Event sx={{ fontSize: 15, color: 'var(--text-secondary)' }} />
-                    Nästa pass: {nextLabel}
+                    {slotSummary.kind}: {slotSummary.text}
                   </Box>
                 ) : task.status !== 'done' ? (
                   <Button
@@ -474,11 +484,15 @@ const Task = ({ user }) => {
               onEventResize={handleProposedEventChange}
               eventPropGetter={(event) => {
                 if (event.resource === 'proposed') {
+                  // ✅ Randrandigt mönster (inte bara streckad kant) så ett
+                  // oskickat förslag aldrig går att förväxla med ett redan
+                  // bekräftat pass, även i en tät vecka med flera block.
+                  const stripeColor = event.overlaps ? '#b42318' : event.color;
                   return {
                     style: {
-                      backgroundColor: event.overlaps ? 'rgba(180,35,24,0.14)' : `${event.color}26`,
+                      backgroundImage: `repeating-linear-gradient(135deg, ${stripeColor}33, ${stripeColor}33 6px, ${stripeColor}14 6px, ${stripeColor}14 12px)`,
                       color: event.overlaps ? '#8f2018' : event.color,
-                      border: `2px dashed ${event.overlaps ? '#b42318' : event.color}`,
+                      border: `2px dashed ${stripeColor}`,
                       borderRadius: '6px', fontWeight: 700, fontSize: '12px', padding: '2px 4px', cursor: 'move'
                     }
                   };
