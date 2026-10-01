@@ -3,17 +3,25 @@ import {
   Box, Typography, TextField, Button, Paper, Alert, Container, Chip,
   Drawer, IconButton, CircularProgress
 } from '@mui/material';
-import { Add, DeleteOutline, CheckCircle, ArrowForward, Event, Close } from '@mui/icons-material';
+import { Add, DeleteOutline, CheckCircle, ArrowForward, Event, Close, OpenWith } from '@mui/icons-material';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
+import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import moment from 'moment';
 import { apiRequest } from '../utils/apiConfig.js';
+import 'react-big-calendar/lib/css/react-big-calendar.css';
+import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
 const localizer = momentLocalizer(moment);
+const DnDCalendar = withDragAndDrop(Calendar);
 
 // ✅ Samma hue-familj som resten av appen (--success/--warning i theme.css)
 // plus två ytterligare toner — aldrig rött, det är reserverat för
 // "Upptagen"-block så en uppgift aldrig kan förväxlas med en kalenderkrock.
 const TASK_COLORS = ['#1f7a4d', '#b54708', '#3455a4', '#6d4aa0', '#0f766e'];
+
+function intervalsOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && aEnd > bStart;
+}
 
 const DEFAULT_FORM = {
   name: '',
@@ -79,6 +87,17 @@ const Task = ({ user }) => {
     return TASK_COLORS[(index < 0 ? 0 : index) % TASK_COLORS.length];
   };
 
+  // ✅ Vad ett förslags-block INTE får krocka med — andra uppgifters redan
+  // bekräftade pass + befintliga mötesbokningar. Beräknas separat från
+  // calendarEvents (ren Date-form) så överlappskollen nedan slipper bry
+  // sig om kalenderns render-format.
+  const occupiedIntervals = useMemo(() => ([
+    ...busyEvents.map(e => ({ start: new Date(e.start), end: new Date(e.end) })),
+    ...tasks.flatMap(t => (t.scheduledSlots || []).map(s => ({ start: new Date(s.start), end: new Date(s.end) })))
+  ]), [busyEvents, tasks]);
+
+  const draftColor = drawerTask ? taskColor(drawerTask.id) : '#3455a4';
+
   const calendarEvents = useMemo(() => {
     const busy = busyEvents.map(e => ({
       title: 'Upptagen',
@@ -95,9 +114,45 @@ const Task = ({ user }) => {
         color: taskColor(t.id)
       }))
     );
-    return [...busy, ...taskBlocks];
+    // ✅ Ej bekräftade förslag — ritas ovanpå, egen stil, dragbara/resizebara
+    // (se draggableAccessor/resizableAccessor på kalendern). Flaggas som
+    // "overlaps" om de krockar med en bokning ELLER ett annat förslag i
+    // samma utkast, så man ser direkt om en flytt/ändring skapar en krock.
+    const proposed = (proposedSlots || []).map((slot, i) => {
+      const start = new Date(slot.start);
+      const end = new Date(slot.end);
+      const others = (proposedSlots || []).filter((_, j) => j !== i).map(s => ({ start: new Date(s.start), end: new Date(s.end) }));
+      const overlaps = [...occupiedIntervals, ...others].some(iv => intervalsOverlap(start, end, iv.start, iv.end));
+      return {
+        id: slot.id,
+        title: `${drawerTask?.name || 'Förslag'} (förslag)`,
+        start, end,
+        resource: 'proposed',
+        color: draftColor,
+        overlaps
+      };
+    });
+    return [...busy, ...taskBlocks, ...proposed];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busyEvents, tasks]);
+  }, [busyEvents, tasks, proposedSlots, occupiedIntervals, draftColor]);
+
+  const proposedTotalHours = useMemo(
+    () => Math.round((proposedSlots || []).reduce((sum, s) => sum + (Number(s.duration) || 0), 0) * 100) / 100,
+    [proposedSlots]
+  );
+  const targetHours = drawerTask?.remainingHours ?? 0;
+  const diffHours = Math.round((proposedTotalHours - targetHours) * 100) / 100;
+  const hasOverlap = useMemo(() => calendarEvents.some(e => e.resource === 'proposed' && e.overlaps), [calendarEvents]);
+
+  const handleProposedEventChange = useCallback(({ event, start, end }) => {
+    if (event.resource !== 'proposed') return;
+    setProposedSlots(prev => (prev || []).map(s => (s.id === event.id ? {
+      ...s,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      duration: Math.round(((end.getTime() - start.getTime()) / 3_600_000) * 100) / 100
+    } : s)));
+  }, []);
 
   const nextSlotLabel = (task) => {
     const upcoming = (task.scheduledSlots || [])
@@ -126,6 +181,9 @@ const Task = ({ user }) => {
 
   const closeDrawer = () => {
     setDrawerOpen(false);
+    setProposedSlots(null);
+    setProposedRemainingHours(null);
+    setDrawerError('');
   };
 
   const handleFindTime = async () => {
@@ -177,7 +235,10 @@ const Task = ({ user }) => {
       const response = await apiRequest(`/api/tasks/${activeTask.id}/schedule`, { method: 'POST' });
       const data = await response.json();
       if (response.ok) {
-        setProposedSlots(data.taskSlots || []);
+        // ✅ Lokalt id så drag/resize på kalendern kan matcha tillbaka till
+        // rätt post i proposedSlots (backend känner inte till id:n förrän
+        // de bekräftas och blir riktiga kalenderhändelser).
+        setProposedSlots((data.taskSlots || []).map((s, i) => ({ ...s, id: `proposed-${i}` })));
         setProposedRemainingHours(data.remainingHours);
         if ((data.taskSlots || []).length === 0) {
           setDrawerError('Inga lediga arbetspass hittades i det valda intervallet. Justera arbetstider eller sessionslängd.');
@@ -359,9 +420,15 @@ const Task = ({ user }) => {
             <Typography variant="h5" sx={{ fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em', mb: 1 }}>
               Kalender — kommande 14 dagar
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', alignItems: 'center' }}>
               <LegendDot color="#b42318" label="Upptaget" />
               {tasks.map(t => <LegendDot key={t.id} color={taskColor(t.id)} label={t.name} />)}
+              {proposedSlots?.length > 0 && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12, fontWeight: 700, color: draftColor }}>
+                  <OpenWith sx={{ fontSize: 14 }} />
+                  Förslag — dra eller ändra storlek för att justera
+                </Box>
+              )}
             </Box>
           </Box>
 
@@ -394,13 +461,28 @@ const Task = ({ user }) => {
             '& .rbc-timeslot-group': { borderBottom: '1px solid rgba(17,24,39,0.06)' },
             '& .rbc-day-slot .rbc-time-slot': { borderTop: '1px solid rgba(17,24,39,0.06)' }
           }}>
-            <Calendar
+            <DnDCalendar
               localizer={localizer}
               events={calendarEvents}
               startAccessor="start"
               endAccessor="end"
               style={{ height: '100%' }}
+              resizable
+              draggableAccessor={event => event.resource === 'proposed'}
+              resizableAccessor={event => event.resource === 'proposed'}
+              onEventDrop={handleProposedEventChange}
+              onEventResize={handleProposedEventChange}
               eventPropGetter={(event) => {
+                if (event.resource === 'proposed') {
+                  return {
+                    style: {
+                      backgroundColor: event.overlaps ? 'rgba(180,35,24,0.14)' : `${event.color}26`,
+                      color: event.overlaps ? '#8f2018' : event.color,
+                      border: `2px dashed ${event.overlaps ? '#b42318' : event.color}`,
+                      borderRadius: '6px', fontWeight: 700, fontSize: '12px', padding: '2px 4px', cursor: 'move'
+                    }
+                  };
+                }
                 if (event.resource === 'task') {
                   return {
                     style: {
@@ -416,7 +498,7 @@ const Task = ({ user }) => {
                   }
                 };
               }}
-              views={['month', 'week', 'day', 'agenda']}
+              views={['week', 'day', 'agenda']}
               defaultView="week"
             />
           </Box>
@@ -473,18 +555,48 @@ const Task = ({ user }) => {
 
         {proposedSlots && proposedSlots.length > 0 && (
           <Box sx={{ mt: 2.5, borderTop: '1px solid rgba(17,24,39,0.08)', pt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-              Föreslagna arbetspass
-            </Typography>
-            {proposedSlots.map((slot, i) => (
-              <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.25, bgcolor: 'rgba(52,85,164,0.06)', border: '1px solid rgba(52,85,164,0.18)', borderRadius: 3, px: 1.5, py: 1 }}>
-                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#3455a4', flexShrink: 0 }} />
-                <Typography sx={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{moment(slot.start).format('ddd D MMM')}</Typography>
-                <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  {moment(slot.start).format('HH:mm')}–{moment(slot.end).format('HH:mm')} · {slot.duration}h
-                </Typography>
-              </Box>
-            ))}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                Föreslagna arbetspass
+              </Typography>
+              <Typography sx={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                Se kalendern — dra eller ändra storlek
+              </Typography>
+            </Box>
+
+            {proposedSlots.map((slot) => {
+              const overlaps = calendarEvents.find(e => e.resource === 'proposed' && e.id === slot.id)?.overlaps;
+              return (
+                <Box key={slot.id} sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.25, borderRadius: 3, px: 1.5, py: 1,
+                  bgcolor: overlaps ? 'rgba(180,35,24,0.07)' : `${draftColor}10`,
+                  border: `1px solid ${overlaps ? 'rgba(180,35,24,0.3)' : `${draftColor}30`}`
+                }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: overlaps ? '#b42318' : draftColor, flexShrink: 0 }} />
+                  <Typography sx={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{moment(slot.start).format('ddd D MMM')}</Typography>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: overlaps ? '#8f2018' : 'var(--text-secondary)' }}>
+                    {moment(slot.start).format('HH:mm')}–{moment(slot.end).format('HH:mm')} · {slot.duration}h
+                  </Typography>
+                </Box>
+              );
+            })}
+
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 0.75 }}>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                {proposedTotalHours} av {targetHours} h placerade
+              </Typography>
+              {diffHours === 0 ? (
+                <Chip size="small" label="Exakt matchning" sx={{ bgcolor: 'rgba(31,122,77,0.1)', color: '#1f7a4d', fontWeight: 700, fontSize: 11 }} />
+              ) : diffHours > 0 ? (
+                <Chip size="small" label={`+${diffHours} h över`} sx={{ bgcolor: 'rgba(181,71,8,0.1)', color: '#b54708', fontWeight: 700, fontSize: 11 }} />
+              ) : (
+                <Chip size="small" label={`${diffHours} h kvar`} sx={{ bgcolor: 'rgba(17,24,39,0.06)', color: 'var(--text-secondary)', fontWeight: 700, fontSize: 11 }} />
+              )}
+            </Box>
+
+            {hasOverlap && (
+              <Alert severity="warning" sx={{ borderRadius: 3 }}>Ett eller flera pass krockar med en bokning eller ett annat förslag — dra dem till en ledig lucka i kalendern.</Alert>
+            )}
             {proposedRemainingHours > 0 && (
               <Typography sx={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600, pt: 0.5 }}>
                 {proposedRemainingHours} h fick inte plats inom 14 dagar — klicka Hitta tid igen senare.
