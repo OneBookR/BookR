@@ -5261,6 +5261,65 @@ async function createAdminCalendarEvent(suggestion, adminCalendar, visitorEmail)
   return event.id;
 }
 
+// ===== KONTAKTFORMULÄR (/kontakt) — publikt, ingen inloggning krävs =====
+const contactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 10,
+  message: { error: 'För många meddelanden skickade — försök igen om en stund' },
+  standardHeaders: true, legacyHeaders: false
+});
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+app.post('/api/contact', contactLimiter, async (req, res) => {
+  const { name, email, message } = req.body || {};
+  const trimmedName = typeof name === 'string' ? name.trim() : '';
+  const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+  const trimmedMessage = typeof message === 'string' ? message.trim() : '';
+
+  if (!trimmedName || trimmedName.length > 120) {
+    return res.status(400).json({ error: 'Ange ditt namn' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail) || trimmedEmail.length > 200) {
+    return res.status(400).json({ error: 'Ange en giltig e-postadress' });
+  }
+  if (!trimmedMessage || trimmedMessage.length > 5000) {
+    return res.status(400).json({ error: 'Skriv ett meddelande (max 5000 tecken)' });
+  }
+
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('⚠️ RESEND_API_KEY saknas — kan inte skicka kontaktformulär');
+    return res.status(503).json({ error: 'Kontaktformuläret är tillfälligt otillgängligt — mejla oss istället på info@onebookr.se' });
+  }
+
+  try {
+    // ✅ replyTo = avsändarens egen adress — teamet kan svara direkt i sin
+    // mejlklient istället för att behöva kopiera adressen ur meddelandet.
+    const result = await resend.emails.send({
+      from: 'BookR Kontaktformulär <noreply@onebookr.se>',
+      to: ['info@onebookr.se'],
+      replyTo: trimmedEmail,
+      subject: `📬 Nytt meddelande från ${trimmedName}`,
+      html: `<!DOCTYPE html><html><body style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#f7f7f3;padding:24px;margin:0;">
+        <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px;border:1px solid #e5e7eb;">
+          <p style="margin:0 0 4px;font-size:12.5px;color:#5f6470;font-weight:600;">Från kontaktformuläret på onebookr.se/kontakt</p>
+          <p style="margin:0 0 16px;font-size:14px;color:#111827;"><strong>${escapeHtml(trimmedName)}</strong> &lt;${escapeHtml(trimmedEmail)}&gt;</p>
+          <p style="margin:0;white-space:pre-line;font-size:15px;color:#111827;line-height:1.6;">${escapeHtml(trimmedMessage)}</p>
+        </div>
+      </body></html>`,
+      text: `Från kontaktformuläret på onebookr.se/kontakt\n${trimmedName} <${trimmedEmail}>\n\n${trimmedMessage}`
+    });
+    if (result?.error) throw new Error(result.error.message || JSON.stringify(result.error));
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Kunde inte skicka kontaktmejl:', err.message);
+    res.status(500).json({ error: 'Kunde inte skicka meddelandet — mejla oss istället på info@onebookr.se' });
+  }
+});
+
 // ===== BOKA DEMO — publikt lead-capture + live auto-bokningsflöde =====
 // Se plan i C:\Users\Användar\.claude\plans\fancy-orbiting-feather.md.
 // Tre steg: (1) formulär sparar ett lead, (2) besökaren loggar in med sin
