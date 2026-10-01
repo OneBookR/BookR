@@ -3,7 +3,7 @@ import {
   Box, Typography, TextField, Button, Paper, Alert, Container, Chip,
   Drawer, IconButton, CircularProgress
 } from '@mui/material';
-import { Add, DeleteOutline, CheckCircle, ArrowForward, Event, Close, OpenWith } from '@mui/icons-material';
+import { Add, DeleteOutline, CheckCircle, ArrowForward, Event, Close, OpenWith, ArrowUpward, ArrowDownward, Visibility } from '@mui/icons-material';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import moment from 'moment';
@@ -513,16 +513,20 @@ const Task = ({ user }) => {
               onEventResize={handleProposedEventChange}
               eventPropGetter={(event) => {
                 if (event.resource === 'proposed') {
-                  // ✅ Randrandigt mönster (inte bara streckad kant) så ett
-                  // oskickat förslag aldrig går att förväxla med ett redan
-                  // bekräftat pass, även i en tät vecka med flera block.
+                  // ✅ Tidigare en svagt rand-randig, nästan osynlig ton
+                  // (~15 % opacitet ovanpå vit bakgrund) — syntes knappt.
+                  // Nu en MÄTTAD randig fyllning (två nästan fulltäta
+                  // nyanser av samma färg, inte urblekta mot vitt) + vit
+                  // text, så ett oskickat förslag är omöjligt att missa.
                   const stripeColor = event.overlaps ? '#b42318' : event.color;
                   return {
                     style: {
-                      backgroundImage: `repeating-linear-gradient(135deg, ${stripeColor}33, ${stripeColor}33 6px, ${stripeColor}14 6px, ${stripeColor}14 12px)`,
-                      color: event.overlaps ? '#8f2018' : event.color,
-                      border: `2px dashed ${stripeColor}`,
-                      borderRadius: '6px', fontWeight: 700, fontSize: '12px', padding: '2px 4px', cursor: 'move'
+                      backgroundColor: stripeColor,
+                      backgroundImage: `repeating-linear-gradient(135deg, ${stripeColor} 0px, ${stripeColor} 9px, ${stripeColor}B3 9px, ${stripeColor}B3 18px)`,
+                      color: '#ffffff',
+                      border: '2px solid #ffffff',
+                      boxShadow: `0 0 0 2px ${stripeColor}, 0 4px 10px ${stripeColor}55`,
+                      borderRadius: '6px', fontWeight: 800, fontSize: '12px', padding: '2px 4px', cursor: 'move'
                     }
                   };
                 }
@@ -560,64 +564,105 @@ const Task = ({ user }) => {
       {/* Ny uppgift / schemalägg-panel — persistent (ingen mörkläggande backdrop):
           stängs bara undan, släcker aldrig förslaget. Se den flytande raden
           nedan för hur man kommer tillbaka när panelen är stängd. */}
-      <Drawer variant="persistent" anchor="right" open={drawerOpen} onClose={closeDrawer} PaperProps={{ sx: { width: { xs: '100%', sm: 440 }, p: 3.5, bgcolor: 'var(--surface-strong)' } }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2.5 }}>
-          <Typography sx={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>
-            {drawerTask ? drawerTask.name : 'Ny uppgift'}
-          </Typography>
-          <IconButton onClick={closeDrawer} size="small" sx={{ border: '1px solid rgba(17,24,39,0.1)' }}>
-            <Close sx={{ fontSize: 16 }} />
-          </IconButton>
+      <Drawer variant="persistent" anchor="right" open={drawerOpen} onClose={closeDrawer} PaperProps={{ sx: { width: { xs: '100%', sm: 440 }, bgcolor: 'var(--surface-strong)', display: 'flex', flexDirection: 'column', height: '100vh' } }}>
+        {/* Fast överdel — header, formulär/mål, Hitta tid, och (när ett
+            förslag finns) sammanfattning + "visa kalendern"-knapp. Ligger
+            kvar synlig även när listan med pass nedan är lång och scrollar. */}
+        <Box sx={{ p: 3.5, pb: proposedSlots?.length ? 2.5 : 3.5, flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2.5 }}>
+            <Typography sx={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>
+              {drawerTask ? drawerTask.name : 'Ny uppgift'}
+            </Typography>
+            <IconButton onClick={closeDrawer} size="small" aria-label="Dölj panelen" sx={{ border: '1px solid rgba(17,24,39,0.1)' }}>
+              <Close sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Box>
+
+          {!drawerTask && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2.5 }}>
+              <TextField fullWidth label="Uppgiftens namn" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required sx={fieldSx} />
+              <TextField fullWidth label="Beskrivning" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} multiline rows={2} sx={fieldSx} />
+              <TextField fullWidth label="Estimerad tid (timmar)" type="number" value={form.estimatedHours}
+                onChange={e => setForm({ ...form, estimatedHours: e.target.value })} required inputProps={{ min: 0.5, step: 0.5 }} sx={fieldSx} />
+
+              <Box sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--text)', fontWeight: 800 }}>Arbetstider</Typography>
+                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                  <TextField label="Från" type="number" value={form.workStartHour} onChange={e => setForm({ ...form, workStartHour: e.target.value })} inputProps={{ min: 0, max: 23 }} sx={{ flex: 1, ...fieldSx }} />
+                  <TextField label="Till" type="number" value={form.workEndHour} onChange={e => setForm({ ...form, workEndHour: e.target.value })} inputProps={{ min: 0, max: 23 }} sx={{ flex: 1, ...fieldSx }} />
+                </Box>
+                <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--text)', fontWeight: 800 }}>Sessionslängd</Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <TextField label="Min (h)" type="number" value={form.minSessionHours} onChange={e => setForm({ ...form, minSessionHours: e.target.value })} inputProps={{ min: 0.5, step: 0.5 }} sx={{ flex: 1, ...fieldSx }} />
+                  <TextField label="Max (h)" type="number" value={form.maxSessionHours} onChange={e => setForm({ ...form, maxSessionHours: e.target.value })} inputProps={{ min: 0.5, step: 0.5 }} sx={{ flex: 1, ...fieldSx }} />
+                </Box>
+              </Box>
+
+              <TextField fullWidth label="Rast mellan pass (minuter)" type="number" value={form.breakMinutes}
+                onChange={e => setForm({ ...form, breakMinutes: e.target.value })} inputProps={{ min: 0, step: 5 }} sx={fieldSx} />
+            </Box>
+          )}
+
+          {drawerTask && !proposedSlots?.length && (
+            <Box sx={{ mb: 2.5, fontSize: 13.5, color: 'var(--text-secondary)', fontWeight: 600 }}>
+              {drawerTask.remainingHours} av {drawerTask.estimatedHours} h kvar att schemalägga.
+            </Box>
+          )}
+
+          <Button
+            variant={proposedSlots?.length ? 'outlined' : 'contained'}
+            fullWidth onClick={handleFindTime} disabled={scheduling}
+            sx={proposedSlots?.length
+              ? { borderRadius: 999, fontWeight: 700, textTransform: 'none', borderColor: 'rgba(17,24,39,0.15)', color: 'var(--text)' }
+              : { ...primaryButtonSx, borderRadius: 999 }}
+          >
+            {scheduling ? 'Söker tid...' : proposedSlots?.length ? 'Hitta tid igen' : 'Hitta tid'}
+          </Button>
+
+          {drawerError && <Alert severity="error" sx={{ borderRadius: 3, mt: 2 }}>{drawerError}</Alert>}
+
+          {proposedSlots && proposedSlots.length > 0 && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                  {proposedTotalHours} av {targetHours} h placerade
+                </Typography>
+                <DiffBadge diffHours={diffHours} />
+              </Box>
+
+              {/* ✅ Tidigare en diskret textknapp längst ner, under hela
+                  pass-listan — omöjlig att hitta med många förslag. Nu en
+                  tydlig, färgad knapp direkt under sammanfattningen, alltid
+                  synlig utan att scrolla. */}
+              <Button
+                fullWidth onClick={closeDrawer} startIcon={<Visibility sx={{ fontSize: 17 }} />}
+                sx={{
+                  justifyContent: 'center', fontWeight: 700, fontSize: 13, textTransform: 'none',
+                  color: draftColor, bgcolor: `${draftColor}14`, border: `1.5px solid ${draftColor}40`,
+                  borderRadius: 999, py: 1, '&:hover': { bgcolor: `${draftColor}22` }
+                }}
+              >
+                Visa & justera i kalendern
+              </Button>
+
+              {hasOverlap && (
+                <Alert severity="warning" sx={{ borderRadius: 3 }}>Ett eller flera pass krockar med en bokning eller ett annat förslag — dra dem till en ledig lucka i kalendern.</Alert>
+              )}
+              {proposedRemainingHours > 0 && (
+                <Typography sx={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  {proposedRemainingHours} h fick inte plats inom 14 dagar — klicka Hitta tid igen senare.
+                </Typography>
+              )}
+            </Box>
+          )}
         </Box>
 
-        {!drawerTask && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2.5 }}>
-            <TextField fullWidth label="Uppgiftens namn" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required sx={fieldSx} />
-            <TextField fullWidth label="Beskrivning" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} multiline rows={2} sx={fieldSx} />
-            <TextField fullWidth label="Estimerad tid (timmar)" type="number" value={form.estimatedHours}
-              onChange={e => setForm({ ...form, estimatedHours: e.target.value })} required inputProps={{ min: 0.5, step: 0.5 }} sx={fieldSx} />
-
-            <Box sx={{ p: 2, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.05)' }}>
-              <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--text)', fontWeight: 800 }}>Arbetstider</Typography>
-              <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                <TextField label="Från" type="number" value={form.workStartHour} onChange={e => setForm({ ...form, workStartHour: e.target.value })} inputProps={{ min: 0, max: 23 }} sx={{ flex: 1, ...fieldSx }} />
-                <TextField label="Till" type="number" value={form.workEndHour} onChange={e => setForm({ ...form, workEndHour: e.target.value })} inputProps={{ min: 0, max: 23 }} sx={{ flex: 1, ...fieldSx }} />
-              </Box>
-              <Typography variant="subtitle2" sx={{ mb: 1, color: 'var(--text)', fontWeight: 800 }}>Sessionslängd</Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <TextField label="Min (h)" type="number" value={form.minSessionHours} onChange={e => setForm({ ...form, minSessionHours: e.target.value })} inputProps={{ min: 0.5, step: 0.5 }} sx={{ flex: 1, ...fieldSx }} />
-                <TextField label="Max (h)" type="number" value={form.maxSessionHours} onChange={e => setForm({ ...form, maxSessionHours: e.target.value })} inputProps={{ min: 0.5, step: 0.5 }} sx={{ flex: 1, ...fieldSx }} />
-              </Box>
-            </Box>
-
-            <TextField fullWidth label="Rast mellan pass (minuter)" type="number" value={form.breakMinutes}
-              onChange={e => setForm({ ...form, breakMinutes: e.target.value })} inputProps={{ min: 0, step: 5 }} sx={fieldSx} />
-          </Box>
-        )}
-
-        {drawerTask && (
-          <Box sx={{ mb: 2.5, fontSize: 13.5, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            {drawerTask.remainingHours} av {drawerTask.estimatedHours} h kvar att schemalägga.
-          </Box>
-        )}
-
-        <Button variant="contained" fullWidth onClick={handleFindTime} disabled={scheduling} sx={{ ...primaryButtonSx, borderRadius: 999, mb: proposedSlots?.length ? 2 : 0 }}>
-          {scheduling ? 'Söker tid...' : 'Hitta tid'}
-        </Button>
-
-        {drawerError && <Alert severity="error" sx={{ borderRadius: 3, mt: 2 }}>{drawerError}</Alert>}
-
+        {/* Scrollbar mittdel — själva pass-listan, kan bli lång. */}
         {proposedSlots && proposedSlots.length > 0 && (
-          <Box sx={{ mt: 2.5, borderTop: '1px solid rgba(17,24,39,0.08)', pt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                Föreslagna arbetspass
-              </Typography>
-              <Typography sx={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                Se kalendern — dra eller ändra storlek
-              </Typography>
-            </Box>
-
+          <Box sx={{ flex: 1, overflowY: 'auto', px: 3.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+              Föreslagna arbetspass
+            </Typography>
             {proposedSlots.map((slot) => {
               const overlaps = calendarEvents.find(e => e.resource === 'proposed' && e.id === slot.id)?.overlaps;
               return (
@@ -634,39 +679,19 @@ const Task = ({ user }) => {
                 </Box>
               );
             })}
+            <Box sx={{ height: 8 }} />
+          </Box>
+        )}
 
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 0.75 }}>
-              <Typography sx={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                {proposedTotalHours} av {targetHours} h placerade
-              </Typography>
-              {diffHours === 0 ? (
-                <Chip size="small" label="Exakt matchning" sx={{ bgcolor: 'rgba(31,122,77,0.1)', color: '#1f7a4d', fontWeight: 700, fontSize: 11 }} />
-              ) : diffHours > 0 ? (
-                <Chip size="small" label={`+${diffHours} h över`} sx={{ bgcolor: 'rgba(181,71,8,0.1)', color: '#b54708', fontWeight: 700, fontSize: 11 }} />
-              ) : (
-                <Chip size="small" label={`${diffHours} h kvar`} sx={{ bgcolor: 'rgba(17,24,39,0.06)', color: 'var(--text-secondary)', fontWeight: 700, fontSize: 11 }} />
-              )}
-            </Box>
-
-            {hasOverlap && (
-              <Alert severity="warning" sx={{ borderRadius: 3 }}>Ett eller flera pass krockar med en bokning eller ett annat förslag — dra dem till en ledig lucka i kalendern.</Alert>
-            )}
-            {proposedRemainingHours > 0 && (
-              <Typography sx={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600, pt: 0.5 }}>
-                {proposedRemainingHours} h fick inte plats inom 14 dagar — klicka Hitta tid igen senare.
-              </Typography>
-            )}
-            <Button variant="contained" fullWidth onClick={handleConfirmSlots} disabled={confirming} sx={{ ...primaryButtonSx, borderRadius: 999, mt: 1 }}>
+        {/* Fast nederdel — bekräfta/ångra, alltid nåbar utan att scrolla klart listan. */}
+        {proposedSlots && proposedSlots.length > 0 && (
+          <Box sx={{ p: 3.5, pt: 2, flexShrink: 0, borderTop: '1px solid rgba(17,24,39,0.08)', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Button variant="contained" fullWidth onClick={handleConfirmSlots} disabled={confirming} sx={{ ...primaryButtonSx, borderRadius: 999 }}>
               {confirming ? 'Lägger till...' : 'Lägg till i kalender'}
             </Button>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button fullWidth onClick={closeDrawer} sx={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text)', textTransform: 'none' }}>
-                Dölj panelen — titta i kalendern
-              </Button>
-              <Button fullWidth onClick={discardDraft} sx={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text-secondary)', textTransform: 'none' }}>
-                Ångra förslaget
-              </Button>
-            </Box>
+            <Button fullWidth onClick={discardDraft} sx={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text-secondary)', textTransform: 'none' }}>
+              Ångra förslaget
+            </Button>
           </Box>
         )}
       </Drawer>
@@ -682,8 +707,12 @@ const Task = ({ user }) => {
         }}>
           <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: draftColor, flexShrink: 0 }} />
           <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text)' }}>
-            {drawerTask?.name}: {proposedTotalHours} av {targetHours} h {hasOverlap && <span style={{ color: '#b42318' }}>· krock</span>}
+            {drawerTask?.name}
           </Typography>
+          <DiffBadge diffHours={diffHours} large />
+          {hasOverlap && (
+            <Chip size="small" label="Krock" sx={{ bgcolor: 'rgba(180,35,24,0.12)', color: '#b42318', fontWeight: 800, fontSize: 11 }} />
+          )}
           <Button onClick={() => setDrawerOpen(true)} sx={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text)', textTransform: 'none' }}>
             Granska
           </Button>
@@ -703,6 +732,30 @@ function LegendDot({ color, label }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
       <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
+      {label}
+    </Box>
+  );
+}
+
+// ✅ Delad av den flytande raden (stor) och panelens översta, alltid synliga
+// sammanfattning (medel) — samma färgkodning och text på båda ställena så
+// man känner igen sig oavsett var man ser den.
+function DiffBadge({ diffHours, large = false }) {
+  const isExact = diffHours === 0;
+  const isOver = diffHours > 0;
+  const bg = isExact ? 'rgba(31,122,77,0.12)' : isOver ? 'rgba(181,71,8,0.14)' : 'rgba(17,24,39,0.07)';
+  const fg = isExact ? '#1f7a4d' : isOver ? '#b54708' : 'var(--text-secondary)';
+  const label = isExact ? 'Exakt matchning' : isOver ? `+${diffHours} h över` : `${Math.abs(diffHours)} h kvar`;
+  return (
+    <Box sx={{
+      display: 'inline-flex', alignItems: 'center', gap: 0.5, flexShrink: 0,
+      bgcolor: bg, color: fg, fontWeight: 800, borderRadius: 999, whiteSpace: 'nowrap',
+      fontSize: large ? 14 : 12, px: large ? 1.75 : 1.25, py: large ? 0.75 : 0.5,
+      border: `1.5px solid ${fg}40`
+    }}>
+      {!isExact && (isOver
+        ? <ArrowUpward sx={{ fontSize: large ? 16 : 13 }} />
+        : <ArrowDownward sx={{ fontSize: large ? 16 : 13 }} />)}
       {label}
     </Box>
   );
