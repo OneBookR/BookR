@@ -3851,8 +3851,15 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
     });
 
     // ✅ VALIDATION: EMAILS ARRAY
-    if (!Array.isArray(inviteEmails) || inviteEmails.length === 0) {
-      throw new BookRError('Emails array is required and must not be empty', 400, 'MISSING_EMAILS');
+    // ✅ Ett TOMT array är giltigt sen tidigare krav "minst en e-post" togs
+    // bort — täcker "dela länk direkt" (AirDrop/delningsmeny/kopiera länk)
+    // istället för att alltid kräva att man skriver in mottagarens mejl i
+    // förväg. /api/group/:groupId/join kräver redan ingen förhandsregistrerad
+    // invitation — vem som helst med giltig session och groupId kan gå med
+    // (se den routen) — så det här är bara att plocka bort en konstgjord
+    // spärr, ingen ny säkerhetslucka.
+    if (!Array.isArray(inviteEmails)) {
+      throw new BookRError('Emails must be an array', 400, 'INVALID_EMAILS_FIELD');
     }
 
     if (inviteEmails.length > CONFIG.email.maxRecipients) {
@@ -4029,9 +4036,11 @@ app.post('/api/invite', inviteLimiter, async (req, res) => {
       groupId,
       inviteLinks,
       emailResults,
-      message: successfulEmails.length === inviteEmails.length
-        ? `Alla ${inviteEmails.length} inbjudningar skickade!`
-        : `${successfulEmails.length} av ${inviteEmails.length} inbjudningar skickade. ${failedEmails.length} misslyckades.`
+      message: inviteEmails.length === 0
+        ? 'Session skapad — dela länken med den du vill jämföra med.'
+        : successfulEmails.length === inviteEmails.length
+          ? `Alla ${inviteEmails.length} inbjudningar skickade!`
+          : `${successfulEmails.length} av ${inviteEmails.length} inbjudningar skickade. ${failedEmails.length} misslyckades.`
     });
   } catch (error) {
     console.error('❌ Invite error:', error);

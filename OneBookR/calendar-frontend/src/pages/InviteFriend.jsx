@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { TextField, IconButton, Typography, Box, Chip, Stack, Paper, List, ListItem, ListItemText, Avatar, Button } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
+import ShareIcon from '@mui/icons-material/IosShare';
 import { apiRequest } from '../utils/apiConfig.js';
 import { trackEvent, EVENTS } from '../utils/analytics.js';
 
@@ -173,11 +174,15 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
   // ✅ OPTIMIZED SEND INVITES WITH PROPER ERROR HANDLING
   const sendingRef = useRef(false);
 
-  const sendInvites = useCallback(async () => {
-    if (isLoading || emails.length === 0) {
-      if (emails.length === 0) {
-        setMessage('Ange minst en e-postadress.');
-      }
+  // ✅ shareOnly=true hoppar över "minst en e-postadress"-kravet — täcker
+  // "dela länk direkt" (AirDrop/delningsmeny/kopiera länk) istället för att
+  // alltid behöva skriva in mottagarens mejl i förväg. Backend tillåter
+  // redan en tom emails-array (se /api/invite) eftersom join-endpointen
+  // ändå aldrig krävt en förhandsregistrerad inbjudan.
+  const sendInvites = useCallback(async (shareOnly = false) => {
+    if (isLoading) return;
+    if (!shareOnly && emails.length === 0) {
+      setMessage('Ange minst en e-postadress.');
       return;
     }
 
@@ -277,7 +282,7 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
         setEmails([]);
         setInputValue('');
         setGroupName('');
-        setMessage('Inbjudningar skickade!');
+        setMessage(data.message || 'Inbjudningar skickade!');
 
         if (data.inviteLinks && Array.isArray(data.inviteLinks)) {
           setGroupLink(data.inviteLinks.join('\n'));
@@ -489,7 +494,7 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
         </Box>
 
         <IconButton
-          onClick={sendInvites}
+          onClick={() => sendInvites(false)}
           disabled={emails.length === 0 || isLoading}
           sx={{
             alignSelf: 'stretch',
@@ -509,6 +514,20 @@ const InviteFriend = ({ fromUser, theme, embedded = false }) => {
           <SendIcon />
         </IconButton>
       </Box>
+
+      {emails.length === 0 && (
+        <Button
+          onClick={() => sendInvites(true)}
+          disabled={isLoading}
+          startIcon={<ShareIcon sx={{ fontSize: 17 }} />}
+          sx={{
+            mt: 1, alignSelf: 'flex-start', color: 'var(--text)', fontWeight: 700, fontSize: 13,
+            textTransform: 'none', border: '1px solid rgba(17,24,39,0.1)', borderRadius: 999, px: 2, py: 0.75
+          }}
+        >
+          Starta utan mejl — dela länken istället
+        </Button>
+      )}
 
       <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
         Tips: tryck Enter, kommatecken eller välj en kontakt från listan för att lägga till flera deltagare.

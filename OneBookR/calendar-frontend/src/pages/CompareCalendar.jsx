@@ -11,6 +11,7 @@ import {
   DialogActions, Paper, CircularProgress, Snackbar, Alert, IconButton, Chip 
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import ShareIcon from '@mui/icons-material/IosShare';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { trackEvent, trackEventOnce, EVENTS, bucket, daysBetween } from '../utils/analytics.js';
 import { TokenValidator } from '../utils/tokenValidator.js';
@@ -355,6 +356,47 @@ export default function CompareCalendar({
       return false;
     }
   }, [propGroupId, user]);
+
+  // ✅ "Dela session" — /api/group/:groupId/join kräver ingen
+  // förhandsregistrerad inbjudan (identitet kommer alltid från den
+  // inloggade sessionen, se backend), så en ren länk utan ?invitee=
+  // räcker för att vem som helst ska kunna gå med efter att ha loggat in.
+  // navigator.share öppnar enhetens inbyggda delningsmeny — på iPhone
+  // dyker AirDrop automatiskt upp där som ett alternativ bredvid
+  // Meddelanden/Mail om en annan Apple-enhet är i närheten (webbsidor kan
+  // inte öppna AirDrop direkt, det finns inget sådant webb-API). Faller
+  // tillbaka på att kopiera länken där Web Share saknas (t.ex. desktop).
+  const handleShareSession = useCallback(async () => {
+    if (!propGroupId) return;
+    const shareUrl = `${window.location.origin}/?group=${propGroupId}`;
+    const shareData = {
+      title: 'Jämför kalendrar på BookR',
+      text: 'Gå med i min kalenderjämförelse på BookR — logga in med Google eller Microsoft så är du inne.',
+      url: shareUrl
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        // AbortError = användaren avbröt delningen — inte ett fel att visa.
+        if (err?.name !== 'AbortError') {
+          console.warn('⚠️ navigator.share misslyckades, kopierar länk istället:', err.message);
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            setToast({ open: true, message: 'Länk kopierad!', severity: 'success' });
+          } catch { /* ignore */ }
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setToast({ open: true, message: 'Länk kopierad!', severity: 'success' });
+      } catch {
+        setToast({ open: true, message: shareUrl, severity: 'info' });
+      }
+    }
+  }, [propGroupId]);
 
   // ✅ REMOVED OLD fetchGroupAvailability - REPLACED WITH UNIFIED fetchAvailability
 
@@ -1028,10 +1070,22 @@ export default function CompareCalendar({
           )}
 
           {groupInfo.memberCount < 2 && (
-            <Box sx={{ mt: 1.5, p: 1.75, borderRadius: 3, bgcolor: 'rgba(181,71,8,0.08)', border: '1px solid rgba(181,71,8,0.18)' }}>
+            <Box sx={{ mt: 1.5, p: 1.75, borderRadius: 3, bgcolor: 'rgba(181,71,8,0.08)', border: '1px solid rgba(181,71,8,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.25 }}>
               <Typography sx={{ fontSize: 12, color: 'var(--warning)', fontWeight: 700 }}>
                 Väntar på att fler medlemmar ska ansluta för att kunna jämföra kalendrar...
               </Typography>
+              <Button
+                size="small"
+                onClick={handleShareSession}
+                startIcon={<ShareIcon sx={{ fontSize: 16 }} />}
+                sx={{
+                  flexShrink: 0, color: 'var(--text)', fontWeight: 700, fontSize: 12.5, textTransform: 'none',
+                  bgcolor: '#fff', border: '1px solid rgba(17,24,39,0.12)', borderRadius: 999, px: 1.75, py: 0.6,
+                  '&:hover': { bgcolor: 'rgba(17,24,39,0.03)' }
+                }}
+              >
+                Dela session
+              </Button>
             </Box>
           )}
         </Box>
