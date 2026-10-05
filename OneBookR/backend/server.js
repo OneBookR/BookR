@@ -3106,6 +3106,14 @@ app.get('/auth/google/callback', (req, res, next) => {
     const isCheckoutFlow = returnTo.startsWith('/priser');
     const isPaidCheckout = isCheckoutFlow && /[?&]checkout=(pro|business)\b/.test(returnTo);
     const isFreeSignup = isCheckoutFlow && /[?&]welcome=free\b/.test(returnTo);
+    // ✅ BUGFIX: en kalenderjämförelse-länk (vanlig mejlinbjudan ELLER den
+    // nya "dela session"-länken, se /api/invite) matchade varken isDemoFlow
+    // eller isCheckoutFlow — en helt ny person som klickade sig in via en
+    // sådan länk blev alltså nekad av whitelisten nedan, trots att
+    // produkten redan säger "Inbjudna gäster alltid gratis" (join-
+    // endpointen /api/group/:groupId/join kräver aldrig en förhandsregistrerad
+    // inbjudan). Samma undantag som isCheckoutFlow, fast för gruppflödet.
+    const isGroupJoinFlow = /[?&]group=/.test(returnTo);
 
     // ✅ HAR REDAN ÅTKOMST: beviljas en gång (Free-signup fullföljd, eller
     // betald plan via webhooken) och ska sen INTE kräva /priser-vägen igen —
@@ -3118,7 +3126,7 @@ app.get('/auth/google/callback', (req, res, next) => {
       } catch { /* ingen lagrad åtkomst — behandla som ej beviljad */ }
     }
 
-    if (!isDemoFlow && !isCheckoutFlow && !isAllowedLoginEmail(user.email) && !hasStoredAccess) {
+    if (!isDemoFlow && !isCheckoutFlow && !isGroupJoinFlow && !isAllowedLoginEmail(user.email) && !hasStoredAccess) {
       console.warn(`⛔ Inloggning nekad (ej whitelistad): ${anonymizeEmail(user.email)}`);
       return res.redirect(`${CONFIG.urls.frontend}?error=access_restricted`);
     }
@@ -3235,6 +3243,8 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
     const isCheckoutFlow = returnTo.startsWith('/priser');
     const isPaidCheckout = isCheckoutFlow && /[?&]checkout=(pro|business)\b/.test(returnTo);
     const isFreeSignup = isCheckoutFlow && /[?&]welcome=free\b/.test(returnTo);
+    // ✅ Se identisk kommentar vid Google-callbacken ovan (isGroupJoinFlow).
+    const isGroupJoinFlow = /[?&]group=/.test(returnTo);
 
     // ✅ HAR REDAN ÅTKOMST: beviljas en gång (Free-signup fullföljd, eller
     // betald plan via webhooken) och ska sen INTE kräva /priser-vägen igen —
@@ -3247,7 +3257,7 @@ app.get('/auth/microsoft/callback', (req, res, next) => {
       } catch { /* ingen lagrad åtkomst — behandla som ej beviljad */ }
     }
 
-    if (!isDemoFlow && !isCheckoutFlow && !isAllowedLoginEmail(user.email) && !hasStoredAccess) {
+    if (!isDemoFlow && !isCheckoutFlow && !isGroupJoinFlow && !isAllowedLoginEmail(user.email) && !hasStoredAccess) {
       console.warn(`⛔ Inloggning nekad (ej whitelistad): ${anonymizeEmail(user.email)}`);
       return res.redirect(`${CONFIG.urls.frontend}?error=access_restricted`);
     }

@@ -26,7 +26,7 @@ import { Container, Typography, Button, Box, Alert, Paper, CircularProgress } fr
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import CookieBanner from './components/CookieBanner.jsx';
 import LandingHeader from './components/LandingHeader.jsx';
-import { apiRequest } from './utils/apiConfig.js';
+import { apiRequest, createApiUrl } from './utils/apiConfig.js';
 import { trackEvent, trackEventOnce, setAnalyticsUser, EVENTS } from './utils/analytics.js';
 import { confirmLeavingTaskDraft } from './utils/taskDraftGuard.js';
 
@@ -365,6 +365,79 @@ function App() {
       return 'Ett fel uppstod vid inloggning.';
     })();
     const logoutMessage = urlParams.get('logout') === 'success' ? 'Du har loggats ut. Logga in igen för att fortsätta.' : null;
+
+    // ✅ Inbjuden till en session men inte inloggad (t.ex. öppnat en delad
+    // länk/AirDrop): den vanliga marknadsförings-landningssidan nedan —
+    // stort "Kom igång gratis" → /priser, lång hero-text om BookR i
+    // allmänhet — tappar bort varför personen egentligen är här, och
+    // /priser-länken slänger bort ?group=-kontexten helt. Egen, fokuserad
+    // vy istället: raka vägen till inloggning, samma returnTo-länkar som
+    // LandingHeaders meny redan byggde (bara mer synliga än en liten
+    // undermeny). Inget konto krävs i förväg — /auth/google|microsoft
+    // känner nu igen returnTo=/?group=... och släpper igenom även den som
+    // inte står på privata beta-whitelistan (se isGroupJoinFlow i
+    // server.js), eftersom en inbjuden deltagare aldrig ska behöva
+    // förhandsgodkännas — bara den som SKAPAR en session gör.
+    if (params.groupId) {
+      const returnTo = window.location.pathname + window.location.search;
+      const encodedReturn = encodeURIComponent(returnTo);
+      return (
+        <Box sx={{ minHeight: '100vh', bgcolor: 'var(--background)' }}>
+          <CookieBanner />
+          <LandingHeader returnTo={returnTo} showDemo={false} />
+          <Box sx={{ maxWidth: 440, mx: 'auto', px: 3, pt: { xs: 8, md: 14 }, pb: 10, textAlign: 'center' }}>
+            {(errorMessage || logoutMessage) && (
+              <Alert
+                severity={params.error === 'token_expired' ? 'warning' : 'error'}
+                sx={{ mb: 4, borderRadius: 3, textAlign: 'left' }}
+              >
+                {errorMessage || logoutMessage}
+              </Alert>
+            )}
+            <Typography
+              variant="h1"
+              sx={{ fontSize: { xs: '1.6rem', md: '2rem' }, lineHeight: 1.15, letterSpacing: '-0.03em', fontWeight: 800, mb: 1.5, color: 'var(--text)' }}
+            >
+              Du har blivit inbjuden till en kalenderjämförelse
+            </Typography>
+            <Typography sx={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-secondary)', fontWeight: 500, mb: 4 }}>
+              Logga in med din kalender så ser ni direkt vilka tider som passar er båda.
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Button
+                href={createApiUrl(`/auth/google?returnTo=${encodedReturn}`)}
+                variant="outlined"
+                size="large"
+                startIcon={<GoogleIcon size={20} />}
+                sx={{
+                  py: 1.6, borderRadius: 999, borderColor: 'rgba(17,24,39,0.15)', color: 'var(--text)',
+                  fontWeight: 700, textTransform: 'none', fontSize: 15, justifyContent: 'center', gap: 1,
+                  '&:hover': { borderColor: 'rgba(17,24,39,0.3)', bgcolor: 'rgba(17,24,39,0.02)' }
+                }}
+              >
+                Fortsätt med Google
+              </Button>
+              <Button
+                href={createApiUrl(`/auth/microsoft?returnTo=${encodedReturn}`)}
+                variant="outlined"
+                size="large"
+                startIcon={<MicrosoftIcon size={18} />}
+                sx={{
+                  py: 1.6, borderRadius: 999, borderColor: 'rgba(17,24,39,0.15)', color: 'var(--text)',
+                  fontWeight: 700, textTransform: 'none', fontSize: 15, justifyContent: 'center', gap: 1,
+                  '&:hover': { borderColor: 'rgba(17,24,39,0.3)', bgcolor: 'rgba(17,24,39,0.02)' }
+                }}
+              >
+                Fortsätt med Microsoft
+              </Button>
+            </Box>
+            <Typography sx={{ fontSize: 12.5, color: 'var(--text-secondary)', mt: 3 }}>
+              Inget konto krävs i förväg — det tar några sekunder.
+            </Typography>
+          </Box>
+        </Box>
+      );
+    }
 
     return (
       <Box sx={{ minHeight: '100vh', bgcolor: 'var(--background)' }}>
