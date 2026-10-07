@@ -1263,167 +1263,10 @@ export default function CompareCalendar({
     isLoading
   ]);
 
-  const renderAvailableSlots = useMemo(() => {
-    if (!hasSearched) return null;
-    
-    if (isLoading) {
-      return (
-        <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, textAlign: 'center', border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
-          <CircularProgress sx={{ mb: 2 }} />
-          <Typography>Jämför kalendrar...</Typography>
-          <Typography variant="caption" color="text.secondary">
-            Detta kan ta några sekunder
-          </Typography>
-        </Paper>
-      );
-    }
-    
-    // ✅ SÄKER CHECK AV futureSlots
-    const safeFutureSlots = Array.isArray(futureSlots) ? futureSlots : [];
-    
-    if (safeFutureSlots.length === 0) {
-      return (
-        <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, textAlign: 'center', bgcolor: 'rgba(17,24,39,0.03)', border: '1px solid rgba(17,24,39,0.06)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
-          <Typography variant="h6" sx={{ mb: 2, color: 'var(--text)' }}>
-            Inga gemensamma lediga tider
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Vi hittade inga tider där alla deltagare är lediga samtidigt.
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Försök utöka tidsintervallet eller justera arbetstider.
-          </Typography>
-        </Paper>
-      );
-    }
-    
-    // ✅ GRUPPERA SLOTS PER DAG FÖR BÄTTRE ÖVERBLICK
-    const slotsByDay = safeFutureSlots.reduce((acc, slot) => {
-      if (!slot?.start || !slot?.end) return acc;
-      
-      try {
-        const date = new Date(slot.start).toDateString();
-        if (!acc[date]) acc[date] = [];
-        acc[date].push(slot);
-        return acc;
-      } catch {
-        return acc;
-      }
-    }, {});
-    
-    return (
-      <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 4, border: '1px solid var(--border)', bgcolor: 'rgba(255,255,255,0.76)', boxShadow: '0 18px 40px rgba(15, 23, 42, 0.05)' }}>
-        <Typography variant="h5" sx={{ mb: 1.5, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em' }}>
-          Gemensamma lediga tider ({safeFutureSlots.length})
-        </Typography>
-        
-        <Typography variant="body2" sx={{ mb: 3, color: 'var(--text-secondary)' }}>
-          Dessa tider passar alla deltagare ({meetingDuration} min möten):
-        </Typography>
-        
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {Object.entries(slotsByDay).slice(0, 7).map(([dateString, daySlots]) => {
-            const date = new Date(dateString);
-            const isToday = date.toDateString() === new Date().toDateString();
-            const isTomorrow = date.toDateString() === new Date(Date.now() + 24*60*60*1000).toDateString();
-            
-            return (
-              <Box key={dateString}>
-                <Typography variant="subtitle1" sx={{ 
-                  fontWeight: 700, 
-                  color: 'var(--text)', 
-                  mb: 2,
-                  borderBottom: '1px solid var(--border)',
-                  pb: 1
-                }}>
-                  {isToday ? 'Idag' : isTomorrow ? 'Imorgon' : date.toLocaleDateString('sv-SE', { 
-                    weekday: 'long', 
-                    month: 'long', 
-                    day: 'numeric' 
-                  })}
-                </Typography>
-                
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                  {daySlots.map((slot, slotIndex) => {
-                    try {
-                      const start = new Date(slot.start);
-                      const end = new Date(slot.end);
-                      
-                      if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
-                      
-                      const duration = Math.round((end - start) / 60000);
-                      
-                      return (
-                        <Card 
-                          key={`${dateString}-${slotIndex}`}
-                          sx={{ 
-                            p: 2, 
-                            minWidth: 200,
-                            cursor: propGroupId ? 'pointer' : 'default',
-                            '&:hover': propGroupId ? { 
-                              bgcolor: 'rgba(17,24,39,0.04)', 
-                              transform: 'translateY(-2px)',
-                              boxShadow: '0 16px 32px rgba(15,23,42,0.08)'
-                            } : {},
-                            border: '1px solid rgba(17,24,39,0.06)',
-                            borderLeft: '3px solid rgba(17,24,39,0.18)',
-                            transition: 'all 0.3s ease',
-                            bgcolor: 'rgba(17,24,39,0.025)',
-                            boxShadow: 'none',
-                            borderRadius: 3
-                          }}
-                          onClick={propGroupId ? () => handleSuggest(slot) : undefined}
-                        >
-                          <Typography variant="body1" sx={{ fontWeight: 800, color: 'var(--text)', mb: 1 }}>
-                            {start.toLocaleTimeString('sv-SE', { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })} - {end.toLocaleTimeString('sv-SE', { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                            {duration} minuter
-                          </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)' }}>
-                            Alla lediga
-                          </Typography>
-                          
-                          {propGroupId && (
-                            <Typography variant="caption" sx={{ 
-                              display: 'block',
-                              color: 'var(--text-secondary)', 
-                              fontWeight: 600,
-                              mt: 1,
-                              opacity: 0.8
-                            }}>
-                              Klicka för att föreslå
-                            </Typography>
-                          )}
-                        </Card>
-                      );
-                    } catch (slotError) {
-                      console.error('Error rendering slot:', slotError);
-                      return null;
-                    }
-                  })}
-                </Box>
-              </Box>
-            );
-          })}
-        </Box>
-        
-        {Object.keys(slotsByDay).length > 7 && (
-          <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: '#666', mt: 3 }}>
-            Visar första 7 dagarna. Totalt {safeFutureSlots.length} lediga tider hittades.
-          </Typography>
-        )}
-      </Paper>
-    );
-  }, [hasSearched, isLoading, futureSlots, propGroupId, handleSuggest, meetingDuration]);
-
-  // ✅ KORTVY: samma futureSlots/slotsByDay-logik som ovan, men stora,
+  // ✅ KORTVY ("Förslag"): samma futureSlots/slotsByDay-logik som en äldre
+  // renderAvailableSlots hade (borttagen — blev dödkod när mobilen fick
+  // samma Förslag/Kalender-toggle som desktop istället för ett eget,
+  // alltid-kort-baserat specialfall), men stora,
   // tydligt gröna kort i grid — riktning C ur designcanvasen. Bara en
   // sektion visas åt gången beroende på viewMode, ingen dubblad fetch.
   const renderSlotCards = useMemo(() => {
@@ -1646,7 +1489,6 @@ export default function CompareCalendar({
 
   // ✅ MOBILE RENDER FUNCTIONS (SIMPLIFIED VERSIONS)
   const renderMobileComparisonForm = useCallback(() => renderComparisonForm(), [renderComparisonForm]);
-  const renderMobileAvailableSlots = renderAvailableSlots;
 
   // ✅ MAIN RETURN STATEMENT
   // ✅ REDESIGN v2 (efter feedback med skärmdump): Gruppinformation ska
@@ -1824,10 +1666,14 @@ export default function CompareCalendar({
         </Alert>
       )}
 
-      {/* ✅ VY-TOGGLE: Panelvy (dockad sidopanel + kalender) vs Kortvy
-          (dockad sidopanel + stora tidskort). Bara på desktop, bara
-          efter sökning. */}
-      {showDesktopLayout && (
+      {/* ✅ VY-TOGGLE: Panelvy (kalender) vs Kortvy (tidskort). Tidigare
+          bara på desktop (showDesktopLayout) — mobil fick ALDRIG se den
+          riktiga kalendergridden alls, bara en lista med färdiga förslag,
+          trots att den klickbara kalendern (där man själv väljer en tid
+          mellan de upptagna blocken) redan fanns byggd och fungerande.
+          Samma viewMode-state delas nu av båda — bara layouten runt
+          omkring skiljer (ingen sidopanel på mobil, se nedan). */}
+      {hasSearched && (
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
           <Box sx={{ display: 'inline-flex', p: 0.5, borderRadius: 3, bgcolor: 'rgba(17,24,39,0.05)', border: '1px solid rgba(17,24,39,0.08)' }}>
             <Box
@@ -1839,7 +1685,7 @@ export default function CompareCalendar({
                 color: viewMode === 'cards' ? '#fff' : 'var(--text-secondary)'
               }}
             >
-              Kortvy
+              Förslag
             </Box>
             <Box
               onClick={() => setViewMode('panel')}
@@ -1850,7 +1696,7 @@ export default function CompareCalendar({
                 color: viewMode === 'panel' ? '#fff' : 'var(--text-secondary)'
               }}
             >
-              Panelvy
+              Kalender
             </Box>
           </Box>
         </Box>
@@ -1948,8 +1794,42 @@ export default function CompareCalendar({
           </Box>
         </Box>
       ) : (
-        /* ✅ MOBIL: oförändrad, alltid kort-baserad layout. */
-        isMobile && renderMobileAvailableSlots
+        /* ✅ BUGFIX: mobil visade tidigare ALDRIG den klickbara
+           kalendern — bara en lista med färdiga förslag, oavsett
+           viewMode (togglen ovan var dessutom helt gömd på mobil innan
+           hasSearched-ändringen ovan). Samma Kalender-komponent som
+           desktop Panelvy, bara utan sidopanel (inställningarna finns
+           redan i formuläret innan man söker) och i dagvy som standard
+           — en hel vecka får inte plats i bredd på en telefon. */
+        isMobile && hasSearched && (
+          viewMode === 'panel' ? (
+            <Box sx={{ p: 2.5, borderRadius: 5.5, border: '1px solid var(--border)', bgcolor: 'var(--surface-strong)', boxShadow: '0 24px 80px rgba(15,23,42,0.08)' }}>
+              <Box sx={styles.calendar}>
+                <Calendar
+                  localizer={localizer}
+                  events={calendarEvents}
+                  startAccessor="start"
+                  endAccessor="end"
+                  style={{ height: 520, width: '100%' }}
+                  eventPropGetter={eventPropGetter}
+                  views={['day', 'agenda']}
+                  defaultView="day"
+                  formats={CAL_FORMATS}
+                  min={CAL_MIN}
+                  max={CAL_MAX}
+                  scrollToTime={CAL_SCROLL_TO}
+                  onSelectEvent={propGroupId ? (event) => event.slot && handleSuggest(event.slot) : undefined}
+                  messages={{
+                    next: 'Nästa', previous: 'Föregående', today: 'Idag',
+                    day: 'Dag', agenda: 'Agenda'
+                  }}
+                />
+              </Box>
+            </Box>
+          ) : (
+            renderSlotCards
+          )
+        )
       )}
 
       {/* ✅ SUGGESTIONS - alltid synligt oavsett layout */}
