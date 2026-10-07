@@ -781,7 +781,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 2 }}>
           Starta något nytt
         </Typography>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 4.5 }}>
+        {/* ✅ BUGFIX: hårdkodad 2-kolumner utan mobil-brytpunkt — varje kort
+            kläms till ~180px på en telefon, med 3.5 padding och en 18px
+            rubrik kvar. Staplas i en kolumn under sm, två från sm och uppåt. */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 4.5 }}>
           {actionCards.map((action) => (
             <Paper
               key={action.title}
@@ -932,7 +935,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
         >
           <Box
             sx={{
-              width: 400,
+              width: { xs: '90vw', sm: 400 },
               maxHeight: '80vh',
               backgroundColor: 'rgba(255,255,255,0.88)',
               borderRadius: 4,

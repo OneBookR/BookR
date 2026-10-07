@@ -57,7 +57,7 @@ export default function InvitationSidebar({ user }) {
         open={open}
         onClose={() => setOpen(false)}
         PaperProps={{
-          sx: { width: 350, p: 2 }
+          sx: { width: { xs: '90vw', sm: 350 }, p: 2 }
         }}
       >
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>

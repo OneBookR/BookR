@@ -36,6 +36,13 @@ const DEFAULT_FORM = {
 };
 
 const Task = ({ user }) => {
+  // ✅ BUGFIX: veckogridden tvingade minWidth:760 oavsett skärmbredd — på en
+  // telefon (~390px) blev det permanent sidledes skrollning, ungefär
+  // halva veckan alltid utanför skärmen, extra illa för en kalender man
+  // ska dra/resiza i. defaultView är okontrollerad (bara läst vid mount)
+  // så vi avgör start-vyn en gång från faktisk bredd istället för att
+  // läsa om vid varje resize.
+  const [isMobile] = useState(() => window.innerWidth < 768);
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [busyEvents, setBusyEvents] = useState([]);
@@ -606,7 +613,11 @@ const Task = ({ user }) => {
             // hur smal kalendern är (t.ex. med panelen öppen bredvid) —
             // en för smal kalender klämde ihop flera block i veckovyn till
             // oläslig, överlappande text istället för att bara skrolla sidled.
-            '& .rbc-calendar, & .rbc-time-view, & .rbc-month-view': { minWidth: 760 },
+            // BUGFIX: 760 gällde även på mobil där .rbc-time-view också
+            // bär DAG-vyn (startvyn där, se isMobile/defaultView nedan) —
+            // en enda dag behöver inte 760px, det bara tvingade fram
+            // onödig sidledes skrollning för innehåll som redan fick plats.
+            '& .rbc-calendar, & .rbc-time-view, & .rbc-month-view': { minWidth: { xs: 'auto', sm: 760 } },
             '& .rbc-calendar, .rbc-time-view, .rbc-agenda-view, .rbc-month-view': {
               fontFamily: "'Inter','Segoe UI','Roboto','Arial',sans-serif !important",
               background: 'rgba(255,255,255,0.82)', borderRadius: '18px', border: '1px solid var(--border)',
@@ -690,7 +701,7 @@ const Task = ({ user }) => {
                 };
               }}
               views={['week', 'day', 'agenda']}
-              defaultView="week"
+              defaultView={isMobile ? 'day' : 'week'}
             />
           </Box>
         </Paper>
@@ -847,9 +858,15 @@ const Task = ({ user }) => {
           så man alltid kan komma tillbaka och bekräfta/justera/ångra utan
           att behöva öppna panelen igen. */}
       {!drawerOpen && proposedSlots?.length > 0 && (
+        // ✅ BUGFIX: ingen maxWidth/flexWrap — uppgiftsnamn + diffbadge +
+        // ev. krock-chip + två knappar + stäng-ikon i EN rad utan gräns
+        // gick långt utanför en telefonskärm åt båda hållen trots
+        // center-transform. bottom höjt på mobil så raden inte hamnar
+        // ovanpå/under den nya bottennaven (MobileNavigation).
         <Paper elevation={0} sx={{
-          position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 1300,
-          display: 'flex', alignItems: 'center', gap: 2, px: 2.5, py: 1.5, borderRadius: 999,
+          position: 'fixed', left: '50%', bottom: { xs: 82, sm: 24 }, transform: 'translateX(-50%)', zIndex: 1300,
+          display: 'flex', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', gap: 1.5,
+          px: 2.5, py: 1.5, borderRadius: 999, maxWidth: 'calc(100vw - 32px)', width: { xs: 'calc(100vw - 32px)', sm: 'auto' },
           bgcolor: 'var(--surface-strong)', border: '1px solid rgba(17,24,39,0.1)', boxShadow: '0 18px 40px rgba(15,23,42,0.18)'
         }}>
           <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: draftColor, flexShrink: 0 }} />

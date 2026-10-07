@@ -752,7 +752,12 @@ function App() {
       </Box>
       
       {!shouldShowTask && <Footer />}
-      <MobileNavigation currentPath={window.location.pathname + window.location.search} user={user} onNavigate={handleNavigateToMeeting} />
+      <MobileNavigation
+        currentPath={window.location.pathname + window.location.search}
+        user={user}
+        onNavigate={handleNavigateToMeeting}
+        hidden={Boolean(params.groupId)}
+      />
     </>
   );
 }
