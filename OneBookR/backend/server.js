@@ -28,7 +28,8 @@ import {
   getDirectAccessRequest, respondToDirectAccessRequest, createDirectAccessLink,
   getDirectAccessLink, listDirectAccessLinksFor, revokeDirectAccessLink,
   setBookingPage, getBookingPage, deleteBookingPage, setUserBookingPageSlug, getUserBookingPageSlug,
-  createTask, listTasks, getTask, updateTask, deleteTask, appendTaskSlots
+  createTask, listTasks, getTask, updateTask, deleteTask, appendTaskSlots,
+  getFeatureFlag, listFeatureFlags, setFeatureFlag
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken, getDirectAccessToken } from './token-refresh.js';
@@ -141,6 +142,11 @@ const CONFIG = {
       const raw = process.env.ALLOWED_LOGIN_EMAILS ?? 'info@onebookr.se,gustav@onebookr.se,av.goransson@gmail.com';
       if (raw.trim() === '*' || raw.trim() === '') return []; // [] = ingen begränsning
       return raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    })(),
+    // ✅ Vem får läsa/ändra feature flags (se isFeatureEnabled nedan).
+    adminEmails: (() => {
+      const raw = process.env.ADMIN_EMAILS ?? 'info@onebookr.se,gustav@onebookr.se';
+      return raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     })()
   }
 };
@@ -151,6 +157,33 @@ function isAllowedLoginEmail(email) {
   if (CONFIG.access.allowedLoginEmails.length === 0) return true;
   if (!email) return false;
   return CONFIG.access.allowedLoginEmails.includes(email.toLowerCase());
+}
+
+function isAdminEmail(email) {
+  if (!email) return false;
+  return CONFIG.access.adminEmails.includes(email.toLowerCase());
+}
+
+// ✅ FEATURE FLAGS: bygg och pusha till main hela tiden, men håll nya
+// funktioner osynliga/avstängda tills du själv flippar flaggan.
+// - enabled=false, earlyAccessEmails=[din mejl] → bara du ser den i produktion.
+// - enabled=true → på för alla, utan ny deploy.
+const featureFlagCache = new Map();
+const FEATURE_FLAG_CACHE_TTL_MS = 30_000;
+
+async function getCachedFeatureFlag(key) {
+  const cached = featureFlagCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  const data = await getFeatureFlag(key);
+  featureFlagCache.set(key, { data, expiresAt: Date.now() + FEATURE_FLAG_CACHE_TTL_MS });
+  return data;
+}
+
+async function isFeatureEnabled(key, email) {
+  const flag = await getCachedFeatureFlag(key);
+  if (flag.enabled) return true;
+  if (!email) return false;
+  return flag.earlyAccessEmails.includes(email.toLowerCase());
 }
 
 console.log(`🔧 Environment: ${IS_PRODUCTION ? 'PRODUCTION' : 'LOCALHOST'}`);
@@ -2090,6 +2123,9 @@ async function getActiveBookingPage(slug) {
 app.get('/api/booking-page/me', async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
+  if (!(await isFeatureEnabled('booking_pages', email))) {
+    return res.status(404).json({ error: 'Inte tillgängligt än', code: 'FEATURE_DISABLED' });
+  }
   if (!db) return res.json({ page: null });
   try {
     const slug = await getUserBookingPageSlug(email);
@@ -2104,6 +2140,9 @@ app.get('/api/booking-page/me', async (req, res) => {
 app.post('/api/booking-page/slug-check', async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
+  if (!(await isFeatureEnabled('booking_pages', email))) {
+    return res.status(404).json({ error: 'Inte tillgängligt än', code: 'FEATURE_DISABLED' });
+  }
   const slug = String(req.body?.slug || '').toLowerCase().trim();
   if (!BOOKING_SLUG_REGEX.test(slug) || slug.length < 3 || slug.length > 40) {
     return res.json({ available: false, reason: 'INVALID_FORMAT' });
@@ -2122,6 +2161,9 @@ app.post('/api/booking-page/slug-check', async (req, res) => {
 app.post('/api/booking-page', async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
+  if (!(await isFeatureEnabled('booking_pages', email))) {
+    return res.status(404).json({ error: 'Inte tillgängligt än', code: 'FEATURE_DISABLED' });
+  }
   if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
 
   try {
@@ -2422,6 +2464,53 @@ app.get('/api/auth/me', async (req, res) => {
   const demoOnly = Boolean(req.session.demoOnly) && !paid;
 
   res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus, leadProfileStatus, calendarDetailsConsent });
+});
+
+// ===== FEATURE FLAGS =====
+// Publik: vilken bool varje flagga ska visas som för DEN HÄR användaren
+// (inloggad eller inte). Läcker aldrig vilka mejl som har early access.
+app.get('/api/feature-flags', async (req, res) => {
+  try {
+    const email = req.user?.email;
+    const flags = await listFeatureFlags();
+    const result = {};
+    for (const flag of flags) {
+      result[flag.key] = flag.enabled || Boolean(email && flag.earlyAccessEmails.includes(email.toLowerCase()));
+    }
+    res.json({ flags: result });
+  } catch (err) {
+    console.error('Fel vid hämtning av feature flags:', err);
+    res.status(500).json({ flags: {} });
+  }
+});
+
+// Admin: läs/ändra flaggor rakt av (enabled + earlyAccessEmails).
+app.get('/api/admin/feature-flags', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!isAdminEmail(email)) return res.status(403).json({ error: 'FORBIDDEN' });
+  try {
+    const flags = await listFeatureFlags();
+    res.json({ flags });
+  } catch (err) {
+    console.error('Fel vid hämtning av feature flags (admin):', err);
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+app.post('/api/admin/feature-flags/:key', async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!isAdminEmail(email)) return res.status(403).json({ error: 'FORBIDDEN' });
+  try {
+    const { enabled, earlyAccessEmails } = req.body;
+    await setFeatureFlag(req.params.key, { enabled, earlyAccessEmails });
+    featureFlagCache.delete(req.params.key);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Fel vid uppdatering av feature flag:', err);
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
 });
 
 // ===== LEAD-PROFIL (inbjudna via delad länk) =====

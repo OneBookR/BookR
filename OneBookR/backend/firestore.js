@@ -941,6 +941,37 @@ async function deleteBookingPage(slug) {
   await getDb().collection('booking_pages').doc(slug).delete();
 }
 
+// Feature flags — bygg och pusha till main kontinuerligt, men håll nya
+// funktioner av tills den som äger produkten själv flippar flaggan.
+async function getFeatureFlag(key) {
+  const docSnap = await getDb().collection('featureFlags').doc(key).get();
+  if (!docSnap.exists) return { enabled: false, earlyAccessEmails: [] };
+  const data = docSnap.data();
+  return {
+    enabled: Boolean(data.enabled),
+    earlyAccessEmails: Array.isArray(data.earlyAccessEmails) ? data.earlyAccessEmails : []
+  };
+}
+
+async function listFeatureFlags() {
+  const snapshot = await getDb().collection('featureFlags').get();
+  return snapshot.docs.map(doc => ({
+    key: doc.id,
+    enabled: Boolean(doc.data().enabled),
+    earlyAccessEmails: Array.isArray(doc.data().earlyAccessEmails) ? doc.data().earlyAccessEmails : []
+  }));
+}
+
+async function setFeatureFlag(key, { enabled, earlyAccessEmails }) {
+  await getDb().collection('featureFlags').doc(key).set({
+    enabled: Boolean(enabled),
+    earlyAccessEmails: Array.isArray(earlyAccessEmails)
+      ? earlyAccessEmails.map(e => e.toLowerCase().trim()).filter(Boolean)
+      : [],
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
 async function setUserBookingPageSlug(email, slug) {
   await getDb().collection('users').doc(email.toLowerCase().trim()).set({ bookingPageSlug: slug }, { merge: true });
 }
@@ -1115,5 +1146,10 @@ export {
   updateDemoBooking,
   markDemoLoginStarted,
   markDemoLoginCompleted,
-  markDemoCalendarViewed
+  markDemoCalendarViewed,
+
+  // Feature flags
+  getFeatureFlag,
+  listFeatureFlags,
+  setFeatureFlag
 };

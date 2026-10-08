@@ -18,6 +18,7 @@ import Team from './Team.jsx';
 import BookingPageSettings from './BookingPageSettings.jsx';
 import UpcomingMeetingsCard from '../components/UpcomingMeetingsCard.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
+import { useFeatureFlag } from '../utils/featureFlags.js';
 
 // Exportera kontakter så att andra komponenter kan använda dem
 export const getStoredContacts = () => {
@@ -91,6 +92,9 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' eller 'team'
   const [billingStatus, setBillingStatus] = useState(null); // plan + usage.sessionsUsed/-Limit/maxParticipants
   const [feedExpanded, setFeedExpanded] = useState(false); // "Väntar på dig" — visa fler än de första 4
+  // ✅ Osläppt funktion — se server.js (isFeatureEnabled). Av för alla
+  // utom early-access-mejl tills den släpps med flit.
+  const bookingPagesEnabled = useFeatureFlag('booking_pages');
 
   // ✅ ?view=team|booking-page i URL:en (t.ex. tillbaka från
   // kalenderkopplingen för Direktåtkomst/Bokningssida) växlar direkt till
@@ -99,13 +103,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const view = params.get('view');
-    if (view === 'team' || view === 'booking-page') {
+    if (view === 'team' || (view === 'booking-page' && bookingPagesEnabled)) {
       setCurrentView(view);
       params.delete('view');
       const rest = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
     }
-  }, []);
+  }, [bookingPagesEnabled]);
 
   // ✅ Plan-användning — så man som Free/Pro/Business-användare kan se hur
   // mycket man har kvar innan man stöter i taket. Tyst fel = ingen widget,
@@ -566,13 +570,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       icon: <TeamIcon size={22} />,
       onClick: () => handleNavigateToMeeting('team')
     },
-    {
+    ...(bookingPagesEnabled ? [{
       title: 'Bokningssida',
       description: 'En egen sida där andra kan boka en tid direkt i din kalender — utan inbjudan.',
       accent: billingStatus?.plan && billingStatus.plan !== 'free' ? 'Din egen bokningslänk' : 'Kräver Pro eller högre',
       icon: <BookingPageIcon size={22} />,
       onClick: () => handleNavigateToMeeting('booking-page')
-    }
+    }] : [])
   ];
 
 
@@ -581,7 +585,7 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
     return <Team user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
   }
 
-  if (currentView === 'booking-page') {
+  if (currentView === 'booking-page' && bookingPagesEnabled) {
     return <BookingPageSettings user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
   }
 
