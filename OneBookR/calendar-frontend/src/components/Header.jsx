@@ -27,6 +27,7 @@ import { LOGOUT_URL, HOME_URL } from '../config';
 import { apiRequest } from '../utils/apiConfig.js';
 import GDPRNotice from './GDPRNotice';
 import { Logo } from '../assets/Logo.jsx';
+import { useFeatureFlag } from '../utils/featureFlags.js';
 
 export default function Header({ user, onNavigate, onLeaveGroup }) {
   const [anchorEl, setAnchorEl] = useState(null);
@@ -125,6 +126,10 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
   // att det här alternativet existerar.
   const isAdmin = user?.isAdmin === true;
 
+  // ✅ Test-flagga för att verifiera feature-flag-systemet end-to-end —
+  // se /admin/feature-flags.
+  const testFlagEnabled = useFeatureFlag('test');
+
   if (!user) return null;
 
   return (
@@ -145,6 +150,12 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
           {/* ✅ LOGO OCH TITEL */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Logo iconSize={26} fontSize={22} onClick={handleGoHome} />
+
+            {testFlagEnabled && (
+              <Typography component="span" sx={{ fontSize: 22, lineHeight: 1 }}>
+                🦄
+              </Typography>
+            )}
 
             {isInGroup && (
               <Chip
