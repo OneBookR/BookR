@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Typography, Box, Paper, Switch, TextField, Button, Alert, CircularProgress } from '@mui/material';
+import { Container, Typography, Box, Paper, Switch, TextField, Button, Alert, CircularProgress, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { apiRequest } from '../utils/apiConfig.js';
 import { HOME_URL } from '../config';
+import { getFeatureFlagOverride, setFeatureFlagOverride } from '../utils/featureFlags.js';
 
 // Admin-only — länken hit visas bara under profilmenyn för ADMIN_EMAILS
 // (server.js). Ingen annan användare ser att den här sidan existerar.
@@ -12,6 +13,7 @@ export default function AdminFeatureFlags({ user }) {
   const [error, setError] = useState('');
   const [savingKey, setSavingKey] = useState('');
   const [newKey, setNewKey] = useState('');
+  const [overrides, setOverrides] = useState({}); // bara den här webbläsaren, se featureFlags.js
 
   useEffect(() => {
     if (!user) return;
@@ -23,9 +25,16 @@ export default function AdminFeatureFlags({ user }) {
         const list = data.flags || [];
         setFlags(list);
         setEmailDrafts(Object.fromEntries(list.map(f => [f.key, f.earlyAccessEmails.join(', ')])));
+        setOverrides(Object.fromEntries(list.map(f => [f.key, getFeatureFlagOverride(f.key) || 'default'])));
       })
       .catch(() => setError('Kunde inte ansluta till servern.'));
   }, [user]);
+
+  const setOverride = (key, value) => {
+    if (!value) return; // ToggleButtonGroup skickar null om man klickar den redan valda
+    setFeatureFlagOverride(key, value === 'default' ? null : value);
+    setOverrides(prev => ({ ...prev, [key]: value }));
+  };
 
   const save = async (key, patch) => {
     const target = flags.find(f => f.key === key);
@@ -145,7 +154,7 @@ export default function AdminFeatureFlags({ user }) {
                   />
                 </Box>
               </Box>
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1.5 }}>
                 <TextField
                   size="small"
                   fullWidth
@@ -161,6 +170,22 @@ export default function AdminFeatureFlags({ user }) {
                 >
                   Spara
                 </Button>
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
+                  Förhandsgranska hos dig (bara den här webbläsaren):
+                </Typography>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={overrides[flag.key] || 'default'}
+                  onChange={(e, value) => setOverride(flag.key, value)}
+                >
+                  <ToggleButton value="default">Följ ovan</ToggleButton>
+                  <ToggleButton value="on">Alltid på</ToggleButton>
+                  <ToggleButton value="off">Alltid av</ToggleButton>
+                </ToggleButtonGroup>
               </Box>
             </Paper>
           ))}
