@@ -29,13 +29,17 @@ import {
   getDirectAccessLink, listDirectAccessLinksFor, revokeDirectAccessLink,
   setBookingPage, getBookingPage, deleteBookingPage, setUserBookingPageSlug, getUserBookingPageSlug,
   createTask, listTasks, getTask, updateTask, deleteTask, appendTaskSlots,
-  getFeatureFlag, listFeatureFlags, setFeatureFlag
+  updateTaskSlot, removeTaskSlot,
+  getFeatureFlag, listFeatureFlags, setFeatureFlag,
+  createTemplate, listTemplates, getTemplate, updateTemplate, deleteTemplate,
+  createRule, listRules, getRule, updateRule, deleteRule, listRuleSendLog
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken, getDirectAccessToken } from './token-refresh.js';
 import { upsertHubspotContact } from './hubspot.js';
 import { isBillingConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretSubscription, emailForSubscription } from './billing.js';
 import { limitsForPlan } from './plans.js';
+import { startRulesScheduler, renderRuleEmail } from './rulesScheduler.js';
 
 // ===== APPLICATION SETUP =====
 const app = express();
@@ -2513,6 +2517,194 @@ app.post('/api/admin/feature-flags/:key', async (req, res) => {
   }
 });
 
+// ===== REGLER (Rules engine) — bakom feature-flaggan 'rules_engine' =====
+const rulesLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+
+async function requireRulesEnabled(email, res) {
+  if (!(await isFeatureEnabled('rules_engine', email))) {
+    res.status(404).json({ error: 'Not found', code: 'FEATURE_DISABLED' });
+    return false;
+  }
+  return true;
+}
+
+// --- Mallar ---
+app.get('/api/rules/templates', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+  try {
+    res.json({ templates: await listTemplates(email) });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta mallar:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta mallar', code: 'FETCH_FAILED' });
+  }
+});
+
+app.post('/api/rules/templates', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+  const { name, subject, bodyHtml, bodyText } = req.body || {};
+  if (!name || !subject || !bodyHtml) {
+    return res.status(400).json({ error: 'Namn, ämne och innehåll krävs', code: 'INVALID_TEMPLATE' });
+  }
+  try {
+    const id = await createTemplate(email, { name, subject, bodyHtml, bodyText: bodyText || '' });
+    res.json({ id });
+  } catch (err) {
+    console.error('❌ Kunde inte skapa mall:', err.message);
+    res.status(500).json({ error: 'Kunde inte skapa mall', code: 'CREATE_FAILED' });
+  }
+});
+
+app.patch('/api/rules/templates/:id', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+  try {
+    const { name, subject, bodyHtml, bodyText } = req.body || {};
+    await updateTemplate(email, req.params.id, { name, subject, bodyHtml, bodyText });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Kunde inte uppdatera mall:', err.message);
+    res.status(500).json({ error: 'Kunde inte uppdatera mall', code: 'UPDATE_FAILED' });
+  }
+});
+
+app.delete('/api/rules/templates/:id', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+  try {
+    await deleteTemplate(email, req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Kunde inte ta bort mall:', err.message);
+    res.status(500).json({ error: 'Kunde inte ta bort mall', code: 'DELETE_FAILED' });
+  }
+});
+
+// --- Regler ---
+app.get('/api/rules', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+  try {
+    res.json({ rules: await listRules(email) });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta regler:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta regler', code: 'FETCH_FAILED' });
+  }
+});
+
+app.post('/api/rules', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+
+  const { type, templateId, inlineEmail, offsetMinutes, enabled } = req.body || {};
+  if (!['reminder_before_meeting', 'decline_followup'].includes(type)) {
+    return res.status(400).json({ error: 'Okänd regeltyp', code: 'INVALID_RULE_TYPE' });
+  }
+  if (!templateId && !inlineEmail) {
+    return res.status(400).json({ error: 'Regeln behöver en mall eller ett engångsmail', code: 'MISSING_EMAIL_SOURCE' });
+  }
+  if (type === 'reminder_before_meeting' && !(Number(offsetMinutes) > 0)) {
+    return res.status(400).json({ error: 'Ange hur många minuter innan mötet', code: 'MISSING_OFFSET' });
+  }
+
+  try {
+    // ✅ Neka-uppföljning bevakar HELA kalendern (Task Manager-pass har
+    // aldrig deltagare) — kräver samma Direktåtkomst som bokningssidorna.
+    if (type === 'decline_followup') {
+      const myToken = await getStoredDirectAccessToken(email);
+      if (!myToken) {
+        return res.status(409).json({ error: 'Koppla din kalender för direktåtkomst först', code: 'NEEDS_CALENDAR_LINK' });
+      }
+    }
+
+    const id = await createRule(email, {
+      type,
+      templateId: templateId || null,
+      inlineEmail: inlineEmail || null,
+      offsetMinutes: type === 'reminder_before_meeting' ? Number(offsetMinutes) : null,
+      enabled: enabled !== false
+    });
+    res.json({ id });
+  } catch (err) {
+    console.error('❌ Kunde inte skapa regel:', err.message);
+    res.status(500).json({ error: 'Kunde inte skapa regel', code: 'CREATE_FAILED' });
+  }
+});
+
+app.patch('/api/rules/:id', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+  try {
+    const { templateId, inlineEmail, offsetMinutes, enabled } = req.body || {};
+    const patch = {};
+    if (templateId !== undefined) patch.templateId = templateId;
+    if (inlineEmail !== undefined) patch.inlineEmail = inlineEmail;
+    if (offsetMinutes !== undefined) patch.offsetMinutes = Number(offsetMinutes);
+    if (enabled !== undefined) patch.enabled = Boolean(enabled);
+    await updateRule(email, req.params.id, patch);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Kunde inte uppdatera regel:', err.message);
+    res.status(500).json({ error: 'Kunde inte uppdatera regel', code: 'UPDATE_FAILED' });
+  }
+});
+
+app.delete('/api/rules/:id', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+  try {
+    await deleteRule(email, req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Kunde inte ta bort regel:', err.message);
+    res.status(500).json({ error: 'Kunde inte ta bort regel', code: 'DELETE_FAILED' });
+  }
+});
+
+// --- Manuellt engångsmail ---
+app.post('/api/rules/send-now', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+
+  const { recipientEmail, templateId, inlineEmail, vars } = req.body || {};
+  if (!recipientEmail || (!templateId && !inlineEmail)) {
+    return res.status(400).json({ error: 'Mottagare och mall/engångsmail krävs', code: 'INVALID_SEND' });
+  }
+
+  try {
+    const { subject, html, text } = await renderRuleEmail({ email, templateId, inlineEmail }, vars || {});
+    await resend.emails.send({ from: 'BookR <noreply@onebookr.se>', to: [recipientEmail], subject, html, text });
+    await appendRuleSendLog(email, { ruleId: 'manual', recipientEmail, subject, status: 'sent', triggerReason: 'manual' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Kunde inte skicka mail manuellt:', err.message);
+    res.status(500).json({ error: 'Kunde inte skicka mailet', code: 'SEND_FAILED' });
+  }
+});
+
+// --- Aktivitetslogg ---
+app.get('/api/rules/activity', rulesLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireRulesEnabled(email, res))) return;
+  try {
+    res.json({ activity: await listRuleSendLog(email) });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta aktivitet:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta aktivitet', code: 'FETCH_FAILED' });
+  }
+});
+
 // ===== LEAD-PROFIL (inbjudna via delad länk) =====
 // Marknadsföringsviktig fångst: en INBJUDEN person (inte gruppens skapare)
 // som kommer in via en delad länk ombeds en gång om bransch, antal
@@ -2893,6 +3085,74 @@ app.post('/api/tasks/:id/confirm', taskLimiter, async (req, res) => {
   } catch (err) {
     console.error('❌ Kunde inte lägga till arbetspass i kalendern:', err.message);
     res.status(500).json({ error: 'Kunde inte lägga till arbetspass i kalendern', code: 'TASK_CONFIRM_FAILED' });
+  }
+});
+
+// ✅ Ändra tid på ETT enskilt redan bokat pass (inte hela uppgiften) —
+// förarbete för Regler-funktionen, en naturlig utökning av /confirm ovan.
+app.patch('/api/tasks/:id/slots/:eventId', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  const { start, end } = req.body || {};
+  if (!start || !end || isNaN(new Date(start)) || isNaN(new Date(end))) {
+    return res.status(400).json({ error: 'Ogiltig tid', code: 'INVALID_SLOT' });
+  }
+
+  try {
+    const task = await getTask(email, req.params.id);
+    if (!task) return res.status(404).json({ error: 'Uppgiften hittades inte', code: 'TASK_NOT_FOUND' });
+    const slot = (task.scheduledSlots || []).find(s => s.eventId === req.params.eventId);
+    if (!slot) return res.status(404).json({ error: 'Passet hittades inte', code: 'SLOT_NOT_FOUND' });
+
+    await updateCalendarEvent({
+      accessToken: req.user.accessToken,
+      provider: req.user.provider || 'google',
+      eventId: req.params.eventId,
+      title: task.name,
+      start,
+      end
+    });
+
+    await updateTaskSlot(email, req.params.id, req.params.eventId, {
+      start,
+      end,
+      duration: Math.round(((new Date(end) - new Date(start)) / 3_600_000) * 100) / 100
+    });
+
+    const updated = await getTask(email, req.params.id);
+    res.json({ task: summarizeTask(updated) });
+  } catch (err) {
+    console.error('❌ Kunde inte ändra tid på passet:', err.message);
+    res.status(500).json({ error: 'Kunde inte ändra tid på passet', code: 'SLOT_UPDATE_FAILED' });
+  }
+});
+
+// ✅ Avboka ETT enskilt pass — tar bort just den kalenderhändelsen, resten
+// av uppgiften och dess andra pass påverkas inte.
+app.delete('/api/tasks/:id/slots/:eventId', taskLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+
+  try {
+    const task = await getTask(email, req.params.id);
+    if (!task) return res.status(404).json({ error: 'Uppgiften hittades inte', code: 'TASK_NOT_FOUND' });
+    const slot = (task.scheduledSlots || []).find(s => s.eventId === req.params.eventId);
+    if (!slot) return res.status(404).json({ error: 'Passet hittades inte', code: 'SLOT_NOT_FOUND' });
+
+    await deleteCalendarEvent({
+      accessToken: req.user.accessToken,
+      provider: req.user.provider || 'google',
+      eventId: req.params.eventId
+    });
+
+    await removeTaskSlot(email, req.params.id, req.params.eventId);
+
+    const updated = await getTask(email, req.params.id);
+    res.json({ task: summarizeTask(updated) });
+  } catch (err) {
+    console.error('❌ Kunde inte avboka passet:', err.message);
+    res.status(500).json({ error: 'Kunde inte avboka passet', code: 'SLOT_DELETE_FAILED' });
   }
 });
 
@@ -5293,6 +5553,39 @@ async function createSimpleCalendarEvent({ accessToken, provider, title, descrip
   return { eventId: event.id };
 }
 
+// ✅ Ändrar tid (och ev. titel) på en ENSKILD redan bokad slot — Task
+// Manager-motsvarigheten till createSimpleCalendarEvent, fast PATCH.
+async function updateCalendarEvent({ accessToken, provider, eventId, title, description, start, end }) {
+  if (provider === 'microsoft') {
+    const msEventData = {
+      ...(title !== undefined && { subject: title }),
+      ...(description !== undefined && { body: { contentType: 'text', content: description || '' } }),
+      ...(start !== undefined && { start: { dateTime: start, timeZone: 'Europe/Stockholm' } }),
+      ...(end !== undefined && { end: { dateTime: end, timeZone: 'Europe/Stockholm' } })
+    };
+    const response = await fetchWithRetry(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(msEventData)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    return;
+  }
+
+  const eventData = {
+    ...(title !== undefined && { summary: title }),
+    ...(description !== undefined && { description: description || '' }),
+    ...(start !== undefined && { start: { dateTime: start, timeZone: 'Europe/Stockholm' } }),
+    ...(end !== undefined && { end: { dateTime: end, timeZone: 'Europe/Stockholm' } })
+  };
+  const response = await fetchWithRetry(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, {
+    method: 'PATCH',
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(eventData)
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+}
+
 // ✅ Motsats till createSimpleCalendarEvent ovan — används när man tar bort
 // en uppgift och väljer att även städa bort dess redan bokade pass.
 // 404 (personen har redan tagit bort eventet själv) räknas som lyckat —
@@ -5767,6 +6060,10 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('   GET  /api/debug/routes (development only)');
     console.log('\n🔧 Test group availability endpoint:');
     console.log(`   curl http://localhost:${PORT}/api/debug/routes`);
+  }
+
+  if (db) {
+    startRulesScheduler();
   }
 });
 

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box, Typography, TextField, Button, Paper, Alert, Container, Chip,
-  Drawer, IconButton, CircularProgress
+  Drawer, IconButton, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions,
+  Collapse
 } from '@mui/material';
 import { Add, DeleteOutline, CheckCircle, ArrowForward, Event, Close, OpenWith, ArrowUpward, ArrowDownward, Visibility, Edit } from '@mui/icons-material';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
@@ -437,6 +438,64 @@ const Task = ({ user }) => {
     }
   };
 
+  // ✅ Redigera/avboka ETT enskilt redan bokat pass — inte hela uppgiften.
+  // Förarbete för Regler-funktionen (se server.js /api/tasks/:id/slots/:eventId).
+  const [expandedTaskId, setExpandedTaskId] = useState(null);
+  const [editingSlot, setEditingSlot] = useState(null); // { taskId, eventId, start, end }
+  const [slotBusyId, setSlotBusyId] = useState(null);
+
+  const toLocalInputValue = (iso) => {
+    const d = new Date(iso);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const openEditSlot = (taskId, slot) => {
+    setEditingSlot({
+      taskId,
+      eventId: slot.eventId,
+      start: toLocalInputValue(slot.start),
+      end: toLocalInputValue(slot.end)
+    });
+  };
+
+  const handleSaveSlotEdit = async () => {
+    if (!editingSlot) return;
+    const { taskId, eventId, start, end } = editingSlot;
+    setSlotBusyId(eventId);
+    try {
+      const response = await apiRequest(`/api/tasks/${taskId}/slots/${eventId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ start: new Date(start).toISOString(), end: new Date(end).toISOString() })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.task) {
+        setTasks(prev => prev.map(t => (t.id === data.task.id ? data.task : t)));
+        setEditingSlot(null);
+      }
+    } catch (error) {
+      console.error('Error updating slot:', error);
+    } finally {
+      setSlotBusyId(null);
+    }
+  };
+
+  const handleCancelSlot = async (taskId, slot) => {
+    if (!window.confirm('Avboka det här passet? Det tas bort från din kalender.')) return;
+    setSlotBusyId(slot.eventId);
+    try {
+      const response = await apiRequest(`/api/tasks/${taskId}/slots/${slot.eventId}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.task) {
+        setTasks(prev => prev.map(t => (t.id === data.task.id ? data.task : t)));
+      }
+    } catch (error) {
+      console.error('Error cancelling slot:', error);
+    } finally {
+      setSlotBusyId(null);
+    }
+  };
+
   const glassCardSx = {
     borderRadius: 4,
     border: '1px solid var(--border)',
@@ -560,10 +619,35 @@ const Task = ({ user }) => {
                 )}
 
                 {slotSummary ? (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12.5, fontWeight: 600, color: 'var(--text)', borderTop: '1px solid rgba(17,24,39,0.06)', pt: 1.25 }}>
-                    <Event sx={{ fontSize: 15, color: 'var(--text-secondary)' }} />
-                    {slotSummary.kind}: {slotSummary.text}
-                  </Box>
+                  <>
+                    <Box
+                      onClick={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
+                      sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12.5, fontWeight: 600, color: 'var(--text)', borderTop: '1px solid rgba(17,24,39,0.06)', pt: 1.25, cursor: 'pointer' }}
+                    >
+                      <Event sx={{ fontSize: 15, color: 'var(--text-secondary)' }} />
+                      {slotSummary.kind}: {slotSummary.text}
+                      <Typography component="span" sx={{ ml: 'auto', fontSize: 11.5, color: 'var(--text-secondary)', fontWeight: 700 }}>
+                        {(task.scheduledSlots || []).length} pass {expandedTaskId === task.id ? '▾' : '▸'}
+                      </Typography>
+                    </Box>
+                    <Collapse in={expandedTaskId === task.id}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, pt: 0.5 }}>
+                        {[...(task.scheduledSlots || [])].sort((a, b) => new Date(a.start) - new Date(b.start)).map(slot => (
+                          <Box key={slot.eventId} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 12, color: 'var(--text-secondary)', bgcolor: 'rgba(17,24,39,0.03)', borderRadius: 2, px: 1, py: 0.6 }}>
+                            <Box sx={{ flex: 1 }}>
+                              {moment(slot.start).format('ddd D/M HH:mm')}–{moment(slot.end).format('HH:mm')}
+                            </Box>
+                            <IconButton size="small" aria-label="Ändra tid" disabled={slotBusyId === slot.eventId} onClick={() => openEditSlot(task.id, slot)}>
+                              <Edit sx={{ fontSize: 14 }} />
+                            </IconButton>
+                            <IconButton size="small" aria-label="Avboka passet" disabled={slotBusyId === slot.eventId} onClick={() => handleCancelSlot(task.id, slot)}>
+                              <DeleteOutline sx={{ fontSize: 15 }} />
+                            </IconButton>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Collapse>
+                  </>
                 ) : task.status !== 'done' ? (
                   <Button
                     onClick={() => openScheduleDrawer(task)}
@@ -888,6 +972,32 @@ const Task = ({ user }) => {
           </IconButton>
         </Paper>
       )}
+
+      <Dialog open={Boolean(editingSlot)} onClose={() => setEditingSlot(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Ändra tid</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Start" type="datetime-local" fullWidth sx={fieldSx}
+              InputLabelProps={{ shrink: true }}
+              value={editingSlot?.start || ''}
+              onChange={(e) => setEditingSlot(prev => ({ ...prev, start: e.target.value }))}
+            />
+            <TextField
+              label="Slut" type="datetime-local" fullWidth sx={fieldSx}
+              InputLabelProps={{ shrink: true }}
+              value={editingSlot?.end || ''}
+              onChange={(e) => setEditingSlot(prev => ({ ...prev, end: e.target.value }))}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditingSlot(null)}>Avbryt</Button>
+          <Button variant="contained" onClick={handleSaveSlotEdit} disabled={slotBusyId === editingSlot?.eventId} sx={primaryButtonSx}>
+            Spara
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

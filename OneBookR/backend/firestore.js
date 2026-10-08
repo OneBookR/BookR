@@ -1039,6 +1039,175 @@ async function appendTaskSlots(email, taskId, newSlots) {
   });
 }
 
+// ✅ Egna, separata funktioner för att ändra/ta bort EN enskild redan
+// bokad slot (via dess eventId) — rör aldrig updateTask/scheduledSlots-
+// kommentaren ovan, detta är den enda platsen en slot muteras efter att
+// den skapats.
+async function updateTaskSlot(email, taskId, eventId, patch) {
+  const ref = tasksCollection(email).doc(taskId);
+  await getDb().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new Error('Task not found');
+    const slots = snap.data().scheduledSlots || [];
+    const index = slots.findIndex(s => s.eventId === eventId);
+    if (index === -1) throw new Error('Slot not found');
+    const updated = [...slots];
+    updated[index] = { ...updated[index], ...patch };
+    tx.update(ref, {
+      scheduledSlots: updated,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  });
+}
+
+async function removeTaskSlot(email, taskId, eventId) {
+  const ref = tasksCollection(email).doc(taskId);
+  await getDb().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new Error('Task not found');
+    const slots = snap.data().scheduledSlots || [];
+    tx.update(ref, {
+      scheduledSlots: slots.filter(s => s.eventId !== eventId),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  });
+}
+
+// ===== REGLER (Rules engine) — mail-mallar, regler, idempotens, logg =====
+// Allt scopeat per användare (users/{email}/...), samma resonemang som
+// Uppgifter ovan: bara ägaren själv behöver slå upp sina egna regler.
+function emailTemplatesCollection(email) {
+  return getDb().collection('users').doc(email.toLowerCase().trim()).collection('emailTemplates');
+}
+
+async function createTemplate(email, data) {
+  const docRef = await emailTemplatesCollection(email).add({
+    ...data,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return docRef.id;
+}
+
+async function listTemplates(email) {
+  const snap = await emailTemplatesCollection(email).orderBy('createdAt', 'asc').get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getTemplate(email, templateId) {
+  const docSnap = await emailTemplatesCollection(email).doc(templateId).get();
+  return docSnap.exists ? { id: docSnap.id, ...docSnap.data() } : null;
+}
+
+async function updateTemplate(email, templateId, data) {
+  await emailTemplatesCollection(email).doc(templateId).set({
+    ...data,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+async function deleteTemplate(email, templateId) {
+  await emailTemplatesCollection(email).doc(templateId).delete();
+}
+
+function rulesCollection(email) {
+  return getDb().collection('users').doc(email.toLowerCase().trim()).collection('rules');
+}
+
+async function createRule(email, data) {
+  const docRef = await rulesCollection(email).add({
+    ...data,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return docRef.id;
+}
+
+async function listRules(email) {
+  const snap = await rulesCollection(email).orderBy('createdAt', 'asc').get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getRule(email, ruleId) {
+  const docSnap = await rulesCollection(email).doc(ruleId).get();
+  return docSnap.exists ? { id: docSnap.id, ...docSnap.data() } : null;
+}
+
+async function updateRule(email, ruleId, data) {
+  await rulesCollection(email).doc(ruleId).set({
+    ...data,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+async function deleteRule(email, ruleId) {
+  await rulesCollection(email).doc(ruleId).delete();
+}
+
+// Alla AKTIVA regler för alla användare, oavsett typ — schemaläggaren
+// vill inte loopa över varje enskild användare separat (det finns inget
+// enkelt sätt att veta vilka användare som har regler utan det), så den
+// frågar efter detta via en collection-group-fråga istället.
+async function listActiveRulesByType(type) {
+  const snap = await getDb().collectionGroup('rules')
+    .where('type', '==', type)
+    .where('enabled', '==', true)
+    .get();
+  return snap.docs.map(doc => ({
+    id: doc.id,
+    email: doc.ref.parent.parent.id,
+    ...doc.data()
+  }));
+}
+
+// Alla tasks, oavsett ägare — schemaläggaren filtrerar i processen på
+// vilka scheduledSlots som faller inom nästa poll-fönster. Billigt nog
+// vid nuvarande skala; ingen anledning att bygga en smalare serverside-
+// fråga mot ett array-fält för v1.
+async function listAllTasksWithScheduledSlots() {
+  const snap = await getDb().collectionGroup('tasks').get();
+  return snap.docs
+    .map(doc => ({ id: doc.id, email: doc.ref.parent.parent.id, ...doc.data() }))
+    .filter(task => Array.isArray(task.scheduledSlots) && task.scheduledSlots.length > 0);
+}
+
+// Idempotens: dokument-ID:t ÄR dedupe-nyckeln. .create() kastar om den
+// redan finns — det räcker som skydd mot dubbelskick, ingen egen
+// låsmotor behövs för detta.
+async function tryClaimRuleRun(email, dedupeKey, data) {
+  const ref = getDb().collection('users').doc(email.toLowerCase().trim()).collection('ruleRuns').doc(dedupeKey);
+  try {
+    await ref.create({
+      ...data,
+      triggeredAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    return true;
+  } catch (err) {
+    if (err.code === 6 || /already exists/i.test(err.message || '')) return false; // ALREADY_EXISTS
+    throw err;
+  }
+}
+
+async function markRuleRunFailed(email, dedupeKey, error) {
+  const ref = getDb().collection('users').doc(email.toLowerCase().trim()).collection('ruleRuns').doc(dedupeKey);
+  await ref.set({ status: 'failed', error: String(error), triggeredAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+}
+
+async function appendRuleSendLog(email, entry) {
+  await getDb().collection('users').doc(email.toLowerCase().trim()).collection('ruleSendLog').add({
+    ...entry,
+    sentAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function listRuleSendLog(email, limit = 50) {
+  const snap = await getDb().collection('users').doc(email.toLowerCase().trim()).collection('ruleSendLog')
+    .orderBy('sentAt', 'desc')
+    .limit(limit)
+    .get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
 // ✅ EXPORT ALL FUNCTIONS - ENDAST EN GÅNG!
 export {
   // Waitlist
@@ -1139,6 +1308,9 @@ export {
   updateTask,
   deleteTask,
   appendTaskSlots,
+  updateTaskSlot,
+  removeTaskSlot,
+  listAllTasksWithScheduledSlots,
 
   // Demo Bookings
   createDemoBooking,
@@ -1151,5 +1323,22 @@ export {
   // Feature flags
   getFeatureFlag,
   listFeatureFlags,
-  setFeatureFlag
+  setFeatureFlag,
+
+  // Regler (Rules engine)
+  createTemplate,
+  listTemplates,
+  getTemplate,
+  updateTemplate,
+  deleteTemplate,
+  createRule,
+  listRules,
+  getRule,
+  updateRule,
+  deleteRule,
+  listActiveRulesByType,
+  tryClaimRuleRun,
+  markRuleRunFailed,
+  appendRuleSendLog,
+  listRuleSendLog
 };

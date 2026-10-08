@@ -16,6 +16,7 @@ import ContactSettings from '../components/ContactSettings.jsx';
 import ContactManager from './ContactManager.jsx';
 import Team from './Team.jsx';
 import BookingPageSettings from './BookingPageSettings.jsx';
+import Rules from './Rules.jsx';
 import UpcomingMeetingsCard from '../components/UpcomingMeetingsCard.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { useFeatureFlag } from '../utils/featureFlags.js';
@@ -76,6 +77,15 @@ function BookingPageIcon({ size = 20 }) {
   );
 }
 
+function RulesIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M12 3L4 6.5V11C4 15.5 7.5 19.5 12 21C16.5 19.5 20 15.5 20 11V6.5L12 3Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M9 12L11 14L15.5 9.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [invites, setInvites] = useState([]);
   const [timeProposals, setTimeProposals] = useState([]);
@@ -95,21 +105,22 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   // ✅ Osläppt funktion — se server.js (isFeatureEnabled). Av för alla
   // utom early-access-mejl tills den släpps med flit.
   const bookingPagesEnabled = useFeatureFlag('booking_pages');
+  const rulesEnabled = useFeatureFlag('rules_engine');
 
-  // ✅ ?view=team|booking-page i URL:en (t.ex. tillbaka från
-  // kalenderkopplingen för Direktåtkomst/Bokningssida) växlar direkt till
-  // rätt vy — det finns ingen egen /team-route, bara detta interna
+  // ✅ ?view=team|booking-page|rules i URL:en (t.ex. tillbaka från
+  // kalenderkopplingen för Direktåtkomst/Bokningssida/Regler) växlar direkt
+  // till rätt vy — det finns ingen egen /team-route, bara detta interna
   // view-state.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const view = params.get('view');
-    if (view === 'team' || (view === 'booking-page' && bookingPagesEnabled)) {
+    if (view === 'team' || (view === 'booking-page' && bookingPagesEnabled) || (view === 'rules' && rulesEnabled)) {
       setCurrentView(view);
       params.delete('view');
       const rest = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
     }
-  }, [bookingPagesEnabled]);
+  }, [bookingPagesEnabled, rulesEnabled]);
 
   // ✅ Plan-användning — så man som Free/Pro/Business-användare kan se hur
   // mycket man har kvar innan man stöter i taket. Tyst fel = ingen widget,
@@ -207,6 +218,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       setCurrentView('team');
     } else if (type === 'booking-page') {
       setCurrentView('booking-page');
+    } else if (type === 'rules') {
+      setCurrentView('rules');
     } else if (type === 'task') {
       // ✅ Task-vyn styrs av ?view=task (inte ?meetingType=), se App.jsx
       window.location.href = '/?view=task';
@@ -576,6 +589,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       accent: billingStatus?.plan && billingStatus.plan !== 'free' ? 'Din egen bokningslänk' : 'Kräver Pro eller högre',
       icon: <BookingPageIcon size={22} />,
       onClick: () => handleNavigateToMeeting('booking-page')
+    }] : []),
+    ...(rulesEnabled ? [{
+      title: 'Regler',
+      description: 'Automatiska mail-påminnelser och uppföljningar — på dina villkor.',
+      accent: 'Osläppt funktion',
+      icon: <RulesIcon size={22} />,
+      onClick: () => handleNavigateToMeeting('rules')
     }] : [])
   ];
 
@@ -587,6 +607,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
   if (currentView === 'booking-page' && bookingPagesEnabled) {
     return <BookingPageSettings user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
+  }
+
+  if (currentView === 'rules' && rulesEnabled) {
+    return <Rules user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
   }
 
   // ✅ REDESIGN: "DashboardMixNarrow" — vald riktning ur designcanvasen
