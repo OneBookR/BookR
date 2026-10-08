@@ -2463,7 +2463,7 @@ app.get('/api/auth/me', async (req, res) => {
   }
   const demoOnly = Boolean(req.session.demoOnly) && !paid;
 
-  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus, leadProfileStatus, calendarDetailsConsent });
+  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus, leadProfileStatus, calendarDetailsConsent, isAdmin: isAdminEmail(req.user.email) });
 });
 
 // ===== FEATURE FLAGS =====

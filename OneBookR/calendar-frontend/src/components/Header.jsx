@@ -12,7 +12,7 @@ import {
   Chip,
   Container
 } from '@mui/material';
-import { 
+import {
   AccountCircle,
   Logout,
   ExitToApp,
@@ -20,7 +20,8 @@ import {
   Task,
   Group,
   CreditCard,
-  EventAvailable
+  EventAvailable,
+  AdminPanelSettings
 } from '@mui/icons-material';
 import { LOGOUT_URL, HOME_URL } from '../config';
 import { apiRequest } from '../utils/apiConfig.js';
@@ -92,6 +93,11 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
     window.location.href = '/priser';
   };
 
+  const handleAdmin = () => {
+    window.location.href = '/admin/feature-flags';
+    handleMenuClose();
+  };
+
   const getUserDisplayName = () => {
     if (!user) return 'Okänd användare';
     
@@ -114,6 +120,10 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
   // och uppåt — Free och Pro har inget att förvalta där, så alternativet
   // visas inte alls för dem.
   const canManageBilling = user?.plan === 'business' || user?.plan === 'enterprise';
+
+  // ✅ Syns bara för ADMIN_EMAILS (server.js) — övriga användare ser aldrig
+  // att det här alternativet existerar.
+  const isAdmin = user?.isAdmin === true;
 
   if (!user) return null;
 
@@ -294,6 +304,13 @@ export default function Header({ user, onNavigate, onLeaveGroup }) {
                 <MenuItem onClick={handleBilling}>
                   <CreditCard sx={{ mr: 1 }} />
                   Fakturering
+                </MenuItem>
+              )}
+
+              {!isInGroup && isAdmin && (
+                <MenuItem onClick={handleAdmin}>
+                  <AdminPanelSettings sx={{ mr: 1 }} />
+                  Admin
                 </MenuItem>
               )}
 

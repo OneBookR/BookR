@@ -18,6 +18,7 @@ import BokaDemo from './pages/BokaDemo.jsx';
 import PublicBookingPage from './pages/PublicBookingPage.jsx';
 import Pricing from './pages/Pricing.jsx';
 import EnterpriseKontakt from './pages/EnterpriseKontakt.jsx';
+import AdminFeatureFlags from './pages/AdminFeatureFlags.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
 import MobileNavigation from './components/MobileNavigation.jsx';
@@ -195,7 +196,7 @@ function App() {
           // "Bjud in vänner" innan hamnade i CompareCalendar istället för
           // boka-demo-kalendern efter att ha loggat in där.
           const isOnUnrelatedSpecialRoute = window.location.pathname !== '/' &&
-            ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/boka-demo', '/priser', '/enterprise'].includes(window.location.pathname);
+            ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/admin/feature-flags', '/venue-admin', '/integritetspolicy', '/boka-demo', '/priser', '/enterprise'].includes(window.location.pathname);
 
           const savedGroup = isOnUnrelatedSpecialRoute ? null : localStorage.getItem('invitation_group');
           const savedInvitee = isOnUnrelatedSpecialRoute ? null : localStorage.getItem('invitation_invitee');
@@ -315,7 +316,7 @@ function App() {
 
   // ✅ SPECIAL ROUTES CHECK
   const path = window.location.pathname;
-  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/venue-admin', '/integritetspolicy', '/anvandarvillkor', '/boka-demo', '/priser', '/enterprise'].includes(path) || path.startsWith('/venue/') || path.startsWith('/boka/');
+  const isSpecialRoute = ['/business-signup', '/business-admin', '/contact', '/about', '/om-oss', '/kontakt', '/waitlist', '/admin/waitlist', '/admin/feature-flags', '/venue-admin', '/integritetspolicy', '/anvandarvillkor', '/boka-demo', '/priser', '/enterprise'].includes(path) || path.startsWith('/venue/') || path.startsWith('/boka/');
 
   // ✅ RENDER SPECIAL ROUTES
   if (isSpecialRoute) {
@@ -328,6 +329,7 @@ function App() {
       '/kontakt': Kontakt,
       '/waitlist': Waitlist,
       '/admin/waitlist': WaitlistAdmin,
+      '/admin/feature-flags': AdminFeatureFlags,
       '/venue-admin': VenueAdmin,
       '/integritetspolicy': Integritetspolicy,
       '/anvandarvillkor': Anvandarvillkor,
