@@ -1114,12 +1114,29 @@ function rulesCollection(email) {
   return getDb().collection('users').doc(email.toLowerCase().trim()).collection('rules');
 }
 
+// ✅ Schemaläggaren behöver kunna slå upp "alla aktiva regler av typ X,
+// oavsett ägare" — men en collectionGroup-fråga mot en nästlad
+// subcollection (users/{email}/rules) kräver ett MANUELLT skapat index
+// i Firebase Console för varje fält man filtrerar på (även ett enda
+// where()), något som inte går att skapa automatiskt och som gav
+// "FAILED_PRECONDITION" i produktion. En vanlig TOPP-NIVÅ-collection
+// (ingen nesting) får däremot sina enkelfälts-index helt automatiskt av
+// Firestore, utan något manuellt steg — därför speglas varje regel till
+// `ruleIndex/{ruleId}` (samma dokument-ID som den riktiga regeln) med
+// bara de fält schemaläggaren behöver för att hitta den. Ägarens egna
+// CRUD-vyer (/api/rules) läser fortfarande från users/{email}/rules,
+// aldrig från indexet.
+function ruleIndexCollection() {
+  return getDb().collection('ruleIndex');
+}
+
 async function createRule(email, data) {
   const docRef = await rulesCollection(email).add({
     ...data,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   });
+  await ruleIndexCollection().doc(docRef.id).set({ email: email.toLowerCase().trim(), type: data.type, enabled: data.enabled !== false });
   return docRef.id;
 }
 
@@ -1138,26 +1155,34 @@ async function updateRule(email, ruleId, data) {
     ...data,
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
+  if (data.enabled !== undefined || data.type !== undefined) {
+    await ruleIndexCollection().doc(ruleId).set(
+      { ...(data.enabled !== undefined && { enabled: data.enabled }), ...(data.type !== undefined && { type: data.type }) },
+      { merge: true }
+    );
+  }
 }
 
 async function deleteRule(email, ruleId) {
   await rulesCollection(email).doc(ruleId).delete();
+  await ruleIndexCollection().doc(ruleId).delete();
 }
 
-// Alla AKTIVA regler för alla användare, oavsett typ — schemaläggaren
-// vill inte loopa över varje enskild användare separat (det finns inget
-// enkelt sätt att veta vilka användare som har regler utan det), så den
-// frågar efter detta via en collection-group-fråga istället.
+// Alla AKTIVA regler av en given typ, oavsett ägare — läser det
+// denormaliserade indexet (se ruleIndexCollection ovan), bara ETT
+// where() (fungerar helt utan manuell indexkonfiguration), filtrerar
+// "enabled" i koden. Hämtar sedan den riktiga regeln per träff.
 async function listActiveRulesByType(type) {
-  const snap = await getDb().collectionGroup('rules')
-    .where('type', '==', type)
-    .where('enabled', '==', true)
-    .get();
-  return snap.docs.map(doc => ({
-    id: doc.id,
-    email: doc.ref.parent.parent.id,
-    ...doc.data()
+  const snap = await ruleIndexCollection().where('type', '==', type).get();
+  const candidates = snap.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(entry => entry.enabled === true);
+
+  const rules = await Promise.all(candidates.map(async (entry) => {
+    const rule = await getRule(entry.email, entry.id);
+    return rule ? { ...rule, email: entry.email } : null;
   }));
+  return rules.filter(Boolean);
 }
 
 // Alla tasks, oavsett ägare — schemaläggaren filtrerar i processen på
