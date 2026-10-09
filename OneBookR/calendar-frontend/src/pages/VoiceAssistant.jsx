@@ -50,6 +50,11 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
   const [autoExecute, setAutoExecute] = useState(false);
   const [pending, setPending] = useState(null); // { preview, pendingActionId }
   const [lastResult, setLastResult] = useState('');
+  // ✅ Hela den pågående tråden (om Claude bett om ett förtydligande) —
+  // skickas med nästa anrop så Claude inte tappar den ursprungliga
+  // avsikten. Nollställs så fort ett kommando faktiskt löser sig
+  // (bekräftelse, svar eller utförande).
+  const [conversationHistory, setConversationHistory] = useState([]);
   const [log, setLog] = useState([]);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const recognitionRef = useRef(null);
@@ -113,15 +118,20 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
           .map(c => ({ name: c.name || '', email: c.email }));
       } catch { /* korrupt localStorage — strunta i kontakterna, inte kritiskt */ }
 
-      const res = await apiRequest('/api/voice/command', { method: 'POST', body: JSON.stringify({ command, contacts }) });
+      const res = await apiRequest('/api/voice/command', { method: 'POST', body: JSON.stringify({ command, contacts, conversationHistory }) });
       const data = await res.json().catch(() => ({}));
       if (data.error) {
         setLastResult(data.error);
+        // ✅ Fortsätt samma tråd — Claude bad om ett förtydligande, nästa
+        // kommando är sannolikt bara svaret på den frågan.
+        setConversationHistory(data.conversationHistory || []);
       } else if (data.needsConfirmation) {
         setPending({ preview: data.preview, cards: data.cards, pendingActionId: data.pendingActionId });
+        setConversationHistory([]); // löst — nästa kommando är en ny tråd
       } else if (data.executed) {
         setLastResult(data.result);
         notify('Klart!');
+        setConversationHistory([]);
       }
       setCommand('');
       loadAll();
@@ -168,6 +178,17 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
       <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 3 }}>
         Exempel: {EXAMPLES.map((e, i) => `"${e}"`).join(' · ')}
       </Typography>
+
+      {conversationHistory.length > 0 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+            Fortsätter föregående fråga — svara direkt, du behöver inte upprepa kommandot.
+          </Typography>
+          <Button size="small" onClick={() => { setConversationHistory([]); setLastResult(''); }} sx={{ textTransform: 'none', fontWeight: 700 }}>
+            Börja om
+          </Button>
+        </Box>
+      )}
 
       <Paper sx={{ ...pageCardSx, p: 3.5, mb: 3 }}>
         <FormControlLabel

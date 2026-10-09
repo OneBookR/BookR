@@ -230,20 +230,27 @@ function collectKnownEmails(events, directAccessEmails, contacts) {
   return set;
 }
 
-// ===== CLAUDE: TOLKA KOMMANDOT =====
-async function callClaude(command, todayISO, contextBlock) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY saknas — lägg till den i miljövariablerna för att aktivera kommandoassistenten.');
-  }
-  const systemPrompt = `Du tolkar svenska röst-/textkommandon om kalenderhantering.
+function buildSystemPrompt(todayISO, contextBlock) {
+  return `Du tolkar svenska röst-/textkommandon om kalenderhantering.
 Idag är ${todayISO} (Europe/Stockholm). Måndag räknas som veckans första dag. Räkna ut övriga datum (imorgon, nästa vecka, etc.) relativt detta.
 
 ${contextBlock}
 
 Använd personlistan ovan för att slå upp vem användaren menar (with_person_email/to_person_email) — matcha mot namn, smeknamn eller mejl. Använd BARA mejladresser som faktiskt finns i listan. Om du inte kan avgöra en entydig person utifrån listan, eller om personen inte finns där alls, svara med vanlig text och fråga om förtydligande — gissa aldrig en mejladress som inte står i listan.
+Det här är en PÅGÅENDE konversation — om du tidigare bad om ett förtydligande (vilken person, vilket möte, vilket datum) så tolkar du användarens nya svar TILLSAMMANS MED det ursprungliga kommandot tidigare i samtalet, inte som ett helt nytt, fristående kommando. Släpp aldrig den ursprungliga avsikten (t.ex. "avboka") bara för att användaren bara svarade med ett namn eller ett datum.
 Om kommandot ber om flera saker (t.ex. "avboka mötet med X och skicka en ny länk"), anropa flera verktyg i samma svar — ett per deluppgift.
-Använd alltid något av verktygen när kommandot kan tolkas som en kalenderhandling eller -fråga.`;
+Använd alltid något av verktygen när du har tillräckligt med information — fråga bara om förtydligande när det faktiskt behövs.`;
+}
 
+// ===== CLAUDE: TOLKA KOMMANDOT =====
+// `messages` är HELA den pågående konversationen (tidigare förtydligande-
+// frågor + svar), inte bara det senaste kommandot — annars tappar Claude
+// den ursprungliga avsikten varje gång användaren bara svarar på en
+// följdfråga (t.ex. bara ett namn, utan att upprepa "avboka").
+async function callClaude(messages, systemPrompt) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY saknas — lägg till den i miljövariablerna för att aktivera kommandoassistenten.');
+  }
   // ✅ tool_choice: {type:'any'/'tool'} stöds inte av alla modellversioner
   // ("tool_choice: type \"tool\" and \"any\" are not supported for this
   // model") — 'auto' (default, ingen tool_choice alls) fungerar överallt,
@@ -261,7 +268,7 @@ Använd alltid något av verktygen när kommandot kan tolkas som en kalenderhand
       model: CLAUDE_MODEL,
       max_tokens: 1024,
       system: systemPrompt,
-      messages: [{ role: 'user', content: command }],
+      messages,
       tools: TOOLS
     })
   });
@@ -270,9 +277,9 @@ Använd alltid något av verktygen när kommandot kan tolkas som en kalenderhand
   const toolUses = (data.content || []).filter(block => block.type === 'tool_use');
   if (toolUses.length === 0) {
     const textBlock = (data.content || []).find(block => block.type === 'text');
-    return { textResponse: textBlock?.text || 'Kunde inte tolka kommandot som en åtgärd.' };
+    return { textResponse: textBlock?.text || 'Kunde inte tolka kommandot som en åtgärd.', rawContent: data.content };
   }
-  return { toolCalls: toolUses.map(t => ({ name: t.name, input: t.input || {} })) };
+  return { toolCalls: toolUses.map(t => ({ name: t.name, input: t.input || {} })), rawContent: data.content };
 }
 
 // ===== BYGG FÖRHANDSGRANSKNING + ÅTGÄRD FÖR ETT VERKTYGSANROP =====
@@ -417,23 +424,40 @@ async function executeActions(actions, ctx) {
 // `directAccessEmails`/`contacts` kommer från server.js (Firestore
 // respektive frontendens lokala adressbok) — se filkommentaren högst
 // upp för varför båda behövs.
-async function interpretCommand(command, { accessToken, provider, ownerEmail, directAccessEmails = [], contacts = [] }) {
+async function interpretCommand(command, { accessToken, provider, ownerEmail, directAccessEmails = [], contacts = [], conversationHistory = [] }) {
   const now = new Date();
   const events = await fetchOrganizedMeetingsWithAttendees(accessToken, provider, now.toISOString(), new Date(now.getTime() + LOOKAHEAD_MS).toISOString());
   const todayISO = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Stockholm' }); // en-CA ger garanterat YYYY-MM-DD
 
   const contextBlock = buildContextBlock(events, directAccessEmails, contacts);
   const knownEmails = collectKnownEmails(events, directAccessEmails, contacts);
+  const systemPrompt = buildSystemPrompt(todayISO, contextBlock);
 
-  const claudeResult = await callClaude(command, todayISO, contextBlock);
+  // ✅ Hela den pågående konversationen skickas med varje gång — annars
+  // tappar Claude den ursprungliga avsikten så fort användaren bara
+  // svarar på en förtydligande-fråga (se filkommentaren vid callClaude).
+  const messages = [...conversationHistory, { role: 'user', content: command }];
+  const claudeResult = await callClaude(messages, systemPrompt);
+
   if (claudeResult.textResponse) {
-    return { error: claudeResult.textResponse };
+    return {
+      error: claudeResult.textResponse,
+      conversationHistory: [...messages, { role: 'assistant', content: claudeResult.rawContent }]
+    };
   }
 
   const planned = [];
   for (const call of claudeResult.toolCalls) {
     const result = await planAction(call.name, call.input, events, provider, knownEmails, ownerEmail);
-    if (result.error) return { error: result.error };
+    if (result.error) {
+      // Även ett valideringsfel (t.ex. en okänd mejladress) fortsätter
+      // samma konversationstråd — användaren ska kunna förtydliga utan
+      // att behöva upprepa hela kommandot från början.
+      return {
+        error: result.error,
+        conversationHistory: [...messages, { role: 'assistant', content: claudeResult.rawContent }]
+      };
+    }
     planned.push(result);
   }
 

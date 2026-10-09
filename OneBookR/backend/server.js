@@ -2774,6 +2774,12 @@ app.post('/api/voice/command', voiceLimiter, async (req, res) => {
   const contacts = Array.isArray(req.body?.contacts)
     ? req.body.contacts.filter(c => c && typeof c.email === 'string').map(c => ({ name: String(c.name || ''), email: c.email }))
     : [];
+  // ✅ Hela samtalstråden skickas fram och tillbaka av frontend (som ett
+  // vanligt chat-API) — håller backend statslöst. Kapas till de senaste
+  // 20 turerna som ett enkelt skydd mot ett skenande payload.
+  const conversationHistory = Array.isArray(req.body?.conversationHistory)
+    ? req.body.conversationHistory.slice(-20)
+    : [];
 
   try {
     const directAccessLinks = await listDirectAccessLinksFor(email);
@@ -2784,12 +2790,13 @@ app.post('/api/voice/command', voiceLimiter, async (req, res) => {
       provider: req.user.provider || 'google',
       ownerEmail: email,
       directAccessEmails,
-      contacts
+      contacts,
+      conversationHistory
     });
 
     if (parsed.error) {
       await appendVoiceCommandLog(email, { command, status: 'error', message: parsed.error });
-      return res.json({ error: parsed.error });
+      return res.json({ error: parsed.error, conversationHistory: parsed.conversationHistory || [] });
     }
 
     if (parsed.readOnly) {
