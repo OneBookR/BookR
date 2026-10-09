@@ -32,6 +32,24 @@ const fieldSx = {
 
 const PLACEHOLDER_HELP = 'Platshållare: {{taskName}}, {{meetingTime}}, {{meetingTitle}}, {{bookingLink}}';
 
+const TRIGGER_LABELS = {
+  meeting_starts: 'mötet börjar',
+  invite_accepted: 'någon accepterar inbjudan',
+  invite_declined: 'någon nekar inbjudan'
+};
+
+function describeRule(r) {
+  const trigger = TRIGGER_LABELS[r.triggerEvent] || r.triggerEvent;
+  if (r.negate) {
+    return `Om ${trigger} inte händer inom ${r.deadlineMinutes} min`;
+  }
+  const minutes = Number(r.offsetMinutes) || 0;
+  if (minutes === 0) return `Om ${trigger}, skicka direkt`;
+  return minutes < 0
+    ? `${Math.abs(minutes)} min innan ${trigger}`
+    : `${minutes} min efter att ${trigger}`;
+}
+
 // ✅ Regler — automatiska mail-regler + mallar, bakom feature-flaggan
 // 'rules_engine'. Syskon till BookingPageSettings.jsx, samma mönster:
 // egen currentView i ShortcutDashboard.jsx.
@@ -45,7 +63,14 @@ export default function Rules({ user, onNavigateBack }) {
   const [calendarLinkPrompt, setCalendarLinkPrompt] = useState(false);
 
   const [templateForm, setTemplateForm] = useState({ name: '', subject: '', bodyHtml: '', bodyText: '' });
-  const [ruleForm, setRuleForm] = useState({ type: 'reminder_before_meeting', templateId: '', offsetMinutes: 120 });
+  const [ruleForm, setRuleForm] = useState({
+    triggerEvent: 'meeting_starts',
+    negate: false,
+    direction: 'before', // 'before' | 'after' — styr tecknet på offsetMinutes
+    offsetMinutes: 120,
+    deadlineMinutes: 1440,
+    templateId: ''
+  });
   const [sendForm, setSendForm] = useState({ recipientEmail: '', templateId: '' });
   const [saving, setSaving] = useState(false);
 
@@ -97,12 +122,15 @@ export default function Rules({ user, onNavigateBack }) {
     if (!ruleForm.templateId) return notify('Välj en mall', 'error');
     setSaving(true);
     try {
+      const signedOffset = ruleForm.direction === 'before' ? -Math.abs(Number(ruleForm.offsetMinutes)) : Math.abs(Number(ruleForm.offsetMinutes));
       const res = await apiRequest('/api/rules', {
         method: 'POST',
         body: JSON.stringify({
-          type: ruleForm.type,
+          triggerEvent: ruleForm.triggerEvent,
+          negate: ruleForm.negate,
+          offsetMinutes: !ruleForm.negate ? signedOffset : undefined,
+          deadlineMinutes: ruleForm.negate ? Number(ruleForm.deadlineMinutes) : undefined,
           templateId: ruleForm.templateId,
-          offsetMinutes: ruleForm.type === 'reminder_before_meeting' ? Number(ruleForm.offsetMinutes) : undefined,
           enabled: true
         })
       });
@@ -223,23 +251,66 @@ export default function Rules({ user, onNavigateBack }) {
               <Paper sx={{ ...pageCardSx, p: 3.5 }}>
                 <Typography sx={{ fontWeight: 700, mb: 2, color: 'var(--text)' }}>Ny regel</Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <TextField select label="Typ" value={ruleForm.type} onChange={e => setRuleForm({ ...ruleForm, type: e.target.value })} fullWidth sx={fieldSx}>
-                    <MenuItem value="reminder_before_meeting">Påminnelse innan ett möte (Task Manager)</MenuItem>
-                    <MenuItem value="decline_followup">Uppföljning när någon nekar en inbjudan</MenuItem>
-                  </TextField>
-                  {ruleForm.type === 'reminder_before_meeting' && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <Typography sx={{ fontWeight: 700, color: 'var(--text)' }}>Om</Typography>
                     <TextField
-                      label="Minuter innan mötet"
-                      type="number"
-                      value={ruleForm.offsetMinutes}
-                      onChange={e => setRuleForm({ ...ruleForm, offsetMinutes: e.target.value })}
-                      sx={{ ...fieldSx, maxWidth: 220 }}
-                    />
-                  )}
+                      select value={ruleForm.triggerEvent}
+                      onChange={e => setRuleForm({ ...ruleForm, triggerEvent: e.target.value })}
+                      sx={{ ...fieldSx, minWidth: 260 }}
+                    >
+                      <MenuItem value="meeting_starts">Mötet börjar (Task Manager-pass)</MenuItem>
+                      <MenuItem value="invite_accepted">Någon accepterar inbjudan</MenuItem>
+                      <MenuItem value="invite_declined">Någon nekar inbjudan</MenuItem>
+                    </TextField>
+                    {ruleForm.triggerEvent !== 'meeting_starts' && (
+                      <TextField
+                        select value={ruleForm.negate ? 'not' : 'yes'}
+                        onChange={e => setRuleForm({ ...ruleForm, negate: e.target.value === 'not' })}
+                        sx={{ ...fieldSx, minWidth: 140 }}
+                      >
+                        <MenuItem value="yes">händer</MenuItem>
+                        <MenuItem value="not">inte händer</MenuItem>
+                      </TextField>
+                    )}
+                  </Box>
+
+                  <Typography sx={{ fontWeight: 700, color: 'var(--text)' }}>Gör</Typography>
                   <TextField select label="Mall" value={ruleForm.templateId} onChange={e => setRuleForm({ ...ruleForm, templateId: e.target.value })} fullWidth sx={fieldSx}>
                     {templates.length === 0 && <MenuItem value="" disabled>Skapa en mall först</MenuItem>}
                     {templates.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
                   </TextField>
+
+                  {!ruleForm.negate ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <TextField
+                        label="Minuter" type="number"
+                        value={ruleForm.offsetMinutes}
+                        onChange={e => setRuleForm({ ...ruleForm, offsetMinutes: e.target.value })}
+                        sx={{ ...fieldSx, maxWidth: 160 }}
+                      />
+                      <TextField
+                        select value={ruleForm.direction}
+                        onChange={e => setRuleForm({ ...ruleForm, direction: e.target.value })}
+                        sx={{ ...fieldSx, minWidth: 140 }}
+                      >
+                        <MenuItem value="before">före</MenuItem>
+                        <MenuItem value="after">efter</MenuItem>
+                      </TextField>
+                      <Typography sx={{ color: 'var(--text-secondary)' }}>det sker</Typography>
+                    </Box>
+                  ) : (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography sx={{ color: 'var(--text-secondary)' }}>inom</Typography>
+                      <TextField
+                        type="number"
+                        value={ruleForm.deadlineMinutes}
+                        onChange={e => setRuleForm({ ...ruleForm, deadlineMinutes: e.target.value })}
+                        sx={{ ...fieldSx, maxWidth: 160 }}
+                      />
+                      <Typography sx={{ color: 'var(--text-secondary)' }}>minuter från att inbjudan skickades</Typography>
+                    </Box>
+                  )}
+
                   <Box>
                     <Button variant="contained" onClick={createRule} disabled={saving} sx={primaryButtonSx}>Skapa regel</Button>
                   </Box>
@@ -250,10 +321,10 @@ export default function Rules({ user, onNavigateBack }) {
                 <Paper key={r.id} sx={{ ...pageCardSx, p: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Box>
                     <Typography sx={{ fontWeight: 700, color: 'var(--text)' }}>
-                      {r.type === 'reminder_before_meeting' ? `Påminnelse ${r.offsetMinutes} min innan` : 'Uppföljning vid nekad inbjudan'}
+                      {describeRule(r)}
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
-                      {templates.find(t => t.id === r.templateId)?.name || 'Okänd mall'}
+                      {templates.find(t => t.id === r.action?.templateId)?.name || 'Okänd mall'}
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

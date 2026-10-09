@@ -2603,21 +2603,24 @@ app.post('/api/rules', rulesLimiter, async (req, res) => {
   if (!email) return;
   if (!(await requireRulesEnabled(email, res))) return;
 
-  const { type, templateId, inlineEmail, offsetMinutes, enabled } = req.body || {};
-  if (!['reminder_before_meeting', 'decline_followup'].includes(type)) {
-    return res.status(400).json({ error: 'Okänd regeltyp', code: 'INVALID_RULE_TYPE' });
+  const { triggerEvent, negate, offsetMinutes, deadlineMinutes, templateId, inlineEmail, enabled } = req.body || {};
+  if (!['meeting_starts', 'invite_accepted', 'invite_declined'].includes(triggerEvent)) {
+    return res.status(400).json({ error: 'Okänd trigger', code: 'INVALID_TRIGGER' });
   }
   if (!templateId && !inlineEmail) {
     return res.status(400).json({ error: 'Regeln behöver en mall eller ett engångsmail', code: 'MISSING_EMAIL_SOURCE' });
   }
-  if (type === 'reminder_before_meeting' && !(Number(offsetMinutes) > 0)) {
-    return res.status(400).json({ error: 'Ange hur många minuter innan mötet', code: 'MISSING_OFFSET' });
+  if (negate && !(Number(deadlineMinutes) > 0)) {
+    return res.status(400).json({ error: 'Ange inom hur många minuter', code: 'MISSING_DEADLINE' });
+  }
+  if (!negate && triggerEvent === 'meeting_starts' && !offsetMinutes) {
+    return res.status(400).json({ error: 'Ange hur många minuter före/efter mötet', code: 'MISSING_OFFSET' });
   }
 
   try {
-    // ✅ Neka-uppföljning bevakar HELA kalendern (Task Manager-pass har
-    // aldrig deltagare) — kräver samma Direktåtkomst som bokningssidorna.
-    if (type === 'decline_followup') {
+    // ✅ invite_accepted/invite_declined bevakar HELA kalendern (Task
+    // Manager-pass har aldrig deltagare) — kräver Direktåtkomst.
+    if (triggerEvent === 'invite_accepted' || triggerEvent === 'invite_declined') {
       const myToken = await getStoredDirectAccessToken(email);
       if (!myToken) {
         return res.status(409).json({ error: 'Koppla din kalender för direktåtkomst först', code: 'NEEDS_CALENDAR_LINK' });
@@ -2625,10 +2628,11 @@ app.post('/api/rules', rulesLimiter, async (req, res) => {
     }
 
     const id = await createRule(email, {
-      type,
-      templateId: templateId || null,
-      inlineEmail: inlineEmail || null,
-      offsetMinutes: type === 'reminder_before_meeting' ? Number(offsetMinutes) : null,
+      triggerEvent,
+      negate: Boolean(negate),
+      offsetMinutes: !negate ? Number(offsetMinutes) || 0 : null,
+      deadlineMinutes: negate ? Number(deadlineMinutes) : null,
+      action: { type: 'send_email', templateId: templateId || null, inlineEmail: inlineEmail || null },
       enabled: enabled !== false
     });
     res.json({ id });
@@ -2643,11 +2647,18 @@ app.patch('/api/rules/:id', rulesLimiter, async (req, res) => {
   if (!email) return;
   if (!(await requireRulesEnabled(email, res))) return;
   try {
-    const { templateId, inlineEmail, offsetMinutes, enabled } = req.body || {};
+    const { templateId, inlineEmail, offsetMinutes, deadlineMinutes, enabled } = req.body || {};
     const patch = {};
-    if (templateId !== undefined) patch.templateId = templateId;
-    if (inlineEmail !== undefined) patch.inlineEmail = inlineEmail;
+    if (templateId !== undefined || inlineEmail !== undefined) {
+      const existing = await getRule(email, req.params.id);
+      patch.action = {
+        type: 'send_email',
+        templateId: templateId !== undefined ? templateId : existing?.action?.templateId || null,
+        inlineEmail: inlineEmail !== undefined ? inlineEmail : existing?.action?.inlineEmail || null
+      };
+    }
     if (offsetMinutes !== undefined) patch.offsetMinutes = Number(offsetMinutes);
+    if (deadlineMinutes !== undefined) patch.deadlineMinutes = Number(deadlineMinutes);
     if (enabled !== undefined) patch.enabled = Boolean(enabled);
     await updateRule(email, req.params.id, patch);
     res.json({ ok: true });

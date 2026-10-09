@@ -1136,7 +1136,7 @@ async function createRule(email, data) {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   });
-  await ruleIndexCollection().doc(docRef.id).set({ email: email.toLowerCase().trim(), type: data.type, enabled: data.enabled !== false });
+  await ruleIndexCollection().doc(docRef.id).set({ email: email.toLowerCase().trim(), triggerEvent: data.triggerEvent, enabled: data.enabled !== false });
   return docRef.id;
 }
 
@@ -1155,9 +1155,9 @@ async function updateRule(email, ruleId, data) {
     ...data,
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
-  if (data.enabled !== undefined || data.type !== undefined) {
+  if (data.enabled !== undefined || data.triggerEvent !== undefined) {
     await ruleIndexCollection().doc(ruleId).set(
-      { ...(data.enabled !== undefined && { enabled: data.enabled }), ...(data.type !== undefined && { type: data.type }) },
+      { ...(data.enabled !== undefined && { enabled: data.enabled }), ...(data.triggerEvent !== undefined && { triggerEvent: data.triggerEvent }) },
       { merge: true }
     );
   }
@@ -1168,12 +1168,12 @@ async function deleteRule(email, ruleId) {
   await ruleIndexCollection().doc(ruleId).delete();
 }
 
-// Alla AKTIVA regler av en given typ, oavsett ägare — läser det
+// Alla AKTIVA regler av en given triggertyp, oavsett ägare — läser det
 // denormaliserade indexet (se ruleIndexCollection ovan), bara ETT
 // where() (fungerar helt utan manuell indexkonfiguration), filtrerar
 // "enabled" i koden. Hämtar sedan den riktiga regeln per träff.
-async function listActiveRulesByType(type) {
-  const snap = await ruleIndexCollection().where('type', '==', type).get();
+async function listActiveRulesByType(triggerEvent) {
+  const snap = await ruleIndexCollection().where('triggerEvent', '==', triggerEvent).get();
   const candidates = snap.docs
     .map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(entry => entry.enabled === true);
@@ -1196,15 +1196,21 @@ async function listAllTasksWithScheduledSlots() {
     .filter(task => Array.isArray(task.scheduledSlots) && task.scheduledSlots.length > 0);
 }
 
-// Idempotens: dokument-ID:t ÄR dedupe-nyckeln. .create() kastar om den
-// redan finns — det räcker som skydd mot dubbelskick, ingen egen
-// låsmotor behövs för detta.
-async function tryClaimRuleRun(email, dedupeKey, data) {
-  const ref = getDb().collection('users').doc(email.toLowerCase().trim()).collection('ruleRuns').doc(dedupeKey);
+// ✅ PENDING SENDS — kön mellan "upptäckt" och "skickat". Topp-nivå-
+// collection (samma anledning som ruleIndex: enkla where()-frågor utan
+// manuellt indexsteg). Dokument-ID:t ÄR dedupe-nyckeln: .create() kastar
+// om den redan finns, vilket både förhindrar dubbel-schemaläggning OCH
+// dubbelskick utan någon egen låsmotor.
+function pendingSendsCollection() {
+  return getDb().collection('pendingSends');
+}
+
+async function createPendingSend(dedupeKey, data) {
   try {
-    await ref.create({
+    await pendingSendsCollection().doc(dedupeKey).create({
       ...data,
-      triggeredAt: admin.firestore.FieldValue.serverTimestamp()
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
     return true;
   } catch (err) {
@@ -1213,9 +1219,21 @@ async function tryClaimRuleRun(email, dedupeKey, data) {
   }
 }
 
-async function markRuleRunFailed(email, dedupeKey, error) {
-  const ref = getDb().collection('users').doc(email.toLowerCase().trim()).collection('ruleRuns').doc(dedupeKey);
-  await ref.set({ status: 'failed', error: String(error), triggeredAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+// Allt som förfallit, oavsett ägare — ETT where() (intervall), filtrerar
+// status i koden precis som övriga schemaläggar-frågor i den här filen.
+async function listDuePendingSends() {
+  const snap = await pendingSendsCollection().where('sendAt', '<=', new Date()).get();
+  return snap.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(entry => entry.status === 'pending');
+}
+
+async function markPendingSendResult(dedupeKey, status, error) {
+  await pendingSendsCollection().doc(dedupeKey).set({
+    status,
+    ...(error && { error: String(error) }),
+    resolvedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
 }
 
 async function appendRuleSendLog(email, entry) {
@@ -1362,8 +1380,9 @@ export {
   updateRule,
   deleteRule,
   listActiveRulesByType,
-  tryClaimRuleRun,
-  markRuleRunFailed,
+  createPendingSend,
+  listDuePendingSends,
+  markPendingSendResult,
   appendRuleSendLog,
   listRuleSendLog
 };
