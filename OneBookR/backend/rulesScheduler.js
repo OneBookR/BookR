@@ -206,10 +206,14 @@ export function startRulesScheduler() {
   schedule.scheduleJob('*/5 * * * *', () => {
     checkReminders().catch(err => console.error('[Regler] Påminnelse-körning kraschade:', err));
   });
-  schedule.scheduleJob('*/15 * * * *', () => {
+  // ✅ Var minut, inte var 15:e — en nekad inbjudan ska kännas som att
+  // BookR reagerar "direkt", inte efter en kaffepaus. Riktig realtid
+  // (Google/Microsoft webhooks) är en större, separat sak (ny publik
+  // endpoint, kanal-förnyelse, verifiering) — medvetet inte byggt nu.
+  schedule.scheduleJob('* * * * *', () => {
     checkDeclines().catch(err => console.error('[Regler] Neka-körning kraschade:', err));
   });
-  console.log('✅ [Regler] Schemaläggare startad (påminnelser var 5:e min, neka-koll var 15:e min)');
+  console.log('✅ [Regler] Schemaläggare startad (påminnelser var 5:e min, neka-koll var minut)');
 }
 
 // Exporteras bara för "skicka nu"-endpointen i server.js (manuellt skick
