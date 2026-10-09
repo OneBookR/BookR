@@ -94,6 +94,7 @@ async function fetchOrganizedMeetingsWithAttendees(accessToken, provider, timeMi
         end: e.end?.dateTime ? (e.end.dateTime.includes('Z') ? e.end.dateTime : `${e.end.dateTime.split('.')[0]}Z`) : null,
         attendees: (e.attendees || []).map(a => ({
           email: a.emailAddress?.address,
+          displayName: a.emailAddress?.name || null,
           responseStatus: (a.status?.response || '').toLowerCase()
         }))
       }));
@@ -102,7 +103,7 @@ async function fetchOrganizedMeetingsWithAttendees(accessToken, provider, timeMi
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
     `timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}&` +
     `singleEvents=true&orderBy=startTime&maxResults=50&showDeleted=false&` +
-    `fields=items(id,summary,status,created,start,end,organizer(self),attendees(email,responseStatus))`;
+    `fields=items(id,summary,status,created,start,end,organizer(self),attendees(email,displayName,responseStatus))`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } });
   if (!res.ok) throw new Error(`Google Calendar ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -114,7 +115,7 @@ async function fetchOrganizedMeetingsWithAttendees(accessToken, provider, timeMi
       created: e.created,
       start: e.start?.dateTime || null,
       end: e.end?.dateTime || null,
-      attendees: (e.attendees || []).map(a => ({ email: a.email, responseStatus: a.responseStatus }))
+      attendees: (e.attendees || []).map(a => ({ email: a.email, displayName: a.displayName || null, responseStatus: a.responseStatus }))
     }));
 }
 
@@ -391,4 +392,4 @@ export function startRulesScheduler() {
 // (manuellt skick ska återanvända exakt samma mall-/platshållar-logik,
 // inte duplicera den). Resten exporteras för att gå att köra enskilt
 // vid felsökning/verifiering, utan att behöva starta hela cron-loopen.
-export { renderRuleEmail, detectMeetingStarts, detectCalendarTriggers, flushPendingSends };
+export { renderRuleEmail, detectMeetingStarts, detectCalendarTriggers, flushPendingSends, fetchOrganizedMeetingsWithAttendees };

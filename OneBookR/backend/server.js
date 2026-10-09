@@ -32,7 +32,10 @@ import {
   updateTaskSlot, removeTaskSlot,
   getFeatureFlag, listFeatureFlags, setFeatureFlag,
   createTemplate, listTemplates, getTemplate, updateTemplate, deleteTemplate,
-  createRule, listRules, getRule, updateRule, deleteRule, listRuleSendLog
+  createRule, listRules, getRule, updateRule, deleteRule, listRuleSendLog,
+  getVoiceAutoExecute, setVoiceAutoExecute,
+  createPendingVoiceAction, getPendingVoiceAction, deletePendingVoiceAction,
+  appendVoiceCommandLog, listVoiceCommandLog
 } from './firestore.js';
 import { gdprLog, anonymizeEmail, sanitizeCalendarEvent, cleanupExpiredGroups, containsSensitiveInfo, encryptEmail, decryptEmail, encryptToken, decryptToken, createGDPRExport, handleFirebaseError } from './gdpr-utils.js';
 import { getAdminCalendarToken, getDirectAccessToken } from './token-refresh.js';
@@ -40,6 +43,7 @@ import { upsertHubspotContact } from './hubspot.js';
 import { isBillingConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretSubscription, emailForSubscription } from './billing.js';
 import { limitsForPlan } from './plans.js';
 import { startRulesScheduler, renderRuleEmail } from './rulesScheduler.js';
+import { interpretCommand, executeAction } from './voiceAssistant.js';
 
 // ===== APPLICATION SETUP =====
 const app = express();
@@ -2718,6 +2722,98 @@ app.get('/api/rules/activity', rulesLimiter, async (req, res) => {
   } catch (err) {
     console.error('❌ Kunde inte hämta aktivitet:', err.message);
     res.status(500).json({ error: 'Kunde inte hämta aktivitet', code: 'FETCH_FAILED' });
+  }
+});
+
+// ===== RÖSTASSISTENT (text/röststyrda kommandon) — bakom 'voice_assistant' =====
+const voiceLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+
+async function requireVoiceAssistantEnabled(email, res) {
+  if (!(await isFeatureEnabled('voice_assistant', email))) {
+    res.status(404).json({ error: 'Not found', code: 'FEATURE_DISABLED' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/voice/settings', voiceLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireVoiceAssistantEnabled(email, res))) return;
+  res.json({ autoExecute: await getVoiceAutoExecute(email) });
+});
+
+app.patch('/api/voice/settings', voiceLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireVoiceAssistantEnabled(email, res))) return;
+  await setVoiceAutoExecute(email, Boolean(req.body?.autoExecute));
+  res.json({ ok: true });
+});
+
+app.get('/api/voice/log', voiceLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireVoiceAssistantEnabled(email, res))) return;
+  res.json({ log: await listVoiceCommandLog(email) });
+});
+
+// ✅ Tolkar ett kommando. query_meetings (läser bara) utförs alltid
+// direkt. Övriga tre utförs direkt BARA om voiceAutoExecute är på —
+// annars sparas den tolkade åtgärden och väntar på /confirm.
+app.post('/api/voice/command', voiceLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireVoiceAssistantEnabled(email, res))) return;
+
+  const command = String(req.body?.command || '').trim();
+  if (!command) return res.status(400).json({ error: 'Inget kommando angavs', code: 'MISSING_COMMAND' });
+
+  try {
+    const parsed = await interpretCommand(command, { accessToken: req.user.accessToken, provider: req.user.provider || 'google' });
+
+    if (parsed.error) {
+      await appendVoiceCommandLog(email, { command, status: 'error', message: parsed.error });
+      return res.json({ error: parsed.error });
+    }
+
+    if (parsed.readOnly) {
+      await appendVoiceCommandLog(email, { command, status: 'answered', message: parsed.result });
+      return res.json({ executed: true, result: parsed.result });
+    }
+
+    const autoExecute = await getVoiceAutoExecute(email);
+    if (autoExecute) {
+      const result = await executeAction(parsed.action, { accessToken: req.user.accessToken });
+      await appendVoiceCommandLog(email, { command, status: 'executed', message: result });
+      return res.json({ executed: true, result });
+    }
+
+    const pendingActionId = await createPendingVoiceAction(email, { command, action: parsed.action, preview: parsed.preview });
+    await appendVoiceCommandLog(email, { command, status: 'pending_confirmation', message: parsed.preview });
+    res.json({ needsConfirmation: true, preview: parsed.preview, pendingActionId });
+  } catch (err) {
+    console.error('❌ Kunde inte tolka röstkommandot:', err.message);
+    res.status(500).json({ error: err.message || 'Kunde inte tolka kommandot', code: 'VOICE_PARSE_FAILED' });
+  }
+});
+
+app.post('/api/voice/confirm/:id', voiceLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireVoiceAssistantEnabled(email, res))) return;
+
+  try {
+    const pending = await getPendingVoiceAction(email, req.params.id);
+    if (!pending) return res.status(404).json({ error: 'Åtgärden hittades inte eller har förfallit', code: 'PENDING_ACTION_NOT_FOUND' });
+
+    const result = await executeAction(pending.action, { accessToken: req.user.accessToken });
+    await deletePendingVoiceAction(email, req.params.id);
+    await appendVoiceCommandLog(email, { command: pending.command, status: 'executed', message: result });
+    res.json({ executed: true, result });
+  } catch (err) {
+    console.error('❌ Kunde inte utföra bekräftad åtgärd:', err.message);
+    res.status(500).json({ error: err.message || 'Kunde inte utföra åtgärden', code: 'VOICE_EXECUTE_FAILED' });
   }
 });
 

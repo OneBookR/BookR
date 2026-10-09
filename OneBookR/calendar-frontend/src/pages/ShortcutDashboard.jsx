@@ -17,6 +17,7 @@ import ContactManager from './ContactManager.jsx';
 import Team from './Team.jsx';
 import BookingPageSettings from './BookingPageSettings.jsx';
 import Rules from './Rules.jsx';
+import VoiceAssistant from './VoiceAssistant.jsx';
 import UpcomingMeetingsCard from '../components/UpcomingMeetingsCard.jsx';
 import { apiRequest, createApiUrl } from '../utils/apiConfig.js';
 import { useFeatureFlag } from '../utils/featureFlags.js';
@@ -86,6 +87,16 @@ function RulesIcon({ size = 20 }) {
   );
 }
 
+function VoiceIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M5.5 11.5C5.5 15.6 8.7 19 12 19C15.3 19 18.5 15.6 18.5 11.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M12 19V21.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   const [invites, setInvites] = useState([]);
   const [timeProposals, setTimeProposals] = useState([]);
@@ -106,21 +117,22 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
   // utom early-access-mejl tills den släpps med flit.
   const bookingPagesEnabled = useFeatureFlag('booking_pages');
   const rulesEnabled = useFeatureFlag('rules_engine');
+  const voiceAssistantEnabled = useFeatureFlag('voice_assistant');
 
-  // ✅ ?view=team|booking-page|rules i URL:en (t.ex. tillbaka från
+  // ✅ ?view=team|booking-page|rules|voice i URL:en (t.ex. tillbaka från
   // kalenderkopplingen för Direktåtkomst/Bokningssida/Regler) växlar direkt
   // till rätt vy — det finns ingen egen /team-route, bara detta interna
   // view-state.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const view = params.get('view');
-    if (view === 'team' || (view === 'booking-page' && bookingPagesEnabled) || (view === 'rules' && rulesEnabled)) {
+    if (view === 'team' || (view === 'booking-page' && bookingPagesEnabled) || (view === 'rules' && rulesEnabled) || (view === 'voice' && voiceAssistantEnabled)) {
       setCurrentView(view);
       params.delete('view');
       const rest = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
     }
-  }, [bookingPagesEnabled, rulesEnabled]);
+  }, [bookingPagesEnabled, rulesEnabled, voiceAssistantEnabled]);
 
   // ✅ Plan-användning — så man som Free/Pro/Business-användare kan se hur
   // mycket man har kvar innan man stöter i taket. Tyst fel = ingen widget,
@@ -220,6 +232,8 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       setCurrentView('booking-page');
     } else if (type === 'rules') {
       setCurrentView('rules');
+    } else if (type === 'voice') {
+      setCurrentView('voice');
     } else if (type === 'task') {
       // ✅ Task-vyn styrs av ?view=task (inte ?meetingType=), se App.jsx
       window.location.href = '/?view=task';
@@ -596,6 +610,13 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
       accent: 'Osläppt funktion',
       icon: <RulesIcon size={22} />,
       onClick: () => handleNavigateToMeeting('rules')
+    }] : []),
+    ...(voiceAssistantEnabled ? [{
+      title: 'Kommandon',
+      description: 'Skriv eller säg vad BookR ska göra — avboka, boka om, maila, eller fråga.',
+      accent: 'Osläppt funktion',
+      icon: <VoiceIcon size={22} />,
+      onClick: () => handleNavigateToMeeting('voice')
     }] : [])
   ];
 
@@ -611,6 +632,10 @@ export default function ShortcutDashboard({ user, onNavigateToMeeting }) {
 
   if (currentView === 'rules' && rulesEnabled) {
     return <Rules user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
+  }
+
+  if (currentView === 'voice' && voiceAssistantEnabled) {
+    return <VoiceAssistant user={user} onNavigateBack={() => setCurrentView('dashboard')} />;
   }
 
   // ✅ REDESIGN: "DashboardMixNarrow" — vald riktning ur designcanvasen
