@@ -60,7 +60,7 @@ const TOOLS = [
         date_from: { type: 'string', description: 'Start för perioden att hitta en ledig tid inom, format YYYY-MM-DD.' },
         date_to: { type: 'string', description: 'Slut för perioden att hitta en ledig tid inom, format YYYY-MM-DD.' },
         duration_minutes: { type: 'integer', description: 'Mötets längd i minuter. Anta 30 om inget sägs.' },
-        title: { type: 'string', description: 'Ett kort, naturligt mötesnamn. Anta "Möte" om inget särskilt sägs.' }
+        title: { type: 'string', description: 'Mötets namn, EXAKT som användaren sa det. Hittade du inget i kommandot, utelämna fältet helt — gissa eller hitta ALDRIG på ett namn själv.' }
       },
       required: ['with_person_email', 'date_from', 'date_to']
     }
@@ -293,7 +293,7 @@ Använd personlistan ovan för att slå upp vem användaren menar (with_person_e
 Det här är en PÅGÅENDE konversation — om du tidigare bad om ett förtydligande (vilken person, vilket möte, vilket datum) så tolkar du användarens nya svar TILLSAMMANS MED det ursprungliga kommandot tidigare i samtalet, inte som ett helt nytt, fristående kommando. Släpp aldrig den ursprungliga avsikten (t.ex. "avboka") bara för att användaren bara svarade med ett namn eller ett datum.
 Om kommandot ber om flera saker (t.ex. "avboka mötet med X och skicka en ny länk"), anropa flera verktyg i samma svar — ett per deluppgift.
 Använd alltid något av verktygen när du har tillräckligt med information — fråga bara om förtydligande när det faktiskt behövs.
-När användaren ber om att BOKA/SÄTTA UPP/ORDNA ett möte med någon: använd book_meeting som förstahandsval, ÄVEN om personen saknar Direktåtkomst eller inte har något möte sedan tidigare — book_meeting bokar själv utan att behöva läsa personens kalender (det är bara en bonus om personen råkar ha Direktåtkomst). Föreslå share_booking_link bara om användaren uttryckligen bett om en länk, eller book_meeting uttryckligen misslyckats.`;
+När användaren ber om att BOKA/SÄTTA UPP/ORDNA ett möte med någon: använd book_meeting som förstahandsval, ÄVEN om personen saknar Direktåtkomst eller inte har något möte sedan tidigare — book_meeting bokar själv utan att behöva läsa personens kalender (det är bara en bonus om personen råkar ha Direktåtkomst). Föreslå share_booking_link bara om användaren uttryckligen bett om en länk, eller book_meeting uttryckligen misslyckats. Sa användaren INTE vad mötet ska heta: anropa INTE book_meeting än — svara med vanlig text och fråga "Vad ska mötet heta?", precis som du frågar om förtydligande kring en oklar person. Gissa eller hitta ALDRIG på ett mötesnamn själv.`;
 }
 
 // ===== CLAUDE: TOLKA KOMMANDOT =====
@@ -387,9 +387,17 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
   if (toolName === 'book_meeting') {
     const err = checkKnown(input.with_person_email, 'personen');
     if (err) return { error: err };
+    // ✅ Kodnivå-spärr, inte bara en promptinstruktion — oavsett om Claude
+    // följer instruktionen att inte gissa en titel eller inte, bokas
+    // aldrig ett möte som bara heter "Möte". Samma
+    // förtydligande-mekanism som en oklar person redan använder: svaret
+    // fortsätter samma konversationstråd (se interpretCommand).
+    if (!input.title || !input.title.trim()) {
+      return { error: 'Vad ska mötet heta?' };
+    }
     const personEmail = input.with_person_email.toLowerCase();
     const duration = Number(input.duration_minutes) > 0 ? Number(input.duration_minutes) : 30;
-    const title = input.title || 'Möte';
+    const title = input.title.trim();
 
     const searchFrom = new Date(input.date_from);
     const searchTo = new Date(input.date_to + 'T23:59:59');
