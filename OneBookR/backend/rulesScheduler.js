@@ -26,7 +26,10 @@ import {
   markPendingSendResult,
   appendRuleSendLog,
   getTemplate,
-  getUserBookingPageSlug
+  getUserBookingPageSlug,
+  listEventSnapshots,
+  setEventSnapshot,
+  deleteEventSnapshot
 } from './firestore.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -77,8 +80,8 @@ async function fetchOrganizedMeetingsWithAttendees(accessToken, provider, timeMi
   if (provider === 'microsoft') {
     const url = `https://graph.microsoft.com/v1.0/me/calendarView?` +
       `startDateTime=${encodeURIComponent(timeMinISO)}&endDateTime=${encodeURIComponent(timeMaxISO)}&` +
-      `$select=id,subject,isCancelled,isOrganizer,createdDateTime,attendees&$top=50`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } });
+      `$select=id,subject,isCancelled,isOrganizer,createdDateTime,start,end,attendees&$top=50`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Prefer': 'outlook.timezone="UTC"' } });
     if (!res.ok) throw new Error(`Microsoft Graph ${res.status}: ${await res.text()}`);
     const data = await res.json();
     return (data.value || [])
@@ -87,6 +90,8 @@ async function fetchOrganizedMeetingsWithAttendees(accessToken, provider, timeMi
         id: e.id,
         title: e.subject || 'Möte',
         created: e.createdDateTime,
+        start: e.start?.dateTime ? (e.start.dateTime.includes('Z') ? e.start.dateTime : `${e.start.dateTime.split('.')[0]}Z`) : null,
+        end: e.end?.dateTime ? (e.end.dateTime.includes('Z') ? e.end.dateTime : `${e.end.dateTime.split('.')[0]}Z`) : null,
         attendees: (e.attendees || []).map(a => ({
           email: a.emailAddress?.address,
           responseStatus: (a.status?.response || '').toLowerCase()
@@ -97,7 +102,7 @@ async function fetchOrganizedMeetingsWithAttendees(accessToken, provider, timeMi
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
     `timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}&` +
     `singleEvents=true&orderBy=startTime&maxResults=50&showDeleted=false&` +
-    `fields=items(id,summary,status,created,organizer(self),attendees(email,responseStatus))`;
+    `fields=items(id,summary,status,created,start,end,organizer(self),attendees(email,responseStatus))`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } });
   if (!res.ok) throw new Error(`Google Calendar ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -107,6 +112,8 @@ async function fetchOrganizedMeetingsWithAttendees(accessToken, provider, timeMi
       id: e.id,
       title: e.summary || 'Möte',
       created: e.created,
+      start: e.start?.dateTime || null,
+      end: e.end?.dateTime || null,
       attendees: (e.attendees || []).map(a => ({ email: a.email, responseStatus: a.responseStatus }))
     }));
 }
@@ -161,19 +168,27 @@ async function detectMeetingStarts() {
   }
 }
 
-// ✅ TRIGGER 2+3: invite_accepted / invite_declined, båda med stöd för
-// negate. Kräver Direktåtkomst (bevakar HELA kalendern — Task Manager-
-// pass har strukturellt aldrig deltagare).
-async function detectInviteResponses() {
-  const [acceptRules, declineRules] = await Promise.all([
+function describeTime(iso) {
+  return iso ? formatStockholmTime(iso) : 'okänd tid';
+}
+
+// ✅ TRIGGER 2–5: invite_accepted / invite_declined / meeting_cancelled /
+// meeting_rescheduled. Alla fyra bevakar HELA den Direktåtkomst-kopplade
+// kalendern (Task Manager-pass har strukturellt aldrig deltagare), så de
+// delar EN kalenderhämtning per ägare istället för en var.
+async function detectCalendarTriggers() {
+  const [acceptRules, declineRules, cancelledRules, rescheduledRules] = await Promise.all([
     listActiveRulesByType('invite_accepted'),
-    listActiveRulesByType('invite_declined')
+    listActiveRulesByType('invite_declined'),
+    listActiveRulesByType('meeting_cancelled'),
+    listActiveRulesByType('meeting_rescheduled')
   ]);
-  const rules = [...acceptRules, ...declineRules];
-  if (rules.length === 0) return;
+  const responseRules = [...acceptRules, ...declineRules];
+  const changeRules = [...cancelledRules, ...rescheduledRules];
+  if (responseRules.length === 0 && changeRules.length === 0) return;
 
   const rulesByEmail = new Map();
-  for (const rule of rules) {
+  for (const rule of [...responseRules, ...changeRules]) {
     if (!rulesByEmail.has(rule.email)) rulesByEmail.set(rule.email, []);
     rulesByEmail.get(rule.email).push(rule);
   }
@@ -183,6 +198,9 @@ async function detectInviteResponses() {
   const timeMax = new Date(now.getTime() + INVITE_LOOKAHEAD_MS).toISOString();
 
   for (const [email, ownerRules] of rulesByEmail) {
+    const ownerResponseRules = ownerRules.filter(r => r.triggerEvent === 'invite_accepted' || r.triggerEvent === 'invite_declined');
+    const ownerChangeRules = ownerRules.filter(r => r.triggerEvent === 'meeting_cancelled' || r.triggerEvent === 'meeting_rescheduled');
+
     try {
       const tokenInfo = await getDirectAccessToken(email);
       if (!tokenInfo) continue; // ingen Direktåtkomst kopplad — inget att göra
@@ -190,62 +208,151 @@ async function detectInviteResponses() {
       const events = await fetchOrganizedMeetingsWithAttendees(tokenInfo.accessToken, tokenInfo.provider, timeMin, timeMax);
       const bookingSlug = await getUserBookingPageSlug(email);
 
-      for (const event of events) {
-        const createdMs = event.created ? new Date(event.created).getTime() : null;
-
-        for (const attendee of event.attendees) {
-          // ✅ Organisatören listas ofta som sin egen deltagare (med
-          // responseStatus "accepted") av Google/Microsoft — utan den
-          // här spärren triggar en accept-regel ett "någon accepterade
-          // din inbjudan"-mail TILL EN SJÄLV för ens egna möten.
-          if (!attendee.email || attendee.email.toLowerCase() === email.toLowerCase()) continue;
-
-          for (const rule of ownerRules) {
-            const targetStatus = rule.triggerEvent === 'invite_accepted' ? 'accepted' : 'declined';
-            const dedupeKey = `${event.id}_${attendee.email.toLowerCase()}_${rule.id}`;
-            const vars = {
-              meetingTitle: event.title,
-              bookingLink: bookingSlug ? `https://www.onebookr.se/boka/${bookingSlug}` : ''
-            };
-
-            if (!rule.negate) {
-              // Positiv trigger: "X har hänt" — skicka direkt eller med
-              // ett tecknat offset (minus skulle vara konstigt här, men
-              // stöds — "efter" är det normala för en redan intraffad
-              // händelse).
-              if (attendee.responseStatus !== targetStatus) continue;
-              const offsetMs = (Number(rule.offsetMinutes) || 0) * 60_000;
-              await createPendingSend(dedupeKey, {
-                email, ruleId: rule.id, recipientEmail: attendee.email,
-                templateId: rule.action?.templateId || null,
-                inlineEmail: rule.action?.inlineEmail || null,
-                vars,
-                sendAt: new Date(now.getTime() + offsetMs),
-                triggerReason: rule.triggerEvent
-              });
-            } else {
-              // Negerad trigger: "X har INTE hänt inom N minuter efter
-              // att inbjudan skapades". Skickas till den som INTE svarat
-              // — en nudge, inte ett meddelande till regelägaren.
-              if (attendee.responseStatus === targetStatus) continue;
-              if (!createdMs) continue;
-              const deadlineMs = (Number(rule.deadlineMinutes) || 0) * 60_000;
-              if (now.getTime() - createdMs < deadlineMs) continue;
-              await createPendingSend(dedupeKey, {
-                email, ruleId: rule.id, recipientEmail: attendee.email,
-                templateId: rule.action?.templateId || null,
-                inlineEmail: rule.action?.inlineEmail || null,
-                vars,
-                sendAt: now,
-                triggerReason: `${rule.triggerEvent}_negated`
-              });
-            }
-          }
-        }
+      if (ownerResponseRules.length > 0) {
+        await detectInviteResponsesForOwner(email, events, ownerResponseRules, bookingSlug, now);
+      }
+      if (ownerChangeRules.length > 0) {
+        await detectMeetingChangesForOwner(email, events, ownerChangeRules, now);
       }
     } catch (err) {
-      console.error(`[Regler] Kunde inte kolla inbjudningssvar för ${email}:`, err.message);
+      console.error(`[Regler] Kunde inte kolla kalendern för ${email}:`, err.message);
     }
+  }
+}
+
+async function detectInviteResponsesForOwner(email, events, ownerRules, bookingSlug, now) {
+  for (const event of events) {
+    const createdMs = event.created ? new Date(event.created).getTime() : null;
+
+    for (const attendee of event.attendees) {
+      // ✅ Organisatören listas ofta som sin egen deltagare (med
+      // responseStatus "accepted") av Google/Microsoft — utan den här
+      // spärren triggar en accept-regel ett "någon accepterade din
+      // inbjudan"-mail TILL EN SJÄLV för ens egna möten.
+      if (!attendee.email || attendee.email.toLowerCase() === email.toLowerCase()) continue;
+
+      for (const rule of ownerRules) {
+        const targetStatus = rule.triggerEvent === 'invite_accepted' ? 'accepted' : 'declined';
+        const dedupeKey = `${event.id}_${attendee.email.toLowerCase()}_${rule.id}`;
+        const vars = {
+          meetingTitle: event.title,
+          bookingLink: bookingSlug ? `https://www.onebookr.se/boka/${bookingSlug}` : ''
+        };
+
+        if (!rule.negate) {
+          // Positiv trigger: "X har hänt" — skicka direkt eller med ett
+          // tecknat offset ("efter" är det normala för en redan
+          // inträffad händelse).
+          if (attendee.responseStatus !== targetStatus) continue;
+          const offsetMs = (Number(rule.offsetMinutes) || 0) * 60_000;
+          await createPendingSend(dedupeKey, {
+            email, ruleId: rule.id, recipientEmail: attendee.email,
+            templateId: rule.action?.templateId || null,
+            inlineEmail: rule.action?.inlineEmail || null,
+            vars,
+            sendAt: new Date(now.getTime() + offsetMs),
+            triggerReason: rule.triggerEvent
+          });
+        } else {
+          // Negerad trigger: "X har INTE hänt inom N minuter efter att
+          // inbjudan skapades". Skickas till den som INTE svarat — en
+          // nudge, inte ett meddelande till regelägaren.
+          if (attendee.responseStatus === targetStatus) continue;
+          if (!createdMs) continue;
+          const deadlineMs = (Number(rule.deadlineMinutes) || 0) * 60_000;
+          if (now.getTime() - createdMs < deadlineMs) continue;
+          await createPendingSend(dedupeKey, {
+            email, ruleId: rule.id, recipientEmail: attendee.email,
+            templateId: rule.action?.templateId || null,
+            inlineEmail: rule.action?.inlineEmail || null,
+            vars,
+            sendAt: now,
+            triggerReason: `${rule.triggerEvent}_negated`
+          });
+        }
+      }
+    }
+  }
+}
+
+// ✅ TRIGGER 4+5: meeting_cancelled / meeting_rescheduled. Upptäcks via
+// en sparad ögonblicksbild (start/end) per möte — ingen provider ger ett
+// pålitligt, enhetligt "det här avbokades nyss"-facit, men ALLA ger oss
+// den aktuella listan, så en diff mot förra gången vi tittade räcker.
+async function detectMeetingChangesForOwner(email, events, ownerRules, now) {
+  const recipientsFor = (event) => event.attendees
+    .map(a => a.email)
+    .filter(e => e && e.toLowerCase() !== email.toLowerCase());
+
+  const snapshots = await listEventSnapshots(email);
+  const snapshotsById = new Map(snapshots.map(s => [s.eventId, s]));
+  const seenIds = new Set();
+
+  for (const event of events) {
+    seenIds.add(event.id);
+    if (!event.start || !event.end) continue;
+    const previous = snapshotsById.get(event.id);
+
+    if (!previous) {
+      // Första gången vi ser mötet — inget att jämföra mot, bara spara.
+      await setEventSnapshot(email, event.id, { start: event.start, end: event.end, title: event.title, attendees: recipientsFor(event) });
+      continue;
+    }
+
+    if (previous.start !== event.start || previous.end !== event.end) {
+      const rule = ownerRules.find(r => r.triggerEvent === 'meeting_rescheduled');
+      if (rule) {
+        const dedupeKey = `${event.id}_rescheduled_${rule.id}_${event.start}`;
+        const vars = {
+          meetingTitle: event.title,
+          oldTime: describeTime(previous.start),
+          newTime: describeTime(event.start)
+        };
+        for (const recipient of recipientsFor(event)) {
+          await createPendingSend(`${dedupeKey}_${recipient.toLowerCase()}`, {
+            email, ruleId: rule.id, recipientEmail: recipient,
+            templateId: rule.action?.templateId || null,
+            inlineEmail: rule.action?.inlineEmail || null,
+            vars,
+            sendAt: now,
+            triggerReason: 'meeting_rescheduled'
+          });
+        }
+      }
+      await setEventSnapshot(email, event.id, { start: event.start, end: event.end, title: event.title, attendees: recipientsFor(event) });
+    } else {
+      // Oförändrat möte — håll deltagarlistan i snapshoten aktuell (om
+      // någon lades till/togs bort utan att tiden ändrades).
+      await setEventSnapshot(email, event.id, { ...previous, title: event.title, attendees: recipientsFor(event) });
+    }
+  }
+
+  // Möten som fanns i förra ögonblicksbilden men saknas nu, och vars
+  // starttid fortfarande låg i framtiden senast vi såg dem (annars har
+  // de bara naturligt rullat ut ur sökfönstret eftersom de redan hänt).
+  const cancelRule = ownerRules.find(r => r.triggerEvent === 'meeting_cancelled');
+  for (const snap of snapshots) {
+    if (seenIds.has(snap.eventId)) continue;
+    const startMs = snap.start ? new Date(snap.start).getTime() : null;
+    if (!startMs || startMs < now.getTime()) {
+      await deleteEventSnapshot(email, snap.eventId);
+      continue;
+    }
+    if (cancelRule) {
+      const dedupeKey = `${snap.eventId}_cancelled_${cancelRule.id}`;
+      const vars = { meetingTitle: snap.title || 'ett möte', oldTime: describeTime(snap.start) };
+      for (const recipient of (snap.attendees || [])) {
+        await createPendingSend(`${dedupeKey}_${recipient.toLowerCase()}`, {
+          email, ruleId: cancelRule.id, recipientEmail: recipient,
+          templateId: cancelRule.action?.templateId || null,
+          inlineEmail: cancelRule.action?.inlineEmail || null,
+          vars,
+          sendAt: now,
+          triggerReason: 'meeting_cancelled'
+        });
+      }
+    }
+    await deleteEventSnapshot(email, snap.eventId);
   }
 }
 
@@ -272,14 +379,16 @@ export function startRulesScheduler() {
     detectMeetingStarts().catch(err => console.error('[Regler] meeting_starts-körning kraschade:', err));
   });
   schedule.scheduleJob('* * * * *', () => {
-    detectInviteResponses().catch(err => console.error('[Regler] invite-körning kraschade:', err));
+    detectCalendarTriggers().catch(err => console.error('[Regler] Kalender-körning kraschade:', err));
   });
   schedule.scheduleJob('* * * * *', () => {
     flushPendingSends().catch(err => console.error('[Regler] Skicka-körning kraschade:', err));
   });
-  console.log('✅ [Regler] Schemaläggare startad (meeting_starts var 5:e min, invite-koll + skicka var minut)');
+  console.log('✅ [Regler] Schemaläggare startad (meeting_starts var 5:e min, kalenderkoll + skicka var minut)');
 }
 
-// Exporteras bara för "skicka nu"-endpointen i server.js (manuellt skick
-// ska återanvända exakt samma mall-/platshållar-logik, inte duplicera den).
-export { renderRuleEmail };
+// renderRuleEmail exporteras för "skicka nu"-endpointen i server.js
+// (manuellt skick ska återanvända exakt samma mall-/platshållar-logik,
+// inte duplicera den). Resten exporteras för att gå att köra enskilt
+// vid felsökning/verifiering, utan att behöva starta hela cron-loopen.
+export { renderRuleEmail, detectMeetingStarts, detectCalendarTriggers, flushPendingSends };

@@ -35,8 +35,11 @@ const PLACEHOLDER_HELP = 'Platshållare: {{taskName}}, {{meetingTime}}, {{meetin
 const TRIGGER_LABELS = {
   meeting_starts: 'mötet börjar',
   invite_accepted: 'någon accepterar inbjudan',
-  invite_declined: 'någon nekar inbjudan'
+  invite_declined: 'någon nekar inbjudan',
+  meeting_cancelled: 'jag avbokar ett möte',
+  meeting_rescheduled: 'jag flyttar ett möte'
 };
+const NEGATABLE_TRIGGERS = ['invite_accepted', 'invite_declined'];
 
 function describeRule(r) {
   const trigger = TRIGGER_LABELS[r.triggerEvent] || r.triggerEvent;
@@ -261,8 +264,10 @@ export default function Rules({ user, onNavigateBack }) {
                       <MenuItem value="meeting_starts">Mötet börjar (Task Manager-pass)</MenuItem>
                       <MenuItem value="invite_accepted">Någon accepterar inbjudan</MenuItem>
                       <MenuItem value="invite_declined">Någon nekar inbjudan</MenuItem>
+                      <MenuItem value="meeting_cancelled">Jag avbokar ett möte</MenuItem>
+                      <MenuItem value="meeting_rescheduled">Jag flyttar ett möte</MenuItem>
                     </TextField>
-                    {ruleForm.triggerEvent !== 'meeting_starts' && (
+                    {NEGATABLE_TRIGGERS.includes(ruleForm.triggerEvent) && (
                       <TextField
                         select value={ruleForm.negate ? 'not' : 'yes'}
                         onChange={e => setRuleForm({ ...ruleForm, negate: e.target.value === 'not' })}
@@ -280,7 +285,11 @@ export default function Rules({ user, onNavigateBack }) {
                     {templates.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
                   </TextField>
 
-                  {!ruleForm.negate ? (
+                  {['meeting_cancelled', 'meeting_rescheduled'].includes(ruleForm.triggerEvent) ? (
+                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
+                      Skickas direkt till mötets deltagare när BookR upptäcker det (inom en minut).
+                    </Typography>
+                  ) : !ruleForm.negate ? (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <TextField
                         label="Minuter" type="number"

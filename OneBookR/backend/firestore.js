@@ -1251,6 +1251,78 @@ async function listRuleSendLog(email, limit = 50) {
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+// ===== EVENT SNAPSHOTS (meeting_cancelled / meeting_rescheduled) =====
+// Nästlad per användare — slås ALDRIG upp tvärs över användare (bara
+// per ägare, som getTemplate/getRule), så inget collectionGroup-index-
+// problem här.
+function eventSnapshotsCollection(email) {
+  return getDb().collection('users').doc(email.toLowerCase().trim()).collection('eventSnapshots');
+}
+
+async function getEventSnapshot(email, eventId) {
+  const docSnap = await eventSnapshotsCollection(email).doc(eventId).get();
+  return docSnap.exists ? docSnap.data() : null;
+}
+
+async function listEventSnapshots(email) {
+  const snap = await eventSnapshotsCollection(email).get();
+  return snap.docs.map(doc => ({ eventId: doc.id, ...doc.data() }));
+}
+
+async function setEventSnapshot(email, eventId, data) {
+  await eventSnapshotsCollection(email).doc(eventId).set(data);
+}
+
+async function deleteEventSnapshot(email, eventId) {
+  await eventSnapshotsCollection(email).doc(eventId).delete();
+}
+
+// ===== RÖSTASSISTENT (text/röststyrda kommandon) =====
+async function getVoiceAutoExecute(email) {
+  const docSnap = await getDb().collection('users').doc(email.toLowerCase().trim()).get();
+  return docSnap.exists ? Boolean(docSnap.data().voiceAutoExecute) : false;
+}
+
+async function setVoiceAutoExecute(email, value) {
+  await getDb().collection('users').doc(email.toLowerCase().trim()).set({ voiceAutoExecute: Boolean(value) }, { merge: true });
+}
+
+function pendingVoiceActionsCollection(email) {
+  return getDb().collection('users').doc(email.toLowerCase().trim()).collection('pendingVoiceActions');
+}
+
+async function createPendingVoiceAction(email, data) {
+  const docRef = await pendingVoiceActionsCollection(email).add({
+    ...data,
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return docRef.id;
+}
+
+async function getPendingVoiceAction(email, id) {
+  const docSnap = await pendingVoiceActionsCollection(email).doc(id).get();
+  return docSnap.exists ? { id: docSnap.id, ...docSnap.data() } : null;
+}
+
+async function deletePendingVoiceAction(email, id) {
+  await pendingVoiceActionsCollection(email).doc(id).delete();
+}
+
+async function appendVoiceCommandLog(email, entry) {
+  await getDb().collection('users').doc(email.toLowerCase().trim()).collection('voiceCommandLog').add({
+    ...entry,
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function listVoiceCommandLog(email, limit = 50) {
+  const snap = await getDb().collection('users').doc(email.toLowerCase().trim()).collection('voiceCommandLog')
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
 // ✅ EXPORT ALL FUNCTIONS - ENDAST EN GÅNG!
 export {
   // Waitlist
@@ -1384,5 +1456,20 @@ export {
   listDuePendingSends,
   markPendingSendResult,
   appendRuleSendLog,
-  listRuleSendLog
+  listRuleSendLog,
+
+  // Event snapshots (meeting_cancelled / meeting_rescheduled)
+  getEventSnapshot,
+  listEventSnapshots,
+  setEventSnapshot,
+  deleteEventSnapshot,
+
+  // Röstassistent
+  getVoiceAutoExecute,
+  setVoiceAutoExecute,
+  createPendingVoiceAction,
+  getPendingVoiceAction,
+  deletePendingVoiceAction,
+  appendVoiceCommandLog,
+  listVoiceCommandLog
 };

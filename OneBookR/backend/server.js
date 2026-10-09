@@ -2604,12 +2604,17 @@ app.post('/api/rules', rulesLimiter, async (req, res) => {
   if (!(await requireRulesEnabled(email, res))) return;
 
   const { triggerEvent, negate, offsetMinutes, deadlineMinutes, templateId, inlineEmail, enabled } = req.body || {};
-  if (!['meeting_starts', 'invite_accepted', 'invite_declined'].includes(triggerEvent)) {
+  const CALENDAR_WATCH_TRIGGERS = ['invite_accepted', 'invite_declined', 'meeting_cancelled', 'meeting_rescheduled'];
+  if (!['meeting_starts', ...CALENDAR_WATCH_TRIGGERS].includes(triggerEvent)) {
     return res.status(400).json({ error: 'Okänd trigger', code: 'INVALID_TRIGGER' });
   }
   if (!templateId && !inlineEmail) {
     return res.status(400).json({ error: 'Regeln behöver en mall eller ett engångsmail', code: 'MISSING_EMAIL_SOURCE' });
   }
+  // ✅ negate/offset/deadline är bara meningsfullt för meeting_starts och
+  // invite_accepted/invite_declined — meeting_cancelled/rescheduled
+  // skickas alltid direkt vid upptäckt ("mötet flyttas INTE" är inte en
+  // begriplig regel).
   if (negate && !(Number(deadlineMinutes) > 0)) {
     return res.status(400).json({ error: 'Ange inom hur många minuter', code: 'MISSING_DEADLINE' });
   }
@@ -2618,9 +2623,9 @@ app.post('/api/rules', rulesLimiter, async (req, res) => {
   }
 
   try {
-    // ✅ invite_accepted/invite_declined bevakar HELA kalendern (Task
-    // Manager-pass har aldrig deltagare) — kräver Direktåtkomst.
-    if (triggerEvent === 'invite_accepted' || triggerEvent === 'invite_declined') {
+    // ✅ Alla fyra kalenderbevakande triggers kräver Direktåtkomst (Task
+    // Manager-pass har aldrig deltagare, så bara de kan aldrig räcka).
+    if (CALENDAR_WATCH_TRIGGERS.includes(triggerEvent)) {
       const myToken = await getStoredDirectAccessToken(email);
       if (!myToken) {
         return res.status(409).json({ error: 'Koppla din kalender för direktåtkomst först', code: 'NEEDS_CALENDAR_LINK' });
