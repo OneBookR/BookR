@@ -183,11 +183,17 @@ async function callClaude(command, todayISO) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY saknas — lägg till den i miljövariablerna för att aktivera kommandoassistenten.');
   }
-  const systemPrompt = `Du tolkar svenska röst-/textkommandon om kalenderhantering till EXAKT ett verktygsanrop.
+  const systemPrompt = `Du tolkar svenska röst-/textkommandon om kalenderhantering.
 Idag är ${todayISO} (Europe/Stockholm). Måndag räknas som veckans första dag.
 "Idag" = ${todayISO}. Räkna ut övriga datum (imorgon, nästa vecka, etc.) relativt detta.
-Välj alltid det verktyg som bäst matchar vad användaren bad om. Gissa aldrig en mejladress — använd personens namn exakt som sagt i with_person_query/to_person_query, systemet slår upp rätt mejl separat.`;
+Använd ALLTID ett av de fyra verktygen om kommandot alls kan tolkas som en kalenderhandling eller -fråga — svara bara med vanlig text om kommandot är helt orelaterat eller för otydligt för att ens gissa. Gissa aldrig en mejladress — använd personens namn exakt som sagt i with_person_query/to_person_query, systemet slår upp rätt mejl separat.`;
 
+  // ✅ tool_choice: {type:'any'/'tool'} stöds inte av alla modellversioner
+  // ("tool_choice: type \"tool\" and \"any\" are not supported for this
+  // model") — 'auto' (default, ingen tool_choice alls) fungerar överallt,
+  // men betyder att Claude ibland svarar med ren text istället för ett
+  // verktygsanrop. Det hanteras nedan istället för att anta att det
+  // alltid blir ett verktygsanrop.
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -200,14 +206,16 @@ Välj alltid det verktyg som bäst matchar vad användaren bad om. Gissa aldrig 
       max_tokens: 1024,
       system: systemPrompt,
       messages: [{ role: 'user', content: command }],
-      tools: TOOLS,
-      tool_choice: { type: 'any' }
+      tools: TOOLS
     })
   });
   if (!res.ok) throw new Error(`Claude API ${res.status}: ${await res.text()}`);
   const data = await res.json();
   const toolUse = (data.content || []).find(block => block.type === 'tool_use');
-  if (!toolUse) throw new Error('Kunde inte tolka kommandot som en åtgärd.');
+  if (!toolUse) {
+    const textBlock = (data.content || []).find(block => block.type === 'text');
+    return { textResponse: textBlock?.text || 'Kunde inte tolka kommandot som en åtgärd.' };
+  }
   return { name: toolUse.name, input: toolUse.input || {} };
 }
 
@@ -338,7 +346,11 @@ async function interpretCommand(command, { accessToken, provider }) {
   // en-CA ger garanterat YYYY-MM-DD, oavsett körmiljöns default-locale.
   const todayISO = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Stockholm' });
 
-  const { name, input } = await callClaude(command, todayISO);
+  const claudeResult = await callClaude(command, todayISO);
+  if (claudeResult.textResponse) {
+    return { error: claudeResult.textResponse };
+  }
+  const { name, input } = claudeResult;
   const planned = await planAction(name, input, events, provider);
   return { toolName: name, ...planned };
 }
