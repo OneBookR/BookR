@@ -43,7 +43,7 @@ import { upsertHubspotContact } from './hubspot.js';
 import { isBillingConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretSubscription, emailForSubscription } from './billing.js';
 import { limitsForPlan } from './plans.js';
 import { startRulesScheduler, renderRuleEmail } from './rulesScheduler.js';
-import { interpretCommand, executeAction } from './voiceAssistant.js';
+import { interpretCommand, executeActions } from './voiceAssistant.js';
 
 // ===== APPLICATION SETUP =====
 const app = express();
@@ -2768,9 +2768,24 @@ app.post('/api/voice/command', voiceLimiter, async (req, res) => {
 
   const command = String(req.body?.command || '').trim();
   if (!command) return res.status(400).json({ error: 'Inget kommando angavs', code: 'MISSING_COMMAND' });
+  // ✅ Kontakter kommer från frontendens lokala adressbok (ingen
+  // server-side kontaktlista med namn finns, se voiceAssistant.js) —
+  // bara { name, email }-par godtas, allt annat ignoreras tyst.
+  const contacts = Array.isArray(req.body?.contacts)
+    ? req.body.contacts.filter(c => c && typeof c.email === 'string').map(c => ({ name: String(c.name || ''), email: c.email }))
+    : [];
 
   try {
-    const parsed = await interpretCommand(command, { accessToken: req.user.accessToken, provider: req.user.provider || 'google' });
+    const directAccessLinks = await listDirectAccessLinksFor(email);
+    const directAccessEmails = directAccessLinks.map(l => l.withEmail).filter(Boolean);
+
+    const parsed = await interpretCommand(command, {
+      accessToken: req.user.accessToken,
+      provider: req.user.provider || 'google',
+      ownerEmail: email,
+      directAccessEmails,
+      contacts
+    });
 
     if (parsed.error) {
       await appendVoiceCommandLog(email, { command, status: 'error', message: parsed.error });
@@ -2784,12 +2799,12 @@ app.post('/api/voice/command', voiceLimiter, async (req, res) => {
 
     const autoExecute = await getVoiceAutoExecute(email);
     if (autoExecute) {
-      const result = await executeAction(parsed.action, { accessToken: req.user.accessToken });
+      const result = await executeActions(parsed.actions, { accessToken: req.user.accessToken });
       await appendVoiceCommandLog(email, { command, status: 'executed', message: result });
       return res.json({ executed: true, result });
     }
 
-    const pendingActionId = await createPendingVoiceAction(email, { command, action: parsed.action, preview: parsed.preview });
+    const pendingActionId = await createPendingVoiceAction(email, { command, actions: parsed.actions, preview: parsed.preview });
     await appendVoiceCommandLog(email, { command, status: 'pending_confirmation', message: parsed.preview });
     res.json({ needsConfirmation: true, preview: parsed.preview, pendingActionId });
   } catch (err) {
@@ -2807,7 +2822,7 @@ app.post('/api/voice/confirm/:id', voiceLimiter, async (req, res) => {
     const pending = await getPendingVoiceAction(email, req.params.id);
     if (!pending) return res.status(404).json({ error: 'Åtgärden hittades inte eller har förfallit', code: 'PENDING_ACTION_NOT_FOUND' });
 
-    const result = await executeAction(pending.action, { accessToken: req.user.accessToken });
+    const result = await executeActions(pending.actions, { accessToken: req.user.accessToken });
     await deletePendingVoiceAction(email, req.params.id);
     await appendVoiceCommandLog(email, { command: pending.command, status: 'executed', message: result });
     res.json({ executed: true, result });

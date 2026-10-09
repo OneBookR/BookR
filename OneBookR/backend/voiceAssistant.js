@@ -1,6 +1,7 @@
 // ✅ RÖSTASSISTENT — text/röststyrda kommandon ("Avboka alla möten
-// idag", "Boka om mötet med Peter till nästa vecka", "Skicka ett mail
-// till Anders att jag blir 5 min sen", "Vilka har jag möte med idag?").
+// idag", "Boka om mötet med Valdemar till nästa vecka", "Skicka ett
+// mail till Anders att jag blir 5 min sen", "Vilka har jag möte med
+// idag?").
 //
 // Helt självförsörjande modul, egen Resend-klient och egna kalender-
 // mutationer — importerar INTE från server.js (server.js är
@@ -9,11 +10,22 @@
 // Återanvänder bara den redan existerande, testade
 // `fetchOrganizedMeetingsWithAttendees` från rulesScheduler.js.
 //
+// ✅ Entitetsuppslagning ("vem är Valdemar?") görs INTE längre av egen
+// kod som fuzzy-matchar en namnsträng — Claude får själv all kontext
+// (kontakter, direktåtkomst, kalenderdeltagare) och resolvar till en
+// riktig mejladress direkt i sitt verktygsanrop. Det matchar bättre hur
+// man faktiskt pratar med en assistent: den ska "veta" vilka man menar,
+// inte kräva en exakt sträng-match i efterhand. Ett sista
+// sundhetskontroll-steg (knownEmails) vägrar ändå agera på en mejladress
+// som inte fanns någonstans i kontexten den fick — annars kunde en
+// hallucinerad adress smyga sig igenom.
+//
 // Körs ALLTID med den inloggade sessionens egna token
 // (req.user.accessToken), aldrig Direktåtkomst — det här är alltid en
 // live, inloggad handling, aldrig ett bakgrundsjobb.
 import { Resend } from 'resend';
 import { fetchOrganizedMeetingsWithAttendees } from './rulesScheduler.js';
+import { getUserBookingPageSlug } from './firestore.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = 'BookR <noreply@onebookr.se>';
@@ -29,7 +41,7 @@ const TOOLS = [
       properties: {
         date_from: { type: 'string', description: 'Första datum, format YYYY-MM-DD.' },
         date_to: { type: 'string', description: 'Sista datum (samma som date_from för en enda dag), format YYYY-MM-DD.' },
-        with_person_query: { type: 'string', description: 'Namn eller mejl på en specifik deltagare att filtrera på, om nämnt i kommandot. Utelämna annars helt.' }
+        with_person_email: { type: 'string', description: 'Mejladressen till en specifik deltagare att filtrera på, om en person nämndes — slå upp mot personlistan i kontexten. Utelämna annars helt.' }
       },
       required: ['date_from', 'date_to']
     }
@@ -40,12 +52,12 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        with_person_query: { type: 'string', description: 'Namn eller mejl på personen mötet är med.' },
+        with_person_email: { type: 'string', description: 'Mejladressen till personen mötet är med — slå upp mot personlistan i kontexten.' },
         meeting_date: { type: 'string', description: 'Vilket datum mötet som ska flyttas ligger på, format YYYY-MM-DD.' },
         target_date_from: { type: 'string', description: 'Start för perioden att hitta en ny tid inom, format YYYY-MM-DD.' },
         target_date_to: { type: 'string', description: 'Slut för perioden att hitta en ny tid inom, format YYYY-MM-DD.' }
       },
-      required: ['with_person_query', 'meeting_date', 'target_date_from', 'target_date_to']
+      required: ['with_person_email', 'meeting_date', 'target_date_from', 'target_date_to']
     }
   },
   {
@@ -54,10 +66,22 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        to_person_query: { type: 'string', description: 'Namn eller mejl på mottagaren.' },
+        to_person_email: { type: 'string', description: 'Mejladressen till mottagaren — slå upp mot personlistan i kontexten.' },
         message: { type: 'string', description: 'Ett naturligt formulerat meddelande på svenska som uttrycker vad användaren bad om att förmedla.' }
       },
-      required: ['to_person_query', 'message']
+      required: ['to_person_email', 'message']
+    }
+  },
+  {
+    name: 'share_booking_link',
+    description: 'Skickar användarens egen bokningssidelänk till någon. Använd när det INTE finns ett befintligt möte att utgå från (personen har t.ex. ingen kommande tid bokad), eller när användaren uttryckligen ber om att skicka en (ny) länk istället för att boka om direkt.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        to_person_email: { type: 'string', description: 'Mejladressen till mottagaren — slå upp mot personlistan i kontexten.' },
+        note: { type: 'string', description: 'Ett kort, valfritt medskickat meddelande på svenska. Utelämna om inget särskilt sades.' }
+      },
+      required: ['to_person_email']
     }
   },
   {
@@ -68,7 +92,7 @@ const TOOLS = [
       properties: {
         date_from: { type: 'string', description: 'Start på perioden frågan gäller, format YYYY-MM-DD.' },
         date_to: { type: 'string', description: 'Slut på perioden frågan gäller, format YYYY-MM-DD.' },
-        with_person_query: { type: 'string', description: 'Filtrera på en specifik person, om nämnt.' }
+        with_person_email: { type: 'string', description: 'Filtrera på en specifik person, om nämnd — slå upp mot personlistan i kontexten.' }
       },
       required: ['date_from', 'date_to']
     }
@@ -134,9 +158,7 @@ async function updateCalendarEventTime({ accessToken, provider, eventId, start, 
   const url = provider === 'microsoft'
     ? `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`
     : `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
-  const body = provider === 'microsoft'
-    ? { start: { dateTime: start, timeZone: 'Europe/Stockholm' }, end: { dateTime: end, timeZone: 'Europe/Stockholm' } }
-    : { start: { dateTime: start, timeZone: 'Europe/Stockholm' }, end: { dateTime: end, timeZone: 'Europe/Stockholm' } };
+  const body = { start: { dateTime: start, timeZone: 'Europe/Stockholm' }, end: { dateTime: end, timeZone: 'Europe/Stockholm' } };
   const res = await fetch(url, { method: 'PATCH', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
 }
@@ -153,40 +175,74 @@ async function sendPlainEmail(to, subject, body) {
   await resend.emails.send({ from: FROM_EMAIL, to: [to], subject, html: body.replace(/\n/g, '<br>'), text: body });
 }
 
-// ===== ENTITETSUPPSLAGNING ("Peter" -> mejladress) =====
-// Slår BARA upp mot deltagare i användarens egna kommande organiserade
-// möten — ingen kontaktlista finns server-side (se plan-filen).
-function resolvePerson(query, events) {
-  if (!query) return [];
-  const q = query.toLowerCase().trim();
+// ===== KONTEXT ÅT CLAUDE: vilka personer känner BookR till? =====
+// Tre källor, alla märkta så Claude vet VARFÖR den känner till någon:
+// 1. Kontakter (namn+mejl) — skickas med av frontend från dess lokala
+//    adressbok (bookr_team_contacts_*), eftersom det inte finns någon
+//    server-side kontaktlista med namn (se plan-filen).
+// 2. Direktåtkomst-länkar (bara mejl, riktig backend-relation) — det
+//    här är poängen användaren påpekade: man kan bara rimligen boka om
+//    med/avboka någon man har en etablerad relation med.
+// 3. Deltagare i kommande möten (mejl + ev. namn från Google/Microsoft).
+function buildContextBlock(events, directAccessEmails, contacts) {
+  const lines = [];
+  const contactEmails = new Set(contacts.map(c => c.email?.toLowerCase()).filter(Boolean));
+
+  if (contacts.length > 0) {
+    lines.push('Kända kontakter (namn → mejl):');
+    for (const c of contacts) {
+      const tag = contactEmails.has(c.email?.toLowerCase()) && directAccessEmails.includes(c.email.toLowerCase()) ? ' [har direktåtkomst]' : '';
+      lines.push(`- ${c.name || '(okänt namn)'} <${c.email}>${tag}`);
+    }
+  }
+
+  const extraDirectAccess = directAccessEmails.filter(e => !contactEmails.has(e));
+  if (extraDirectAccess.length > 0) {
+    lines.push('Direktåtkomst utan sparat namn:');
+    for (const e of extraDirectAccess) lines.push(`- <${e}> [har direktåtkomst]`);
+  }
+
   const byEmail = new Map();
   for (const event of events) {
     for (const a of event.attendees) {
       if (!a.email) continue;
-      if (!byEmail.has(a.email.toLowerCase())) byEmail.set(a.email.toLowerCase(), a.displayName || '');
+      const key = a.email.toLowerCase();
+      if (!byEmail.has(key)) byEmail.set(key, { displayName: a.displayName, meetings: [] });
+      byEmail.get(key).meetings.push(`${event.title} (${formatStockholmDate(event.start)})`);
     }
   }
-  return [...byEmail.entries()]
-    .filter(([email, name]) => email.includes(q) || (name && name.toLowerCase().includes(q)))
-    .map(([email, name]) => ({ email, name }));
+  if (byEmail.size > 0) {
+    lines.push('Personer i kommande möten:');
+    for (const [email, info] of byEmail) {
+      const namePart = info.displayName ? `${info.displayName} ` : '';
+      lines.push(`- ${namePart}<${email}> — ${info.meetings.slice(0, 3).join(', ')}`);
+    }
+  }
+
+  return lines.length > 0 ? lines.join('\n') : '(Inga kända kontakter, direktåtkomster eller mötesdeltagare hittades.)';
 }
 
-function resolveOrError(query, events) {
-  const matches = resolvePerson(query, events);
-  if (matches.length === 1) return { email: matches[0].email, name: matches[0].name };
-  if (matches.length === 0) return { error: `Hittade ingen i dina kommande möten som matchar "${query}".` };
-  return { error: `Hittade flera som matchar "${query}": ${matches.map(m => m.email).join(', ')} — ange en mejladress istället.` };
+function collectKnownEmails(events, directAccessEmails, contacts) {
+  const set = new Set();
+  for (const c of contacts) if (c.email) set.add(c.email.toLowerCase());
+  for (const e of directAccessEmails) set.add(e.toLowerCase());
+  for (const event of events) for (const a of event.attendees) if (a.email) set.add(a.email.toLowerCase());
+  return set;
 }
 
 // ===== CLAUDE: TOLKA KOMMANDOT =====
-async function callClaude(command, todayISO) {
+async function callClaude(command, todayISO, contextBlock) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY saknas — lägg till den i miljövariablerna för att aktivera kommandoassistenten.');
   }
   const systemPrompt = `Du tolkar svenska röst-/textkommandon om kalenderhantering.
-Idag är ${todayISO} (Europe/Stockholm). Måndag räknas som veckans första dag.
-"Idag" = ${todayISO}. Räkna ut övriga datum (imorgon, nästa vecka, etc.) relativt detta.
-Använd ALLTID ett av de fyra verktygen om kommandot alls kan tolkas som en kalenderhandling eller -fråga — svara bara med vanlig text om kommandot är helt orelaterat eller för otydligt för att ens gissa. Gissa aldrig en mejladress — använd personens namn exakt som sagt i with_person_query/to_person_query, systemet slår upp rätt mejl separat.`;
+Idag är ${todayISO} (Europe/Stockholm). Måndag räknas som veckans första dag. Räkna ut övriga datum (imorgon, nästa vecka, etc.) relativt detta.
+
+${contextBlock}
+
+Använd personlistan ovan för att slå upp vem användaren menar (with_person_email/to_person_email) — matcha mot namn, smeknamn eller mejl. Använd BARA mejladresser som faktiskt finns i listan. Om du inte kan avgöra en entydig person utifrån listan, eller om personen inte finns där alls, svara med vanlig text och fråga om förtydligande — gissa aldrig en mejladress som inte står i listan.
+Om kommandot ber om flera saker (t.ex. "avboka mötet med X och skicka en ny länk"), anropa flera verktyg i samma svar — ett per deluppgift.
+Använd alltid något av verktygen när kommandot kan tolkas som en kalenderhandling eller -fråga.`;
 
   // ✅ tool_choice: {type:'any'/'tool'} stöds inte av alla modellversioner
   // ("tool_choice: type \"tool\" and \"any\" are not supported for this
@@ -211,27 +267,32 @@ Använd ALLTID ett av de fyra verktygen om kommandot alls kan tolkas som en kale
   });
   if (!res.ok) throw new Error(`Claude API ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  const toolUse = (data.content || []).find(block => block.type === 'tool_use');
-  if (!toolUse) {
+  const toolUses = (data.content || []).filter(block => block.type === 'tool_use');
+  if (toolUses.length === 0) {
     const textBlock = (data.content || []).find(block => block.type === 'text');
     return { textResponse: textBlock?.text || 'Kunde inte tolka kommandot som en åtgärd.' };
   }
-  return { name: toolUse.name, input: toolUse.input || {} };
+  return { toolCalls: toolUses.map(t => ({ name: t.name, input: t.input || {} })) };
 }
 
-// ===== BYGG FÖRHANDSGRANSKNING + ÅTGÄRD =====
-// Returnerar antingen { error } (visas direkt, inget att bekräfta/utföra),
-// { readOnly: true, result } (query_meetings — utförs alltid direkt), eller
-// { preview, action } (en åtgärd som väntar på bekräftelse/utförande).
-async function planAction(toolName, input, events, provider) {
+// ===== BYGG FÖRHANDSGRANSKNING + ÅTGÄRD FÖR ETT VERKTYGSANROP =====
+// Returnerar antingen { error }, { readOnly: true, result } (query_meetings
+// — utförs alltid direkt), eller { preview, action }.
+async function planAction(toolName, input, events, provider, knownEmails, ownerEmail) {
+  const checkKnown = (email, label) => {
+    if (!email) return `Ingen mejladress angavs för ${label}.`;
+    if (!knownEmails.has(email.toLowerCase())) return `Känner inte igen "${email}" som en kontakt, direktåtkomst eller mötesdeltagare — be om ett förtydligande.`;
+    return null;
+  };
+
   if (toolName === 'query_meetings') {
     const from = new Date(input.date_from);
     const to = new Date(input.date_to + 'T23:59:59');
     let matches = events.filter(e => e.start && new Date(e.start) >= from && new Date(e.start) <= to);
-    if (input.with_person_query) {
-      const person = resolveOrError(input.with_person_query, events);
-      if (person.error) return { error: person.error };
-      matches = matches.filter(e => e.attendees.some(a => a.email?.toLowerCase() === person.email));
+    if (input.with_person_email) {
+      const err = checkKnown(input.with_person_email, 'personen');
+      if (err) return { error: err };
+      matches = matches.filter(e => e.attendees.some(a => a.email?.toLowerCase() === input.with_person_email.toLowerCase()));
     }
     if (matches.length === 0) return { readOnly: true, result: 'Du har inga möten i den perioden.' };
     const lines = matches
@@ -244,73 +305,72 @@ async function planAction(toolName, input, events, provider) {
     const from = new Date(input.date_from);
     const to = new Date(input.date_to + 'T23:59:59');
     let matches = events.filter(e => e.start && new Date(e.start) >= from && new Date(e.start) <= to);
-    if (input.with_person_query) {
-      const person = resolveOrError(input.with_person_query, events);
-      if (person.error) return { error: person.error };
-      matches = matches.filter(e => e.attendees.some(a => a.email?.toLowerCase() === person.email));
+    if (input.with_person_email) {
+      const err = checkKnown(input.with_person_email, 'personen');
+      if (err) return { error: err };
+      matches = matches.filter(e => e.attendees.some(a => a.email?.toLowerCase() === input.with_person_email.toLowerCase()));
     }
     if (matches.length === 0) return { error: 'Hittade inga möten som matchar det.' };
     const preview = `Avbokar ${matches.length} möte(n):\n${matches.map(e => `• ${e.title} — ${formatStockholmDate(e.start)} kl ${formatStockholmTime(e.start).split(' ').pop()}`).join('\n')}`;
     return {
       preview,
-      action: {
-        type: 'cancel_meetings',
-        provider,
-        eventIds: matches.map(e => e.id),
-        summary: `Avbokade ${matches.length} möte(n).`
-      }
+      action: { type: 'cancel_meetings', provider, eventIds: matches.map(e => e.id), summary: `Avbokade ${matches.length} möte(n).` }
     };
   }
 
   if (toolName === 'reschedule_meeting') {
-    const person = resolveOrError(input.with_person_query, events);
-    if (person.error) return { error: person.error };
+    const err = checkKnown(input.with_person_email, 'personen mötet är med');
+    if (err) return { error: err };
+    const personEmail = input.with_person_email.toLowerCase();
+
     const meetingDay = new Date(input.meeting_date);
     const meetingDayEnd = new Date(input.meeting_date + 'T23:59:59');
     const candidates = events.filter(e =>
       e.start && new Date(e.start) >= meetingDay && new Date(e.start) <= meetingDayEnd &&
-      e.attendees.some(a => a.email?.toLowerCase() === person.email)
+      e.attendees.some(a => a.email?.toLowerCase() === personEmail)
     );
-    if (candidates.length === 0) return { error: `Hittade inget möte med ${person.email} den ${input.meeting_date}.` };
+    if (candidates.length === 0) return { error: `Hittade inget möte med ${input.with_person_email} den ${input.meeting_date}.` };
     const meeting = candidates[0];
     const durationMinutes = Math.round((new Date(meeting.end) - new Date(meeting.start)) / 60_000);
 
     const targetFrom = new Date(input.target_date_from);
     const targetTo = new Date(input.target_date_to + 'T23:59:59');
-    const busy = events
-      .filter(e => e.id !== meeting.id && e.start && e.end)
-      .map(e => ({ start: e.start, end: e.end }));
+    const busy = events.filter(e => e.id !== meeting.id && e.start && e.end).map(e => ({ start: e.start, end: e.end }));
     const slot = findNextFreeSlot(busy, durationMinutes, targetFrom, targetTo);
     if (!slot) return { error: `Hittade ingen ledig tid mellan ${input.target_date_from} och ${input.target_date_to}.` };
 
-    const preview = `Flyttar "${meeting.title}" från ${formatStockholmTime(meeting.start)} till ${formatStockholmTime(slot.start)}, och meddelar ${person.email}.`;
+    const preview = `Flyttar "${meeting.title}" från ${formatStockholmTime(meeting.start)} till ${formatStockholmTime(slot.start)}, och meddelar ${input.with_person_email}.`;
     return {
       preview,
       action: {
-        type: 'reschedule_meeting',
-        provider,
-        eventId: meeting.id,
-        title: meeting.title,
-        newStart: slot.start,
-        newEnd: slot.end,
-        attendeeEmail: person.email,
-        summary: `Flyttade "${meeting.title}" till ${formatStockholmTime(slot.start)} och meddelade ${person.email}.`
+        type: 'reschedule_meeting', provider, eventId: meeting.id, title: meeting.title,
+        newStart: slot.start, newEnd: slot.end, attendeeEmail: input.with_person_email,
+        summary: `Flyttade "${meeting.title}" till ${formatStockholmTime(slot.start)} och meddelade ${input.with_person_email}.`
       }
     };
   }
 
   if (toolName === 'send_message') {
-    const person = resolveOrError(input.to_person_query, events);
-    if (person.error) return { error: person.error };
-    const preview = `Skickar mejl till ${person.email}:\n"${input.message}"`;
+    const err = checkKnown(input.to_person_email, 'mottagaren');
+    if (err) return { error: err };
+    const preview = `Skickar mejl till ${input.to_person_email}:\n"${input.message}"`;
     return {
       preview,
-      action: {
-        type: 'send_message',
-        toEmail: person.email,
-        message: input.message,
-        summary: `Mejl skickat till ${person.email}.`
-      }
+      action: { type: 'send_message', toEmail: input.to_person_email, message: input.message, summary: `Mejl skickat till ${input.to_person_email}.` }
+    };
+  }
+
+  if (toolName === 'share_booking_link') {
+    const err = checkKnown(input.to_person_email, 'mottagaren');
+    if (err) return { error: err };
+    const slug = await getUserBookingPageSlug(ownerEmail);
+    if (!slug) return { error: 'Du har ingen bokningssida konfigurerad än — skapa en under "Bokningssida" först.' };
+    const link = `https://www.onebookr.se/boka/${slug}`;
+    const message = `Hej!\n\n${input.note ? input.note + '\n\n' : ''}Boka en tid direkt här: ${link}\n\nMvh`;
+    const preview = `Skickar din bokningslänk till ${input.to_person_email}${input.note ? ` med meddelandet: "${input.note}"` : ''}.`;
+    return {
+      preview,
+      action: { type: 'send_message', toEmail: input.to_person_email, message, summary: `Bokningslänk skickad till ${input.to_person_email}.` }
     };
   }
 
@@ -337,22 +397,46 @@ async function executeAction(action, { accessToken }) {
   }
 }
 
+async function executeActions(actions, ctx) {
+  const results = [];
+  for (const action of actions) {
+    results.push(await executeAction(action, ctx));
+  }
+  return results.join('\n');
+}
+
 // ===== HUVUDFUNKTION: tolka ett kommando givet kontext =====
-// `contextFetcher` hämtar organisatörens kommande möten — anropas här
-// istället för i server.js så modulen förblir självförsörjande.
-async function interpretCommand(command, { accessToken, provider }) {
+// `directAccessEmails`/`contacts` kommer från server.js (Firestore
+// respektive frontendens lokala adressbok) — se filkommentaren högst
+// upp för varför båda behövs.
+async function interpretCommand(command, { accessToken, provider, ownerEmail, directAccessEmails = [], contacts = [] }) {
   const now = new Date();
   const events = await fetchOrganizedMeetingsWithAttendees(accessToken, provider, now.toISOString(), new Date(now.getTime() + LOOKAHEAD_MS).toISOString());
-  // en-CA ger garanterat YYYY-MM-DD, oavsett körmiljöns default-locale.
-  const todayISO = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Stockholm' });
+  const todayISO = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Stockholm' }); // en-CA ger garanterat YYYY-MM-DD
 
-  const claudeResult = await callClaude(command, todayISO);
+  const contextBlock = buildContextBlock(events, directAccessEmails, contacts);
+  const knownEmails = collectKnownEmails(events, directAccessEmails, contacts);
+
+  const claudeResult = await callClaude(command, todayISO, contextBlock);
   if (claudeResult.textResponse) {
     return { error: claudeResult.textResponse };
   }
-  const { name, input } = claudeResult;
-  const planned = await planAction(name, input, events, provider);
-  return { toolName: name, ...planned };
+
+  const planned = [];
+  for (const call of claudeResult.toolCalls) {
+    const result = await planAction(call.name, call.input, events, provider, knownEmails, ownerEmail);
+    if (result.error) return { error: result.error };
+    planned.push(result);
+  }
+
+  if (planned.every(p => p.readOnly)) {
+    return { readOnly: true, result: planned.map(p => p.result).join('\n\n') };
+  }
+
+  return {
+    preview: planned.map(p => p.preview).filter(Boolean).join('\n\n'),
+    actions: planned.filter(p => p.action).map(p => p.action)
+  };
 }
 
-export { interpretCommand, executeAction };
+export { interpretCommand, executeActions };

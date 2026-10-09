@@ -103,7 +103,17 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
     setLastResult('');
     setPending(null);
     try {
-      const res = await apiRequest('/api/voice/command', { method: 'POST', body: JSON.stringify({ command }) });
+      // ✅ Kontakter (namn+mejl) finns bara i webbläsarens lokala
+      // adressbok (samma som Team.jsx använder) — backend har ingen
+      // server-side kontaktlista med namn, så vi skickar med den här.
+      let contacts = [];
+      try {
+        contacts = JSON.parse(localStorage.getItem(`bookr_team_contacts_${user?.email}`) || '[]')
+          .filter(c => c?.email)
+          .map(c => ({ name: c.name || '', email: c.email }));
+      } catch { /* korrupt localStorage — strunta i kontakterna, inte kritiskt */ }
+
+      const res = await apiRequest('/api/voice/command', { method: 'POST', body: JSON.stringify({ command, contacts }) });
       const data = await res.json().catch(() => ({}));
       if (data.error) {
         setLastResult(data.error);
