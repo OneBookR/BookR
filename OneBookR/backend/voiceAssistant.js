@@ -20,12 +20,16 @@
 // som inte fanns någonstans i kontexten den fick — annars kunde en
 // hallucinerad adress smyga sig igenom.
 //
-// Körs ALLTID med den inloggade sessionens egna token
-// (req.user.accessToken), aldrig Direktåtkomst — det här är alltid en
-// live, inloggad handling, aldrig ett bakgrundsjobb.
+// Den inloggade ägarens EGNA handlingar (avboka/boka om/mejla) körs
+// alltid med sessionens egna token (req.user.accessToken), aldrig
+// Direktåtkomst. Undantag: book_meeting kan DESSUTOM slå upp en annan
+// persons Direktåtkomst-token (bara om ett `direct_access_links`-par
+// redan finns — se checken i server.js) för att hitta en tid som
+// passar BÅDA, inte bara ägaren.
 import { Resend } from 'resend';
 import { fetchOrganizedMeetingsWithAttendees } from './rulesScheduler.js';
 import { getUserBookingPageSlug } from './firestore.js';
+import { getDirectAccessToken } from './token-refresh.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = 'BookR <noreply@onebookr.se>';
@@ -47,8 +51,23 @@ const TOOLS = [
     }
   },
   {
+    name: 'book_meeting',
+    description: 'Bokar ett HELT NYTT möte med någon som inte redan har ett befintligt möte att utgå från. Skiljer sig från reschedule_meeting (flyttar ett BEFINTLIGT möte) och från share_booking_link (skickar bara en länk, bokar inget direkt). Använd det här som förstahandsval när användaren ber om att boka/sätta upp/ordna ett möte med en känd person — oavsett om personen har Direktåtkomst eller inte.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        with_person_email: { type: 'string', description: 'Mejladressen till personen att boka med — slå upp mot personlistan i kontexten.' },
+        date_from: { type: 'string', description: 'Start för perioden att hitta en ledig tid inom, format YYYY-MM-DD.' },
+        date_to: { type: 'string', description: 'Slut för perioden att hitta en ledig tid inom, format YYYY-MM-DD.' },
+        duration_minutes: { type: 'integer', description: 'Mötets längd i minuter. Anta 30 om inget sägs.' },
+        title: { type: 'string', description: 'Ett kort, naturligt mötesnamn. Anta "Möte" om inget särskilt sägs.' }
+      },
+      required: ['with_person_email', 'date_from', 'date_to']
+    }
+  },
+  {
     name: 'reschedule_meeting',
-    description: 'Flyttar ETT möte (identifierat via person + datum) till nästa lediga tid inom en ny period.',
+    description: 'Flyttar ETT redan befintligt möte (identifierat via person + datum) till nästa lediga tid inom en ny period.',
     input_schema: {
       type: 'object',
       properties: {
@@ -74,7 +93,7 @@ const TOOLS = [
   },
   {
     name: 'share_booking_link',
-    description: 'Skickar användarens egen bokningssidelänk till någon. Använd när det INTE finns ett befintligt möte att utgå från (personen har t.ex. ingen kommande tid bokad), eller när användaren uttryckligen ber om att skicka en (ny) länk istället för att boka om direkt.',
+    description: 'Skickar bara användarens bokningssidelänk till någon — bokar INGET möte direkt. Använd BARA när användaren uttryckligen ber om att skicka en länk/be personen boka själv. Be INTE om en länk av dig själv bara för att en person saknar ett befintligt möte eller Direktåtkomst — använd book_meeting för att faktiskt boka åt dem istället.',
     input_schema: {
       type: 'object',
       properties: {
@@ -154,6 +173,40 @@ function findNextFreeSlot(busyBlocks, durationMinutes, searchFrom, searchUntil) 
 }
 
 // ===== KALENDERMUTATIONER (egna, enkla kopior — se filkommentaren) =====
+// Bokar ett nytt möte och bjuder in personen som deltagare — fungerar
+// OAVSETT om BookR kan läsa personens kalender eller inte (precis som en
+// vanlig kalenderinbjudan alltid går att skicka utan att behöva läsa
+// mottagarens kalender först). sendUpdates=all/Graphs standardbeteende
+// ser till att personen faktiskt får en riktig kalenderinbjudan.
+async function createCalendarEventWithAttendee({ accessToken, provider, title, start, end, attendeeEmail }) {
+  if (provider === 'microsoft') {
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: title,
+        start: { dateTime: start, timeZone: 'Europe/Stockholm' },
+        end: { dateTime: end, timeZone: 'Europe/Stockholm' },
+        attendees: [{ emailAddress: { address: attendeeEmail }, type: 'required' }]
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    return { eventId: (await res.json()).id };
+  }
+  const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      summary: title,
+      start: { dateTime: start, timeZone: 'Europe/Stockholm' },
+      end: { dateTime: end, timeZone: 'Europe/Stockholm' },
+      attendees: [{ email: attendeeEmail }]
+    })
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return { eventId: (await res.json()).id };
+}
+
 async function updateCalendarEventTime({ accessToken, provider, eventId, start, end }) {
   const url = provider === 'microsoft'
     ? `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`
@@ -239,7 +292,8 @@ ${contextBlock}
 Använd personlistan ovan för att slå upp vem användaren menar (with_person_email/to_person_email) — matcha mot namn, smeknamn eller mejl. Använd BARA mejladresser som faktiskt finns i listan. Om du inte kan avgöra en entydig person utifrån listan, eller om personen inte finns där alls, svara med vanlig text och fråga om förtydligande — gissa aldrig en mejladress som inte står i listan.
 Det här är en PÅGÅENDE konversation — om du tidigare bad om ett förtydligande (vilken person, vilket möte, vilket datum) så tolkar du användarens nya svar TILLSAMMANS MED det ursprungliga kommandot tidigare i samtalet, inte som ett helt nytt, fristående kommando. Släpp aldrig den ursprungliga avsikten (t.ex. "avboka") bara för att användaren bara svarade med ett namn eller ett datum.
 Om kommandot ber om flera saker (t.ex. "avboka mötet med X och skicka en ny länk"), anropa flera verktyg i samma svar — ett per deluppgift.
-Använd alltid något av verktygen när du har tillräckligt med information — fråga bara om förtydligande när det faktiskt behövs.`;
+Använd alltid något av verktygen när du har tillräckligt med information — fråga bara om förtydligande när det faktiskt behövs.
+När användaren ber om att BOKA/SÄTTA UPP/ORDNA ett möte med någon: använd book_meeting som förstahandsval, ÄVEN om personen saknar Direktåtkomst eller inte har något möte sedan tidigare — book_meeting bokar själv utan att behöva läsa personens kalender (det är bara en bonus om personen råkar ha Direktåtkomst). Föreslå share_booking_link bara om användaren uttryckligen bett om en länk, eller book_meeting uttryckligen misslyckats.`;
 }
 
 // ===== CLAUDE: TOLKA KOMMANDOT =====
@@ -285,7 +339,7 @@ async function callClaude(messages, systemPrompt) {
 // ===== BYGG FÖRHANDSGRANSKNING + ÅTGÄRD FÖR ETT VERKTYGSANROP =====
 // Returnerar antingen { error }, { readOnly: true, result } (query_meetings
 // — utförs alltid direkt), eller { preview, action }.
-async function planAction(toolName, input, events, provider, knownEmails, ownerEmail) {
+async function planAction(toolName, input, events, provider, knownEmails, ownerEmail, directAccessEmailSet) {
   const checkKnown = (email, label) => {
     if (!email) return `Ingen mejladress angavs för ${label}.`;
     if (!knownEmails.has(email.toLowerCase())) return `Känner inte igen "${email}" som en kontakt, direktåtkomst eller mötesdeltagare — be om ett förtydligande.`;
@@ -327,6 +381,52 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
         when: input.date_from === input.date_to ? formatStockholmDate(input.date_from) : `${formatStockholmDate(input.date_from)} – ${formatStockholmDate(input.date_to)}`
       },
       action: { type: 'cancel_meetings', provider, eventIds: matches.map(e => e.id), summary: `Avbokade ${matches.length} möte(n).` }
+    };
+  }
+
+  if (toolName === 'book_meeting') {
+    const err = checkKnown(input.with_person_email, 'personen');
+    if (err) return { error: err };
+    const personEmail = input.with_person_email.toLowerCase();
+    const duration = Number(input.duration_minutes) > 0 ? Number(input.duration_minutes) : 30;
+    const title = input.title || 'Möte';
+
+    const searchFrom = new Date(input.date_from);
+    const searchTo = new Date(input.date_to + 'T23:59:59');
+
+    // Egen upptagen tid (redan hämtad för ägaren).
+    let busy = events.filter(e => e.start && e.end).map(e => ({ start: e.start, end: e.end }));
+
+    // ✅ Bonus, inte krav: har personen Direktåtkomst OCH själv kopplat sin
+    // kalender, kolla ÄVEN mot den så tiden passar båda. Finns ingen sådan
+    // koppling (eller går uppslaget fel) bokar vi ändå — bara mot egen
+    // kalender — precis som en vanlig kalenderinbjudan alltid går att
+    // skicka utan att man kan läsa mottagarens kalender.
+    let usedMutual = false;
+    if (directAccessEmailSet.has(personEmail)) {
+      try {
+        const otherToken = await getDirectAccessToken(personEmail);
+        if (otherToken) {
+          const otherEvents = await fetchOrganizedMeetingsWithAttendees(otherToken.accessToken, otherToken.provider, searchFrom.toISOString(), searchTo.toISOString());
+          busy = busy.concat(otherEvents.filter(e => e.start && e.end).map(e => ({ start: e.start, end: e.end })));
+          usedMutual = true;
+        }
+      } catch (err) {
+        console.error(`[Kommandon] Kunde inte läsa ${personEmail}s kalender, bokar bara mot egen:`, err.message);
+      }
+    }
+
+    const slot = findNextFreeSlot(busy, duration, searchFrom, searchTo);
+    if (!slot) return { error: `Hittade ingen ledig tid mellan ${input.date_from} och ${input.date_to}${usedMutual ? ' som passar er båda' : ''}.` };
+
+    const preview = `Bokar "${title}" med ${input.with_person_email} ${formatStockholmTime(slot.start)}${usedMutual ? ' (kollat mot bådas kalendrar)' : ''}.`;
+    return {
+      preview,
+      card: { what: `Boka "${title}"`, withWhom: input.with_person_email, when: formatStockholmTime(slot.start) },
+      action: {
+        type: 'book_meeting', provider, title, start: slot.start, end: slot.end, attendeeEmail: input.with_person_email,
+        summary: `Bokade "${title}" med ${input.with_person_email} ${formatStockholmTime(slot.start)}.`
+      }
     };
   }
 
@@ -395,6 +495,9 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
 // ===== UTFÖR EN BEKRÄFTAD ÅTGÄRD =====
 async function executeAction(action, { accessToken }) {
   switch (action.type) {
+    case 'book_meeting':
+      await createCalendarEventWithAttendee({ accessToken, provider: action.provider, title: action.title, start: action.start, end: action.end, attendeeEmail: action.attendeeEmail });
+      return action.summary;
     case 'cancel_meetings':
       for (const eventId of action.eventIds) {
         await deleteCalendarEventById({ accessToken, provider: action.provider, eventId });
@@ -431,6 +534,7 @@ async function interpretCommand(command, { accessToken, provider, ownerEmail, di
 
   const contextBlock = buildContextBlock(events, directAccessEmails, contacts);
   const knownEmails = collectKnownEmails(events, directAccessEmails, contacts);
+  const directAccessEmailSet = new Set(directAccessEmails.map(e => e.toLowerCase()));
   const systemPrompt = buildSystemPrompt(todayISO, contextBlock);
 
   // ✅ Hela den pågående konversationen skickas med varje gång — annars
@@ -448,7 +552,7 @@ async function interpretCommand(command, { accessToken, provider, ownerEmail, di
 
   const planned = [];
   for (const call of claudeResult.toolCalls) {
-    const result = await planAction(call.name, call.input, events, provider, knownEmails, ownerEmail);
+    const result = await planAction(call.name, call.input, events, provider, knownEmails, ownerEmail, directAccessEmailSet);
     if (result.error) {
       // Även ett valideringsfel (t.ex. en okänd mejladress) fortsätter
       // samma konversationstråd — användaren ska kunna förtydliga utan
