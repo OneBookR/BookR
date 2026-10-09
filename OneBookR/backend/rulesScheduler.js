@@ -194,7 +194,11 @@ async function detectInviteResponses() {
         const createdMs = event.created ? new Date(event.created).getTime() : null;
 
         for (const attendee of event.attendees) {
-          if (!attendee.email) continue;
+          // ✅ Organisatören listas ofta som sin egen deltagare (med
+          // responseStatus "accepted") av Google/Microsoft — utan den
+          // här spärren triggar en accept-regel ett "någon accepterade
+          // din inbjudan"-mail TILL EN SJÄLV för ens egna möten.
+          if (!attendee.email || attendee.email.toLowerCase() === email.toLowerCase()) continue;
 
           for (const rule of ownerRules) {
             const targetStatus = rule.triggerEvent === 'invite_accepted' ? 'accepted' : 'declined';
