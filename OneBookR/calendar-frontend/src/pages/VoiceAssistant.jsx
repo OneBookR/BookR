@@ -118,7 +118,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
       if (data.error) {
         setLastResult(data.error);
       } else if (data.needsConfirmation) {
-        setPending({ preview: data.preview, pendingActionId: data.pendingActionId });
+        setPending({ preview: data.preview, cards: data.cards, pendingActionId: data.pendingActionId });
       } else if (data.executed) {
         setLastResult(data.result);
         notify('Klart!');
@@ -175,10 +175,29 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
           label="Utför direkt utan bekräftelse (handsfree)"
           sx={{ mb: 2 }}
         />
+
+        {/* ✅ En mall att PRATA UTIFRÅN i ett enda svep — inte tre separata
+            fält man ska fylla i och pausa mellan. Rent visuell guide. */}
+        <Box sx={{
+          display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1, mb: 1.5,
+          p: 1.5, borderRadius: 2.5, bgcolor: 'rgba(17,24,39,0.03)', border: '1px dashed var(--border)'
+        }}>
+          {[
+            { label: 'Vad', hint: 'avboka, boka om, maila, fråga...' },
+            { label: 'Med vem', hint: 'ett namn, eller "alla"' },
+            { label: 'När', hint: 'idag, imorgon, nästa vecka...' }
+          ].map(({ label, hint }) => (
+            <Box key={label}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', display: 'block' }}>{label}</Typography>
+              <Typography variant="caption" sx={{ color: 'var(--text-secondary)', opacity: 0.75 }}>{hint}</Typography>
+            </Box>
+          ))}
+        </Box>
+
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
           <TextField
             fullWidth multiline minRows={2}
-            placeholder="Skriv ett kommando..."
+            placeholder='Säg eller skriv allt i ett svep, t.ex. "Boka om mötet med Valdemar till nästa vecka"'
             value={command}
             onChange={e => setCommand(e.target.value)}
             sx={fieldSx}
@@ -199,8 +218,34 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
 
       {pending && (
         <Paper sx={{ ...pageCardSx, p: 3, mb: 3, border: '1.5px solid var(--text)' }}>
-          <Typography sx={{ fontWeight: 700, mb: 1, color: 'var(--text)' }}>Bekräfta</Typography>
-          <Typography sx={{ whiteSpace: 'pre-line', color: 'var(--text-secondary)', mb: 2 }}>{pending.preview}</Typography>
+          <Typography sx={{ fontWeight: 700, mb: 1.5, color: 'var(--text)' }}>Bekräfta</Typography>
+
+          {pending.cards?.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
+              {pending.cards.map((c, i) => (
+                <Box key={i} sx={{
+                  display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1,
+                  p: 1.5, borderRadius: 2.5, bgcolor: 'rgba(17,24,39,0.03)'
+                }}>
+                  <Box>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', display: 'block' }}>Vad</Typography>
+                    <Typography sx={{ color: 'var(--text)' }}>{c.what}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', display: 'block' }}>Med vem</Typography>
+                    <Typography sx={{ color: 'var(--text)' }}>{c.withWhom}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', display: 'block' }}>När</Typography>
+                    <Typography sx={{ color: 'var(--text)' }}>{c.when}</Typography>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Typography sx={{ whiteSpace: 'pre-line', color: 'var(--text-secondary)', mb: 2 }}>{pending.preview}</Typography>
+          )}
+
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Button onClick={() => setPending(null)} sx={secondaryButtonSx}>Avbryt</Button>
             <Button variant="contained" onClick={confirmPending} disabled={loading} sx={primaryButtonSx}>Bekräfta</Button>

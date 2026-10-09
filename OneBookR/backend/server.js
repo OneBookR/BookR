@@ -2806,7 +2806,7 @@ app.post('/api/voice/command', voiceLimiter, async (req, res) => {
 
     const pendingActionId = await createPendingVoiceAction(email, { command, actions: parsed.actions, preview: parsed.preview });
     await appendVoiceCommandLog(email, { command, status: 'pending_confirmation', message: parsed.preview });
-    res.json({ needsConfirmation: true, preview: parsed.preview, pendingActionId });
+    res.json({ needsConfirmation: true, preview: parsed.preview, cards: parsed.cards, pendingActionId });
   } catch (err) {
     console.error('❌ Kunde inte tolka röstkommandot:', err.message);
     res.status(500).json({ error: err.message || 'Kunde inte tolka kommandot', code: 'VOICE_PARSE_FAILED' });

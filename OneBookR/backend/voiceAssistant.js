@@ -314,6 +314,11 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
     const preview = `Avbokar ${matches.length} möte(n):\n${matches.map(e => `• ${e.title} — ${formatStockholmDate(e.start)} kl ${formatStockholmTime(e.start).split(' ').pop()}`).join('\n')}`;
     return {
       preview,
+      card: {
+        what: `Avboka ${matches.length} möte${matches.length > 1 ? 'n' : ''}`,
+        withWhom: input.with_person_email || matches.map(e => e.title).join(', '),
+        when: input.date_from === input.date_to ? formatStockholmDate(input.date_from) : `${formatStockholmDate(input.date_from)} – ${formatStockholmDate(input.date_to)}`
+      },
       action: { type: 'cancel_meetings', provider, eventIds: matches.map(e => e.id), summary: `Avbokade ${matches.length} möte(n).` }
     };
   }
@@ -342,6 +347,7 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
     const preview = `Flyttar "${meeting.title}" från ${formatStockholmTime(meeting.start)} till ${formatStockholmTime(slot.start)}, och meddelar ${input.with_person_email}.`;
     return {
       preview,
+      card: { what: `Boka om "${meeting.title}"`, withWhom: input.with_person_email, when: `${formatStockholmTime(meeting.start)} → ${formatStockholmTime(slot.start)}` },
       action: {
         type: 'reschedule_meeting', provider, eventId: meeting.id, title: meeting.title,
         newStart: slot.start, newEnd: slot.end, attendeeEmail: input.with_person_email,
@@ -356,6 +362,7 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
     const preview = `Skickar mejl till ${input.to_person_email}:\n"${input.message}"`;
     return {
       preview,
+      card: { what: 'Skicka mejl', withWhom: input.to_person_email, when: 'Nu' },
       action: { type: 'send_message', toEmail: input.to_person_email, message: input.message, summary: `Mejl skickat till ${input.to_person_email}.` }
     };
   }
@@ -370,6 +377,7 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
     const preview = `Skickar din bokningslänk till ${input.to_person_email}${input.note ? ` med meddelandet: "${input.note}"` : ''}.`;
     return {
       preview,
+      card: { what: 'Skicka bokningslänk', withWhom: input.to_person_email, when: 'Nu' },
       action: { type: 'send_message', toEmail: input.to_person_email, message, summary: `Bokningslänk skickad till ${input.to_person_email}.` }
     };
   }
@@ -435,6 +443,7 @@ async function interpretCommand(command, { accessToken, provider, ownerEmail, di
 
   return {
     preview: planned.map(p => p.preview).filter(Boolean).join('\n\n'),
+    cards: planned.filter(p => p.action).map(p => p.card).filter(Boolean),
     actions: planned.filter(p => p.action).map(p => p.action)
   };
 }
