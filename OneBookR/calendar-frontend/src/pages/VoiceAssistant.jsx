@@ -50,9 +50,37 @@ function getSpeechRecognition() {
 // Speech API. Samma anledning till de 80ms fördröjningen efter
 // cancel(): cancel()+speak() i samma tick kan tysta NÄSTA replik helt.
 let currentUtterance = null;
+let cachedVoices = [];
 
-function speak(text, { onEnd } = {}) {
-  if (!text || !window.speechSynthesis) { onEnd?.(); return; }
+// Röster laddas asynkront i flera webbläsare — finns inget svenskt (eller
+// inget alls) tillgängligt när man frågar direkt efter sidladdning.
+function primeVoices() {
+  if (!window.speechSynthesis) return;
+  const load = () => { cachedVoices = window.speechSynthesis.getVoices() || []; };
+  load();
+  window.speechSynthesis.onvoiceschanged = load;
+}
+
+function pickVoice() {
+  if (!cachedVoices.length) cachedVoices = window.speechSynthesis?.getVoices() || [];
+  return cachedVoices.find(v => v.lang?.toLowerCase().startsWith('sv'))
+    || cachedVoices.find(v => v.default)
+    || cachedVoices[0]
+    || null;
+}
+
+// ✅ Loggar/rapporterar nu VARFÖR det eventuellt tystnar (event.error från
+// webbläsaren — t.ex. "not-allowed", "synthesis-failed", "canceled" —
+// istället för att bara tyst anta att allt gick bra). onError låter UI:t
+// visa den riktiga anledningen för första gången, istället för att gissa.
+function speak(text, { onEnd, onError } = {}) {
+  if (!text) { onEnd?.(); return; }
+  if (!window.speechSynthesis) {
+    console.warn('[Röst] speechSynthesis finns inte i den här webbläsaren/kontexten.');
+    onError?.('Talsyntes stöds inte i den här webbläsaren');
+    onEnd?.();
+    return;
+  }
   try {
     window.speechSynthesis.cancel();
   } catch { /* inget att avbryta */ }
@@ -60,7 +88,9 @@ function speak(text, { onEnd } = {}) {
   setTimeout(() => {
     try {
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'sv-SE';
+      const voice = pickVoice();
+      if (voice) utter.voice = voice;
+      utter.lang = voice?.lang || 'sv-SE';
       let done = false;
       const finish = () => {
         if (done) return;
@@ -68,15 +98,22 @@ function speak(text, { onEnd } = {}) {
         currentUtterance = null;
         onEnd?.();
       };
+      utter.onstart = () => console.log('[Röst] Talar nu:', text.slice(0, 60), 'röst:', voice?.name || '(ingen vald — webbläsarens default)');
       utter.onend = finish;
-      utter.onerror = finish;
+      utter.onerror = (e) => {
+        console.error('[Röst] Talsyntesfel:', e.error, e);
+        onError?.(e.error || 'okänt fel');
+        finish();
+      };
       currentUtterance = utter;
       window.speechSynthesis.speak(utter);
       // ✅ Säkerhetsnät: onend/onerror är inte 100% pålitliga i alla
       // webbläsare — UI:t ska ALDRIG kunna fastna i "pratar"-läget utan
       // en väg vidare, oavsett vad talsyntesen gör.
       setTimeout(finish, Math.max(4000, text.length * 90));
-    } catch {
+    } catch (err) {
+      console.error('[Röst] Kunde inte starta talsyntes:', err);
+      onError?.(String(err?.message || err));
       onEnd?.();
     }
   }, 80);
@@ -144,7 +181,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
     });
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); primeVoices(); }, []);
   // Sluta tala/lyssna om man lämnar sidan mitt i ett samtal.
   useEffect(() => () => { try { window.speechSynthesis?.cancel(); } catch {} recognitionRef.current?.stop(); }, []);
 
@@ -234,7 +271,10 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
           onEnd: () => {
             setSpeaking(false);
             if (continueListening && !skipContinueRef.current) startListening();
-          }
+          },
+          // ✅ Visar den RIKTIGA anledningen om talsyntesen misslyckas,
+          // istället för att bara tystna utan förklaring.
+          onError: (reason) => notify(`Talsyntesen svarade inte: ${reason}`, 'error')
         });
       };
 
