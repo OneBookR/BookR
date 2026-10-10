@@ -43,7 +43,7 @@ import { upsertHubspotContact } from './hubspot.js';
 import { isBillingConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretSubscription, emailForSubscription } from './billing.js';
 import { limitsForPlan } from './plans.js';
 import { startRulesScheduler, renderRuleEmail } from './rulesScheduler.js';
-import { interpretCommand, executeActions } from './voiceAssistant.js';
+import { interpretCommand, executeActions, getBriefing } from './voiceAssistant.js';
 
 // ===== APPLICATION SETUP =====
 const app = express();
@@ -2756,6 +2756,22 @@ app.get('/api/voice/log', voiceLimiter, async (req, res) => {
   if (!email) return;
   if (!(await requireVoiceAssistantEnabled(email, res))) return;
   res.json({ log: await listVoiceCommandLog(email) });
+});
+
+// ✅ Proaktiv hälsning — en sekreterare som flaggar dagens läge själv,
+// inte bara när man frågar. Tyst fel (ingen Direktåtkomst behövs — körs
+// med sessionens egna token) om något går snett, stör aldrig sidan.
+app.get('/api/voice/briefing', voiceLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireVoiceAssistantEnabled(email, res))) return;
+  try {
+    const briefing = await getBriefing({ accessToken: req.user.accessToken, provider: req.user.provider || 'google' });
+    res.json(briefing);
+  } catch (err) {
+    console.error('❌ Kunde inte hämta briefing:', err.message);
+    res.json({ text: '' });
+  }
 });
 
 // ✅ Tolkar ett kommando. query_meetings (läser bara) utförs alltid

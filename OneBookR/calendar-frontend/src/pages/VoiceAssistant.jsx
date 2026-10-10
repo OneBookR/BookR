@@ -36,42 +36,93 @@ const EXAMPLES = [
   'Vilka har jag möte med idag?'
 ];
 
-// ✅ Röst = webbläsarens inbyggda taligenkänning (Web Speech API) — bara
-// Chrome/Edge stödjer den idag. Fyller textfältet, skickar INTE
-// automatiskt, så man alltid ser vad den uppfattade innan man går vidare.
+// ✅ Röst in = webbläsarens inbyggda taligenkänning (Web Speech API).
+// Röst ut = webbläsarens inbyggda talsyntes. Bara Chrome/Edge stödjer
+// taligenkänning idag; talsyntes har betydligt bredare stöd. Ingen av
+// dem kräver ett nytt API-beroende eller en nyckel.
 function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function speak(text, { onEnd } = {}) {
+  if (!text || !window.speechSynthesis) { onEnd?.(); return; }
+  try {
+    window.speechSynthesis.cancel(); // aldrig två överlappande repliker
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'sv-SE';
+    utter.onend = () => onEnd?.();
+    utter.onerror = () => onEnd?.();
+    window.speechSynthesis.speak(utter);
+  } catch {
+    onEnd?.();
+  }
+}
+
+// Orben — samma visuella idé som godkändes i mockupen, nu byggd på
+// riktigt. En enda komponent, återanvänd för både "lyssnar" och "svarar".
+function VoiceOrb() {
+  return (
+    <Box sx={{ position: 'relative', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {[0, 0.65, 1.3].map((delay) => (
+        <Box key={delay} sx={{
+          position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid rgba(17,24,39,0.28)',
+          animation: 'voiceRing 2.6s cubic-bezier(.4,0,.3,1) infinite', animationDelay: `${delay}s`
+        }} />
+      ))}
+      <Box sx={{
+        width: 96, height: 96, borderRadius: '50%',
+        background: 'linear-gradient(160deg, #1a2030 0%, #111827 60%, #05070c 100%)',
+        boxShadow: '0 20px 48px rgba(17,24,39,0.28), inset 0 1px 1px rgba(255,255,255,0.12)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.6,
+        animation: 'voiceBreathe 2.6s ease-in-out infinite'
+      }}>
+        {[0, 0.15, 0.3, 0.45, 0.6].map((delay) => (
+          <Box key={delay} sx={{
+            width: 4, borderRadius: '3px', bgcolor: '#fff', height: 10,
+            animation: 'voiceBar 1.1s ease-in-out infinite', animationDelay: `${delay}s`
+          }} />
+        ))}
+      </Box>
+    </Box>
+  );
 }
 
 export default function VoiceAssistant({ user, onNavigateBack }) {
   const [command, setCommand] = useState('');
   const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
   const [loading, setLoading] = useState(false);
   const [autoExecute, setAutoExecute] = useState(false);
-  const [pending, setPending] = useState(null); // { preview, pendingActionId }
+  const [pending, setPending] = useState(null); // { preview, cards, pendingActionId }
   const [lastResult, setLastResult] = useState('');
+  const [briefing, setBriefing] = useState('');
   // ✅ Hela den pågående tråden (om Claude bett om ett förtydligande) —
   // skickas med nästa anrop så Claude inte tappar den ursprungliga
-  // avsikten. Nollställs så fort ett kommando faktiskt löser sig
-  // (bekräftelse, svar eller utförande).
+  // avsikten. Nollställs så fort ett kommando faktiskt löser sig.
   const [conversationHistory, setConversationHistory] = useState([]);
   const [log, setLog] = useState([]);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const recognitionRef = useRef(null);
+  const skipContinueRef = useRef(false); // sant vid manuellt avbrutet tal — hindra auto-lyssna efteråt
 
   const notify = (message, severity = 'success') => setToast({ open: true, message, severity });
 
   const loadAll = () => {
     Promise.all([
       apiRequest('/api/voice/settings').then(r => (r.ok ? r.json() : { autoExecute: false })),
-      apiRequest('/api/voice/log').then(r => (r.ok ? r.json() : { log: [] }))
-    ]).then(([settings, logData]) => {
+      apiRequest('/api/voice/log').then(r => (r.ok ? r.json() : { log: [] })),
+      apiRequest('/api/voice/briefing').then(r => (r.ok ? r.json() : { text: '' }))
+    ]).then(([settings, logData, briefingData]) => {
       setAutoExecute(Boolean(settings.autoExecute));
       setLog(logData.log || []);
+      setBriefing(briefingData.text || '');
     });
   };
 
   useEffect(() => { loadAll(); }, []);
+  // Sluta tala/lyssna om man lämnar sidan mitt i ett samtal.
+  useEffect(() => () => { try { window.speechSynthesis?.cancel(); } catch {} recognitionRef.current?.stop(); }, []);
 
   const toggleAutoExecute = async (value) => {
     setAutoExecute(value);
@@ -83,12 +134,21 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
     if (!SpeechRecognition) {
       return notify('Röstinmatning stöds inte i den här webbläsaren — använd textfältet istället.', 'error');
     }
+    setLiveTranscript('');
     const recognition = new SpeechRecognition();
     recognition.lang = 'sv-SE';
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.onresult = (event) => {
-      setCommand(event.results[0][0].transcript);
+      const result = event.results[0];
+      const transcript = result[0].transcript;
+      setLiveTranscript(transcript);
+      // ✅ Skickas automatiskt så fort man slutat prata — ingen knapptryckning
+      // krävs, det är hela poängen med att kunna köra det handsfree.
+      if (result.isFinal) {
+        setListening(false);
+        submitCommand(transcript, true);
+      }
     };
     recognition.onerror = () => setListening(false);
     recognition.onend = () => setListening(false);
@@ -102,8 +162,18 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
     setListening(false);
   };
 
-  const submitCommand = async () => {
-    if (!command.trim()) return;
+  const stopSpeaking = () => {
+    skipContinueRef.current = true;
+    try { window.speechSynthesis.cancel(); } catch {}
+    setSpeaking(false);
+  };
+
+  // isVoice = kommandot kom från mikrofonen, inte textfältet — bara då
+  // pratar BookR tillbaka. Skriver man tyst vid skrivbordet ska det
+  // vara tyst, inte läsas upp.
+  const submitCommand = async (overrideText, isVoice = false) => {
+    const text = (overrideText ?? command).trim();
+    if (!text) return;
     setLoading(true);
     setLastResult('');
     setPending(null);
@@ -118,20 +188,38 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
           .map(c => ({ name: c.name || '', email: c.email }));
       } catch { /* korrupt localStorage — strunta i kontakterna, inte kritiskt */ }
 
-      const res = await apiRequest('/api/voice/command', { method: 'POST', body: JSON.stringify({ command, contacts, conversationHistory }) });
+      const res = await apiRequest('/api/voice/command', { method: 'POST', body: JSON.stringify({ command: text, contacts, conversationHistory }) });
       const data = await res.json().catch(() => ({}));
+
+      const speakIfVoice = (message, continueListening) => {
+        if (!isVoice || !message) return;
+        skipContinueRef.current = false;
+        setSpeaking(true);
+        speak(message, {
+          onEnd: () => {
+            setSpeaking(false);
+            if (continueListening && !skipContinueRef.current) startListening();
+          }
+        });
+      };
+
       if (data.error) {
         setLastResult(data.error);
         // ✅ Fortsätt samma tråd — Claude bad om ett förtydligande, nästa
-        // kommando är sannolikt bara svaret på den frågan.
+        // kommando är sannolikt bara svaret på den frågan. Pratar man med
+        // mikrofonen fortsätter BookR att lyssna automatiskt efter att
+        // den läst upp frågan — ingen ny knapptryckning behövs.
         setConversationHistory(data.conversationHistory || []);
+        speakIfVoice(data.error, true);
       } else if (data.needsConfirmation) {
         setPending({ preview: data.preview, cards: data.cards, pendingActionId: data.pendingActionId });
-        setConversationHistory([]); // löst — nästa kommando är en ny tråd
+        setConversationHistory([]);
+        speakIfVoice(data.preview, false);
       } else if (data.executed) {
         setLastResult(data.result);
         notify('Klart!');
         setConversationHistory([]);
+        speakIfVoice(data.result, false);
       }
       setCommand('');
       loadAll();
@@ -163,8 +251,16 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
     }
   };
 
+  const voiceActive = listening || speaking;
+
   return (
     <Container maxWidth="md" sx={{ mt: 4, mb: 6 }}>
+      <style>{`
+        @keyframes voiceRing { 0% { transform: scale(0.72); opacity: .5; } 75% { opacity: 0; } 100% { transform: scale(1.55); opacity: 0; } }
+        @keyframes voiceBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        @keyframes voiceBar { 0%, 100% { height: 10px; } 50% { height: 28px; } }
+      `}</style>
+
       <Button startIcon={<ArrowBackIcon />} onClick={onNavigateBack} sx={{ ...secondaryButtonSx, mb: 3 }}>
         Tillbaka
       </Button>
@@ -176,10 +272,16 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
         Skriv eller säg vad BookR ska göra — avboka, boka om, skicka ett mejl, eller fråga om dina möten.
       </Typography>
       <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mb: 3 }}>
-        Exempel: {EXAMPLES.map((e, i) => `"${e}"`).join(' · ')}
+        Exempel: {EXAMPLES.map((e) => `"${e}"`).join(' · ')}
       </Typography>
 
-      {conversationHistory.length > 0 && (
+      {briefing && (
+        <Paper sx={{ ...pageCardSx, p: 2.5, mb: 3, bgcolor: 'rgba(17,24,39,0.03)', boxShadow: 'none' }}>
+          <Typography sx={{ color: 'var(--text)', fontSize: 14.5 }}>{briefing}</Typography>
+        </Paper>
+      )}
+
+      {conversationHistory.length > 0 && !voiceActive && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
           <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
             Fortsätter föregående fråga — svara direkt, du behöver inte upprepa kommandot.
@@ -191,53 +293,69 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
       )}
 
       <Paper sx={{ ...pageCardSx, p: 3.5, mb: 3 }}>
-        <FormControlLabel
-          control={<Switch checked={autoExecute} onChange={e => toggleAutoExecute(e.target.checked)} />}
-          label="Utför direkt utan bekräftelse (handsfree)"
-          sx={{ mb: 2 }}
-        />
+        {voiceActive ? (
+          // ✅ Den här vyn ersätter textfältet medan BookR lyssnar eller
+          // pratar tillbaka — samma orb som i mockupen, nu levande.
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, py: 3 }}>
+            <VoiceOrb />
+            <Typography sx={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', textAlign: 'center', minHeight: 36, maxWidth: 560 }}>
+              {listening ? (liveTranscript || 'Lyssnar...') : (lastResult || pending?.preview || 'Svarar...')}
+            </Typography>
+            <Button onClick={listening ? stopListening : stopSpeaking} sx={secondaryButtonSx}>
+              {listening ? 'Avbryt' : 'Tyst'}
+            </Button>
+          </Box>
+        ) : (
+          <>
+            <FormControlLabel
+              control={<Switch checked={autoExecute} onChange={e => toggleAutoExecute(e.target.checked)} />}
+              label="Utför direkt utan bekräftelse (handsfree)"
+              sx={{ mb: 2 }}
+            />
 
-        {/* ✅ En mall att PRATA UTIFRÅN i ett enda svep — inte tre separata
-            fält man ska fylla i och pausa mellan. Rent visuell guide. */}
-        <Box sx={{
-          display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1, mb: 1.5,
-          p: 1.5, borderRadius: 2.5, bgcolor: 'rgba(17,24,39,0.03)', border: '1px dashed var(--border)'
-        }}>
-          {[
-            { label: 'Vad', hint: 'avboka, boka om, maila, fråga...' },
-            { label: 'Med vem', hint: 'ett namn, eller "alla"' },
-            { label: 'När', hint: 'idag, imorgon, nästa vecka...' }
-          ].map(({ label, hint }) => (
-            <Box key={label}>
-              <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', display: 'block' }}>{label}</Typography>
-              <Typography variant="caption" sx={{ color: 'var(--text-secondary)', opacity: 0.75 }}>{hint}</Typography>
+            {/* ✅ En mall att PRATA UTIFRÅN i ett enda svep — inte tre separata
+                fält man ska fylla i och pausa mellan. Rent visuell guide. */}
+            <Box sx={{
+              display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1, mb: 1.5,
+              p: 1.5, borderRadius: 2.5, bgcolor: 'rgba(17,24,39,0.03)', border: '1px dashed var(--border)'
+            }}>
+              {[
+                { label: 'Vad', hint: 'avboka, boka om, maila, fråga...' },
+                { label: 'Med vem', hint: 'ett namn, eller "alla"' },
+                { label: 'När', hint: 'idag, imorgon, nästa vecka...' }
+              ].map(({ label, hint }) => (
+                <Box key={label}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', display: 'block' }}>{label}</Typography>
+                  <Typography variant="caption" sx={{ color: 'var(--text-secondary)', opacity: 0.75 }}>{hint}</Typography>
+                </Box>
+              ))}
             </Box>
-          ))}
-        </Box>
 
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-          <TextField
-            fullWidth multiline minRows={2}
-            placeholder='Säg eller skriv allt i ett svep, t.ex. "Boka om mötet med Valdemar till nästa vecka"'
-            value={command}
-            onChange={e => setCommand(e.target.value)}
-            sx={fieldSx}
-          />
-          <IconButton
-            onClick={listening ? stopListening : startListening}
-            sx={{ bgcolor: listening ? 'var(--error)' : 'rgba(17,24,39,0.06)', color: listening ? '#fff' : 'var(--text)', '&:hover': { bgcolor: listening ? 'var(--error)' : 'rgba(17,24,39,0.1)' } }}
-          >
-            <MicIcon />
-          </IconButton>
-        </Box>
-        <Box sx={{ mt: 2 }}>
-          <Button variant="contained" startIcon={<SendIcon />} onClick={submitCommand} disabled={loading || !command.trim()} sx={primaryButtonSx}>
-            {loading ? 'Tolkar...' : 'Skicka'}
-          </Button>
-        </Box>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+              <TextField
+                fullWidth multiline minRows={2}
+                placeholder='Säg eller skriv allt i ett svep, t.ex. "Boka om mötet med Valdemar till nästa vecka"'
+                value={command}
+                onChange={e => setCommand(e.target.value)}
+                sx={fieldSx}
+              />
+              <IconButton
+                onClick={startListening}
+                sx={{ bgcolor: 'rgba(17,24,39,0.06)', color: 'var(--text)', '&:hover': { bgcolor: 'rgba(17,24,39,0.1)' } }}
+              >
+                <MicIcon />
+              </IconButton>
+            </Box>
+            <Box sx={{ mt: 2 }}>
+              <Button variant="contained" startIcon={<SendIcon />} onClick={() => submitCommand()} disabled={loading || !command.trim()} sx={primaryButtonSx}>
+                {loading ? 'Tolkar...' : 'Skicka'}
+              </Button>
+            </Box>
+          </>
+        )}
       </Paper>
 
-      {pending && (
+      {pending && !voiceActive && (
         <Paper sx={{ ...pageCardSx, p: 3, mb: 3, border: '1.5px solid var(--text)' }}>
           <Typography sx={{ fontWeight: 700, mb: 1.5, color: 'var(--text)' }}>Bekräfta</Typography>
 
@@ -274,11 +392,11 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
         </Paper>
       )}
 
-      {loading && !pending && (
+      {loading && !pending && !voiceActive && (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}><CircularProgress size={24} /></Box>
       )}
 
-      {lastResult && !pending && (
+      {lastResult && !pending && !voiceActive && (
         <Paper sx={{ ...pageCardSx, p: 3, mb: 3 }}>
           <Typography sx={{ whiteSpace: 'pre-line', color: 'var(--text)' }}>{lastResult}</Typography>
         </Paper>

@@ -134,6 +134,13 @@ function formatStockholmDate(isoString) {
   }
 }
 
+// "a, b och c" — naturlig uppräkning i löpande text, inte punktlistor.
+// Svar kan läsas upp av en talsyntes, så listor måste låta som tal.
+function joinNaturally(items) {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} och ${items[items.length - 1]}`;
+}
+
 // Samma DST-säkra logik som server.js:s stockholmTimeOnDate — duplicerad
 // hit medvetet istället för importerad (se filkommentaren högst upp).
 function stockholmTimeOnDate(referenceDate, hour, minute) {
@@ -284,7 +291,10 @@ function collectKnownEmails(events, directAccessEmails, contacts) {
 }
 
 function buildSystemPrompt(todayISO, contextBlock) {
-  return `Du tolkar svenska röst-/textkommandon om kalenderhantering.
+  return `Du är användarens personliga assistent/sekreterare för kalendern — inte ett kommandotolkningsverktyg. Du tolkar svenska röst-/textkommandon om kalenderhantering.
+
+TON: varm, naturlig och kortfattad, som en skicklig assistent som redan känner till sammanhanget — aldrig robotisk eller formell. Skriv "Visst, jag bokar..." eller "Jag ser att...", inte "Kommandot tolkades som...". Dina svar kan läsas upp högt av en talsyntes — skriv därför alltid i hela, naturligt talade meningar. ALDRIG punktlistor, "•", radbrytningar mellan punkter, markdown eller förkortningar — räkna upp flera saker i löpande text ("du har tre möten idag: X klockan nio, Y klockan tio och Z klockan tolv"), aldrig som en lista.
+
 Idag är ${todayISO} (Europe/Stockholm). Måndag räknas som veckans första dag. Räkna ut övriga datum (imorgon, nästa vecka, etc.) relativt detta.
 
 ${contextBlock}
@@ -356,10 +366,10 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
       matches = matches.filter(e => e.attendees.some(a => a.email?.toLowerCase() === input.with_person_email.toLowerCase()));
     }
     if (matches.length === 0) return { readOnly: true, result: 'Du har inga möten i den perioden.' };
-    const lines = matches
+    const items = matches
       .sort((a, b) => new Date(a.start) - new Date(b.start))
-      .map(e => `• ${e.title} — ${formatStockholmDate(e.start)} kl ${formatStockholmTime(e.start).split(' ').pop()}`);
-    return { readOnly: true, result: `Du har ${matches.length} möte(n):\n${lines.join('\n')}` };
+      .map(e => `${e.title} klockan ${formatStockholmTime(e.start).split(' ').pop()}`);
+    return { readOnly: true, result: `Du har ${matches.length} möte${matches.length > 1 ? 'n' : ''}: ${joinNaturally(items)}.` };
   }
 
   if (toolName === 'cancel_meetings') {
@@ -372,7 +382,8 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
       matches = matches.filter(e => e.attendees.some(a => a.email?.toLowerCase() === input.with_person_email.toLowerCase()));
     }
     if (matches.length === 0) return { error: 'Hittade inga möten som matchar det.' };
-    const preview = `Avbokar ${matches.length} möte(n):\n${matches.map(e => `• ${e.title} — ${formatStockholmDate(e.start)} kl ${formatStockholmTime(e.start).split(' ').pop()}`).join('\n')}`;
+    const matchItems = matches.map(e => `${e.title} ${formatStockholmDate(e.start)} klockan ${formatStockholmTime(e.start).split(' ').pop()}`);
+    const preview = `Avbokar ${matches.length} möte${matches.length > 1 ? 'n' : ''}: ${joinNaturally(matchItems)}.`;
     return {
       preview,
       card: {
@@ -531,6 +542,39 @@ async function executeActions(actions, ctx) {
   return results.join('\n');
 }
 
+// ===== PROAKTIV BRIEFING =====
+// Deterministisk, inget Claude-anrop — en sekreterare som själv flaggar
+// det uppenbara (dagens möten, krockande tider) kräver ingen tolkning,
+// bara att man faktiskt tittar. Visas när sidan laddas, inte bara när
+// man frågar om det.
+async function getBriefing({ accessToken, provider }) {
+  const now = new Date();
+  const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(now); dayEnd.setHours(23, 59, 59, 999);
+
+  const events = await fetchOrganizedMeetingsWithAttendees(accessToken, provider, dayStart.toISOString(), dayEnd.toISOString());
+  const todays = events.filter(e => e.start && e.end).sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  if (todays.length === 0) return { text: 'Du har inga möten inbokade idag — en lugn dag.' };
+
+  const conflicts = [];
+  for (let i = 0; i < todays.length; i++) {
+    for (let j = i + 1; j < todays.length; j++) {
+      if (new Date(todays[i].start) < new Date(todays[j].end) && new Date(todays[j].start) < new Date(todays[i].end)) {
+        conflicts.push([todays[i], todays[j]]);
+      }
+    }
+  }
+
+  const items = todays.map(e => `${e.title} klockan ${formatStockholmTime(e.start).split(' ').pop()}`);
+  let text = `Du har ${todays.length} möte${todays.length > 1 ? 'n' : ''} idag: ${joinNaturally(items)}.`;
+  if (conflicts.length > 0) {
+    const [a, b] = conflicts[0];
+    text += ` Lägg märke till att "${a.title}" och "${b.title}" krockar.`;
+  }
+  return { text };
+}
+
 // ===== HUVUDFUNKTION: tolka ett kommando givet kontext =====
 // `directAccessEmails`/`contacts` kommer från server.js (Firestore
 // respektive frontendens lokala adressbok) — se filkommentaren högst
@@ -584,4 +628,4 @@ async function interpretCommand(command, { accessToken, provider, ownerEmail, di
   };
 }
 
-export { interpretCommand, executeActions };
+export { interpretCommand, executeActions, getBriefing };
