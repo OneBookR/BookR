@@ -649,7 +649,20 @@ async function deleteUserData(email) {
   // till subcollections. Upptäckt vid genomgång av Uppgiftshanteraren:
   // utan denna rad låg en persons uppgifter kvar i databasen för alltid
   // efter en GDPR-radering, trots att de inte längre syntes för kontot.
+  // Samma bugg gällde egentligen VARJE subcollection under users/{email}
+  // som tillkommit sedan den här fixen skrevs första gången (Regler:
+  // rules/emailTemplates/ruleSendLog/eventSnapshots, röstassistenten:
+  // pendingVoiceActions/voiceCommandLog) — ingen av dem rensades, av
+  // samma anledning: batch.delete(userDoc) kaskaderar aldrig till
+  // subcollections. Hittade vid en GDPR-genomgång av hela sessionens
+  // funktioner, inte bara den senaste.
   await getDb().recursiveDelete(userDoc.collection('tasks'));
+  await getDb().recursiveDelete(userDoc.collection('pendingVoiceActions'));
+  await getDb().recursiveDelete(userDoc.collection('voiceCommandLog'));
+  await getDb().recursiveDelete(userDoc.collection('rules'));
+  await getDb().recursiveDelete(userDoc.collection('emailTemplates'));
+  await getDb().recursiveDelete(userDoc.collection('ruleSendLog'));
+  await getDb().recursiveDelete(userDoc.collection('eventSnapshots'));
 
   await batch.commit();
 }
