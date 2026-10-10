@@ -6,6 +6,8 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import MicIcon from '@mui/icons-material/Mic';
 import SendIcon from '@mui/icons-material/Send';
+import VolumeOffIcon from '@mui/icons-material/VolumeOff';
+import PauseIcon from '@mui/icons-material/Pause';
 import { apiRequest } from '../utils/apiConfig.js';
 
 const pageCardSx = {
@@ -119,30 +121,64 @@ function speak(text, { onEnd, onError } = {}) {
   }, 80);
 }
 
-// Orben — samma visuella idé som godkändes i mockupen, nu byggd på
-// riktigt. En enda komponent, återanvänd för både "lyssnar" och "svarar".
-function VoiceOrb() {
+// Sidoknapp (mute/pausa) — samma stil som i mockupen: en neutral,
+// återhållsam 52px-cirkel som bara mörknar lite när den är aktiv.
+function SideButton({ onClick, active, disabled, label, children }) {
   return (
-    <Box sx={{ position: 'relative', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {[0, 0.65, 1.3].map((delay) => (
-        <Box key={delay} sx={{
-          position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid rgba(17,24,39,0.28)',
-          animation: 'voiceRing 2.6s cubic-bezier(.4,0,.3,1) infinite', animationDelay: `${delay}s`
+    <IconButton
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      sx={{
+        width: 52, height: 52,
+        bgcolor: active ? 'var(--text)' : 'rgba(17,24,39,0.04)',
+        color: active ? 'var(--surface-strong)' : 'var(--text)',
+        border: '1px solid', borderColor: active ? 'var(--text)' : 'rgba(17,24,39,0.09)',
+        '&:hover': { bgcolor: active ? '#000' : 'rgba(17,24,39,0.08)' },
+        '&.Mui-disabled': { opacity: 0.35 },
+      }}
+    >
+      {children}
+    </IconButton>
+  );
+}
+
+// Huvudknappen — en enda tunn ring + en solid cirkel, exakt stilen som
+// godkändes i mockupen. Ikonen/färgen byter beroende på läge: mikrofon
+// medan BookR lyssnar, tre pulserande punkter medan den tänker, en vit
+// kvadrat medan den pratar.
+function VoiceOrb({ phase, onClick }) {
+  const fill = phase === 'thinking' ? '#3a3f4d' : 'var(--text)';
+  return (
+    <Box
+      onClick={phase === 'thinking' ? undefined : onClick}
+      sx={{
+        position: 'relative', width: 104, height: 104, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: phase === 'thinking' ? 'default' : 'pointer',
+      }}
+    >
+      {phase !== 'thinking' && (
+        <Box sx={{
+          position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(17,24,39,0.22)',
+          animation: 'voiceRing 2.4s ease-out infinite',
         }} />
-      ))}
+      )}
       <Box sx={{
-        width: 96, height: 96, borderRadius: '50%',
-        background: 'linear-gradient(160deg, #1a2030 0%, #111827 60%, #05070c 100%)',
-        boxShadow: '0 20px 48px rgba(17,24,39,0.28), inset 0 1px 1px rgba(255,255,255,0.12)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.6,
-        animation: 'voiceBreathe 2.6s ease-in-out infinite'
+        width: 72, height: 72, borderRadius: '50%', bgcolor: fill,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75,
       }}>
-        {[0, 0.15, 0.3, 0.45, 0.6].map((delay) => (
-          <Box key={delay} sx={{
-            width: 4, borderRadius: '3px', bgcolor: '#fff', height: 10,
-            animation: 'voiceBar 1.1s ease-in-out infinite', animationDelay: `${delay}s`
-          }} />
-        ))}
+        {phase === 'thinking' ? (
+          [0, 0.2, 0.4].map((delay) => (
+            <Box key={delay} sx={{
+              width: 6, height: 6, borderRadius: '50%', bgcolor: '#fff',
+              animation: 'voiceDot 1.4s ease-in-out infinite', animationDelay: `${delay}s`,
+            }} />
+          ))
+        ) : phase === 'speaking' ? (
+          <Box sx={{ width: 20, height: 20, borderRadius: '5px', bgcolor: '#fff' }} />
+        ) : (
+          <MicIcon sx={{ color: '#fff', fontSize: 26 }} />
+        )}
       </Box>
     </Box>
   );
@@ -164,8 +200,18 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
   const [conversationHistory, setConversationHistory] = useState([]);
   const [log, setLog] = useState([]);
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
+  // ✅ Mute stänger bara av RÖSTEN (talsyntesen) — samtalet/lyssningen
+  // fortsätter som vanligt, man ser bara svaret som text istället.
+  // Sparas per användare så den inte glöms bort mellan sessioner.
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem(`bookr_voice_muted_${user?.email}`) === '1'; } catch { return false; }
+  });
   const recognitionRef = useRef(null);
   const skipContinueRef = useRef(false); // sant vid manuellt avbrutet tal — hindra auto-lyssna efteråt
+  // ✅ "Tänker"-läget i orben ska bara visas när det var ETT röstkommando
+  // som väntar på svar — inte när man skrev i textfältet, då ska orben
+  // inte dyka upp alls.
+  const isVoiceLoadingRef = useRef(false);
 
   const notify = (message, severity = 'success') => setToast({ open: true, message, severity });
 
@@ -229,6 +275,38 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
     setSpeaking(false);
   };
 
+  const toggleMuted = () => {
+    setMuted((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(`bookr_voice_muted_${user?.email}`, next ? '1' : '0'); } catch {}
+      if (next) stopSpeaking();
+      return next;
+    });
+  };
+
+  // Pausa = avbryt det som pågår just nu (lyssning eller tal), utan att
+  // skicka något. Under "tänker" finns inget att pausa.
+  const handlePause = () => {
+    if (listening) stopListening();
+    else if (speaking) stopSpeaking();
+  };
+
+  // Tryck på själva huvudknappen: medan BookR lyssnar skickar det det du
+  // redan sagt direkt (istället för att vänta på att man tystnar). Medan
+  // BookR pratar avbryter det och börjar lyssna igen direkt — man kan
+  // alltså "avbryta" den mitt i och ställa en ny fråga.
+  const handleOrbTap = () => {
+    if (listening) {
+      const text = liveTranscript.trim();
+      recognitionRef.current?.stop();
+      setListening(false);
+      if (text) submitCommand(text, true);
+    } else if (speaking) {
+      stopSpeaking();
+      startListening();
+    }
+  };
+
   // ✅ Alltid synlig nödutgång under ett röstsamtal — oavsett vad
   // taligenkänningen eller talsyntesen råkar göra i bakgrunden ska man
   // alltid kunna ta sig tillbaka till textfältet och skriva/prata igen.
@@ -246,6 +324,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
   const submitCommand = async (overrideText, isVoice = false) => {
     const text = (overrideText ?? command).trim();
     if (!text) return;
+    isVoiceLoadingRef.current = isVoice;
     setLoading(true);
     setLastResult('');
     setPending(null);
@@ -265,6 +344,12 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
 
       const speakIfVoice = (message, continueListening) => {
         if (!isVoice || !message) return;
+        // ✅ Mute: visa svaret tyst istället för att läsa upp det, men
+        // fortsätt samtalet (lyssna igen) precis som om det pratat klart.
+        if (muted) {
+          if (continueListening) startListening();
+          return;
+        }
         skipContinueRef.current = false;
         setSpeaking(true);
         speak(message, {
@@ -302,6 +387,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
       notify('Kunde inte skicka kommandot', 'error');
     } finally {
       setLoading(false);
+      isVoiceLoadingRef.current = false;
     }
   };
 
@@ -326,14 +412,15 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
     }
   };
 
-  const voiceActive = listening || speaking;
+  const phase = listening ? 'listening' : speaking ? 'speaking' : (loading && isVoiceLoadingRef.current) ? 'thinking' : null;
+  const voiceActive = Boolean(phase);
+  const phaseLabel = phase === 'listening' ? 'Lyssnar...' : phase === 'thinking' ? 'Tänker...' : phase === 'speaking' ? 'BookR svarar' : '';
 
   return (
     <Container maxWidth="md" sx={{ mt: 4, mb: 6 }}>
       <style>{`
-        @keyframes voiceRing { 0% { transform: scale(0.72); opacity: .5; } 75% { opacity: 0; } 100% { transform: scale(1.55); opacity: 0; } }
-        @keyframes voiceBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-        @keyframes voiceBar { 0%, 100% { height: 10px; } 50% { height: 28px; } }
+        @keyframes voiceRing { 0% { transform: scale(0.88); opacity: .45; } 100% { transform: scale(1.4); opacity: 0; } }
+        @keyframes voiceDot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
       `}</style>
 
       <Button startIcon={<ArrowBackIcon />} onClick={onNavigateBack} sx={{ ...secondaryButtonSx, mb: 3 }}>
@@ -369,19 +456,28 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
 
       <Paper sx={{ ...pageCardSx, p: 3.5, mb: 3 }}>
         {voiceActive ? (
-          // ✅ Den här vyn ersätter textfältet medan BookR lyssnar eller
-          // pratar tillbaka — samma orb som i mockupen, nu levande.
+          // ✅ Den här vyn ersätter textfältet medan BookR lyssnar, tänker
+          // eller pratar tillbaka — samma ljusa, minimalistiska stil som
+          // godkändes i mockupen: mute — huvudknapp — pausa.
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, py: 3 }}>
-            <VoiceOrb />
-            <Typography sx={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', textAlign: 'center', minHeight: 36, maxWidth: 560 }}>
-              {listening ? (liveTranscript || 'Lyssnar...') : (lastResult || pending?.preview || 'Svarar...')}
+            <Typography sx={{ fontSize: 22, fontWeight: 500, color: phase === 'listening' ? 'var(--text)' : 'var(--text-secondary)', textAlign: 'center', minHeight: 36, maxWidth: 560 }}>
+              {phase === 'listening' ? (liveTranscript || ' ') : (lastResult || pending?.preview || ' ')}
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button onClick={listening ? stopListening : stopSpeaking} sx={secondaryButtonSx}>
-                {listening ? 'Avbryt' : 'Tyst'}
-              </Button>
-              <Button onClick={forceReset} sx={secondaryButtonSx}>Skriv istället</Button>
+            <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+              {phaseLabel}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <SideButton onClick={toggleMuted} active={muted} label="Stäng av ljud">
+                <VolumeOffIcon fontSize="small" />
+              </SideButton>
+              <VoiceOrb phase={phase} onClick={handleOrbTap} />
+              <SideButton onClick={handlePause} disabled={phase === 'thinking'} label="Pausa">
+                <PauseIcon fontSize="small" />
+              </SideButton>
             </Box>
+            <Button onClick={forceReset} sx={{ ...secondaryButtonSx, border: 'none', color: 'var(--text-secondary)' }}>
+              Skriv istället
+            </Button>
           </Box>
         ) : (
           <>
