@@ -71,6 +71,30 @@ function pickVoice() {
     || null;
 }
 
+// ✅ ROTORSAKEN till att talet varit tyst på iOS (Safari OCH Chrome på
+// iPhone — Apple tvingar alla webbläsare där att använda WebKit under
+// huven): speechSynthesis.speak() spelar bara upp ljud om webbläsaren
+// nyss haft en RIKTIG, synkron användarinteraktion. Vårt faktiska
+// speak()-anrop sker alltid efter ett await fetch(...) (kommandot ska
+// ju tolkas av Claude först) — vid den tidpunkten räknas interaktionen
+// som "för gammal", så WebKit struntar tyst i den. Inget fel kastas,
+// inget onerror triggas — den bara låter bli att låta, vilket är exakt
+// vad som observerats. Lösningen: "lås upp" talsyntesen EN gång med ett
+// tomt, ljudlöst yttrande anropat SYNKRONT direkt i klick-handlern
+// (innan någon await), vilket håller motorn upplåst för resten av
+// sidans session — även för senare, asynkrona speak()-anrop.
+let speechUnlocked = false;
+function unlockSpeechSynthesis() {
+  if (speechUnlocked || !window.speechSynthesis) return;
+  try {
+    const unlock = new SpeechSynthesisUtterance(' ');
+    unlock.volume = 0;
+    window.speechSynthesis.speak(unlock);
+    window.speechSynthesis.cancel();
+    speechUnlocked = true;
+  } catch { /* strunta i det — speak() försöker ändå senare */ }
+}
+
 // ✅ Loggar/rapporterar nu VARFÖR det eventuellt tystnar (event.error från
 // webbläsaren — t.ex. "not-allowed", "synthesis-failed", "canceled" —
 // istället för att bara tyst anta att allt gick bra). onError låter UI:t
@@ -237,6 +261,10 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
   };
 
   const startListening = () => {
+    // ✅ Måste ske HÄR, synkront, innan något annat — det här är den enda
+    // platsen koden körs direkt inuti en användares knapptryckning. Se
+    // kommentaren vid unlockSpeechSynthesis().
+    unlockSpeechSynthesis();
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
       return notify('Röstinmatning stöds inte i den här webbläsaren — använd textfältet istället.', 'error');
@@ -481,6 +509,25 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
           </Box>
         ) : (
           <>
+            {/* ✅ Huvudvägen in är att TRYCKA OCH PRATA — samma idé som i
+                mockupen. Textfältet nedanför är ett alternativ, inte
+                huvudvägen, så det ska inte vara det första man ser. */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, py: 1, mb: 3 }}>
+              <IconButton
+                onClick={startListening}
+                sx={{
+                  width: 88, height: 88, bgcolor: 'var(--text)', color: '#fff',
+                  boxShadow: '0 14px 30px rgba(17,24,39,0.18)',
+                  '&:hover': { bgcolor: '#000' },
+                }}
+              >
+                <MicIcon sx={{ fontSize: 30 }} />
+              </IconButton>
+              <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--text-secondary)', textTransform: 'uppercase', mt: 1 }}>
+                Tryck för att prata
+              </Typography>
+            </Box>
+
             <FormControlLabel
               control={<Switch checked={autoExecute} onChange={e => toggleAutoExecute(e.target.checked)} />}
               label="Utför direkt utan bekräftelse (handsfree)"
@@ -505,21 +552,16 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
               ))}
             </Box>
 
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-              <TextField
-                fullWidth multiline minRows={2}
-                placeholder='Säg eller skriv allt i ett svep, t.ex. "Boka om mötet med Valdemar till nästa vecka"'
-                value={command}
-                onChange={e => setCommand(e.target.value)}
-                sx={fieldSx}
-              />
-              <IconButton
-                onClick={startListening}
-                sx={{ bgcolor: 'rgba(17,24,39,0.06)', color: 'var(--text)', '&:hover': { bgcolor: 'rgba(17,24,39,0.1)' } }}
-              >
-                <MicIcon />
-              </IconButton>
-            </Box>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'var(--text-secondary)', display: 'block', mb: 0.5 }}>
+              Eller skriv istället
+            </Typography>
+            <TextField
+              fullWidth multiline minRows={2}
+              placeholder='T.ex. "Boka om mötet med Valdemar till nästa vecka"'
+              value={command}
+              onChange={e => setCommand(e.target.value)}
+              sx={fieldSx}
+            />
             <Box sx={{ mt: 2 }}>
               <Button variant="contained" startIcon={<SendIcon />} onClick={() => submitCommand()} disabled={loading || !command.trim()} sx={primaryButtonSx}>
                 {loading ? 'Tolkar...' : 'Skicka'}
