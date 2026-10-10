@@ -91,15 +91,25 @@ async function speak(text, { onEnd, onError } = {}) {
       throw new Error(body.error || `TTS ${res.status}`);
     }
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    // ✅ "format stöds inte" trots en giltig audio/mpeg-blob av rimlig
+    // storlek pekar på en känd WebKit-bugg: Safari/Chrome på iOS vägrar
+    // ibland spela upp blob:-URL:er i en <audio>-tagg (fungerar i
+    // Chrome/Edge på datorn), men samma ljud som en data:-URI fungerar
+    // konsekvent överallt. Filen är alltid kort (en mening) så base64-
+    // overheaden spelar ingen roll.
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
     const el = getTtsAudioEl();
-    el.src = url;
+    el.src = dataUrl;
 
     let done = false;
     const finish = () => {
       if (done) return;
       done = true;
-      URL.revokeObjectURL(url);
       onEnd?.();
     };
     el.onended = finish;
