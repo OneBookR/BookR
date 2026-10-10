@@ -628,4 +628,33 @@ async function interpretCommand(command, { accessToken, provider, ownerEmail, di
   };
 }
 
-export { interpretCommand, executeActions, getBriefing };
+// ===== ELEVENLABS: TEXT TILL TAL =====
+// Ersätter webbläsarens inbyggda speechSynthesis (som alltid låter
+// mekanisk/robotaktig) med en riktig molnröst — samma kategori naturlig,
+// mänsklig röst som Claude/ChatGPTs röstläge. eleven_multilingual_v2
+// hanterar svenska naturligt utan att en svensk-specifik röst krävs.
+const ELEVENLABS_DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // "Rachel" — varm, neutral, bred språksupport
+
+async function textToSpeech(text) {
+  if (!process.env.ELEVENLABS_API_KEY) {
+    throw new Error('ELEVENLABS_API_KEY saknas — lägg till den i miljövariablerna för att aktivera röstsvar.');
+  }
+  const voiceId = process.env.ELEVENLABS_VOICE_ID || ELEVENLABS_DEFAULT_VOICE_ID;
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': process.env.ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json',
+      'Accept': 'audio/mpeg'
+    },
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+    })
+  });
+  if (!res.ok) throw new Error(`ElevenLabs API ${res.status}: ${await res.text()}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+export { interpretCommand, executeActions, getBriefing, textToSpeech };

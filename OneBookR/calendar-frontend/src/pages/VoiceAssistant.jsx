@@ -38,111 +38,85 @@ const EXAMPLES = [
   'Vilka har jag möte med idag?'
 ];
 
-// ✅ Röst in = webbläsarens inbyggda taligenkänning (Web Speech API).
-// Röst ut = webbläsarens inbyggda talsyntes. Bara Chrome/Edge stödjer
-// taligenkänning idag; talsyntes har betydligt bredare stöd. Ingen av
-// dem kräver ett nytt API-beroende eller en nyckel.
+// ✅ Röst in = webbläsarens inbyggda taligenkänning (Web Speech API),
+// Chrome/Edge-stöd. Röst ut = en riktig molnröst (ElevenLabs, via
+// backend) istället för webbläsarens robotaktiga inbyggda talsyntes.
 function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
-// ✅ Modulnivå-referens som håller utterance-objektet vid liv — i flera
-// webbläsare kan garbage collection annars tysta talet helt om inget
-// håller en referens till det, en känd och lätt att missa bugg i Web
-// Speech API. Samma anledning till de 80ms fördröjningen efter
-// cancel(): cancel()+speak() i samma tick kan tysta NÄSTA replik helt.
-let currentUtterance = null;
-let cachedVoices = [];
-
-// Röster laddas asynkront i flera webbläsare — finns inget svenskt (eller
-// inget alls) tillgängligt när man frågar direkt efter sidladdning.
-function primeVoices() {
-  if (!window.speechSynthesis) return;
-  const load = () => { cachedVoices = window.speechSynthesis.getVoices() || []; };
-  load();
-  window.speechSynthesis.onvoiceschanged = load;
-}
-
-function pickVoice() {
-  if (!cachedVoices.length) cachedVoices = window.speechSynthesis?.getVoices() || [];
-  return cachedVoices.find(v => v.lang?.toLowerCase().startsWith('sv'))
-    || cachedVoices.find(v => v.default)
-    || cachedVoices[0]
-    || null;
-}
-
-// ✅ ROTORSAKEN till att talet varit tyst på iOS (Safari OCH Chrome på
-// iPhone — Apple tvingar alla webbläsare där att använda WebKit under
-// huven): speechSynthesis.speak() spelar bara upp ljud om webbläsaren
-// nyss haft en RIKTIG, synkron användarinteraktion. Vårt faktiska
-// speak()-anrop sker alltid efter ett await fetch(...) (kommandot ska
-// ju tolkas av Claude först) — vid den tidpunkten räknas interaktionen
-// som "för gammal", så WebKit struntar tyst i den. Inget fel kastas,
-// inget onerror triggas — den bara låter bli att låta, vilket är exakt
-// vad som observerats. Lösningen: "lås upp" talsyntesen EN gång med ett
-// tomt, ljudlöst yttrande anropat SYNKRONT direkt i klick-handlern
-// (innan någon await), vilket håller motorn upplåst för resten av
-// sidans session — även för senare, asynkrona speak()-anrop.
-let speechUnlocked = false;
-function unlockSpeechSynthesis() {
-  if (speechUnlocked || !window.speechSynthesis) return;
-  try {
-    const unlock = new SpeechSynthesisUtterance(' ');
-    unlock.volume = 0;
-    window.speechSynthesis.speak(unlock);
-    window.speechSynthesis.cancel();
-    speechUnlocked = true;
-  } catch { /* strunta i det — speak() försöker ändå senare */ }
-}
-
-// ✅ Loggar/rapporterar nu VARFÖR det eventuellt tystnar (event.error från
-// webbläsaren — t.ex. "not-allowed", "synthesis-failed", "canceled" —
-// istället för att bara tyst anta att allt gick bra). onError låter UI:t
-// visa den riktiga anledningen för första gången, istället för att gissa.
-function speak(text, { onEnd, onError } = {}) {
-  if (!text) { onEnd?.(); return; }
-  if (!window.speechSynthesis) {
-    console.warn('[Röst] speechSynthesis finns inte i den här webbläsaren/kontexten.');
-    onError?.('Talsyntes stöds inte i den här webbläsaren');
-    onEnd?.();
-    return;
+// En enda delad <audio>-tagg, återanvänd för varje svar — se
+// unlockTtsAudio() för varför den måste vara EN instans som hålls vid liv.
+let ttsAudioEl = null;
+function getTtsAudioEl() {
+  if (!ttsAudioEl) {
+    ttsAudioEl = new Audio();
+    ttsAudioEl.preload = 'auto';
   }
-  try {
-    window.speechSynthesis.cancel();
-  } catch { /* inget att avbryta */ }
+  return ttsAudioEl;
+}
 
-  setTimeout(() => {
-    try {
-      const utter = new SpeechSynthesisUtterance(text);
-      const voice = pickVoice();
-      if (voice) utter.voice = voice;
-      utter.lang = voice?.lang || 'sv-SE';
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        currentUtterance = null;
-        onEnd?.();
-      };
-      utter.onstart = () => console.log('[Röst] Talar nu:', text.slice(0, 60), 'röst:', voice?.name || '(ingen vald — webbläsarens default)');
-      utter.onend = finish;
-      utter.onerror = (e) => {
-        console.error('[Röst] Talsyntesfel:', e.error, e);
-        onError?.(e.error || 'okänt fel');
-        finish();
-      };
-      currentUtterance = utter;
-      window.speechSynthesis.speak(utter);
-      // ✅ Säkerhetsnät: onend/onerror är inte 100% pålitliga i alla
-      // webbläsare — UI:t ska ALDRIG kunna fastna i "pratar"-läget utan
-      // en väg vidare, oavsett vad talsyntesen gör.
-      setTimeout(finish, Math.max(4000, text.length * 90));
-    } catch (err) {
-      console.error('[Röst] Kunde inte starta talsyntes:', err);
-      onError?.(String(err?.message || err));
-      onEnd?.();
+// Kortast möjliga, giltiga tysta ljudfil — bara till för att "låsa upp"
+// uppspelning, spelas aldrig hörbart.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAAAAA';
+
+// ✅ Samma rotorsak som tidigare löstes för webbläsarens speechSynthesis
+// gäller lika mycket för <audio>: iOS (Safari OCH Chrome på iPhone —
+// samma WebKit-motor under huven) tillåter bara uppspelning som en
+// DIREKT fortsättning av en användares knapptryckning. Vårt riktiga
+// play() sker efter två await-anrop (tolka kommandot + hämta ljudet från
+// ElevenLabs), långt efter att interaktionen "räknas" som giltig. Men en
+// och samma <audio>-ELEMENT som en gång blivit upplåst via ett lyckat
+// play() i en riktig klick-handler förblir upplåst för resten av sidans
+// session, även när man senare bara byter .src och kör play() async —
+// därför återanvänds samma element hela tiden istället för att skapa ett
+// nytt per svar.
+let ttsUnlocked = false;
+function unlockTtsAudio() {
+  if (ttsUnlocked) return;
+  const el = getTtsAudioEl();
+  el.src = SILENT_WAV;
+  el.play().then(() => { ttsUnlocked = true; el.pause(); }).catch(() => {});
+}
+
+// ✅ Hämtar en riktig, mänsklig uppläsning från backend (ElevenLabs)
+// istället för webbläsarens inbyggda talsyntes. Samma anrops-form
+// (onEnd/onError) som tidigare så resten av komponenten är opåverkad.
+async function speak(text, { onEnd, onError } = {}) {
+  if (!text) { onEnd?.(); return; }
+  try {
+    const res = await apiRequest('/api/voice/speak', { method: 'POST', body: JSON.stringify({ text }) });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `TTS ${res.status}`);
     }
-  }, 80);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const el = getTtsAudioEl();
+    el.src = url;
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      URL.revokeObjectURL(url);
+      onEnd?.();
+    };
+    el.onended = finish;
+    el.onerror = (e) => {
+      console.error('[Röst] Uppspelningsfel:', e);
+      onError?.('uppspelningsfel');
+      finish();
+    };
+    await el.play();
+    // ✅ Säkerhetsnät: onended är inte 100% pålitlig i alla webbläsare —
+    // UI:t ska ALDRIG kunna fastna i "pratar"-läget utan en väg vidare.
+    setTimeout(finish, Math.max(6000, text.length * 110));
+  } catch (err) {
+    console.error('[Röst] Kunde inte spela upp talsvaret:', err);
+    onError?.(String(err?.message || err));
+    onEnd?.();
+  }
 }
 
 // Sidoknapp (mute/pausa) — samma stil som i mockupen: en neutral,
@@ -251,9 +225,9 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
     });
   };
 
-  useEffect(() => { loadAll(); primeVoices(); }, []);
+  useEffect(() => { loadAll(); }, []);
   // Sluta tala/lyssna om man lämnar sidan mitt i ett samtal.
-  useEffect(() => () => { try { window.speechSynthesis?.cancel(); } catch {} recognitionRef.current?.stop(); }, []);
+  useEffect(() => () => { try { ttsAudioEl?.pause(); } catch {} recognitionRef.current?.stop(); }, []);
 
   const toggleAutoExecute = async (value) => {
     setAutoExecute(value);
@@ -263,8 +237,8 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
   const startListening = () => {
     // ✅ Måste ske HÄR, synkront, innan något annat — det här är den enda
     // platsen koden körs direkt inuti en användares knapptryckning. Se
-    // kommentaren vid unlockSpeechSynthesis().
-    unlockSpeechSynthesis();
+    // kommentaren vid unlockTtsAudio().
+    unlockTtsAudio();
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
       return notify('Röstinmatning stöds inte i den här webbläsaren — använd textfältet istället.', 'error');
@@ -299,7 +273,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
 
   const stopSpeaking = () => {
     skipContinueRef.current = true;
-    try { window.speechSynthesis.cancel(); } catch {}
+    try { getTtsAudioEl().pause(); } catch {}
     setSpeaking(false);
   };
 
@@ -340,7 +314,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
   // alltid kunna ta sig tillbaka till textfältet och skriva/prata igen.
   const forceReset = () => {
     skipContinueRef.current = true;
-    try { window.speechSynthesis.cancel(); } catch {}
+    try { getTtsAudioEl().pause(); } catch {}
     recognitionRef.current?.stop();
     setListening(false);
     setSpeaking(false);

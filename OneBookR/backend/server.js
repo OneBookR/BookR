@@ -43,7 +43,7 @@ import { upsertHubspotContact } from './hubspot.js';
 import { isBillingConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretSubscription, emailForSubscription } from './billing.js';
 import { limitsForPlan } from './plans.js';
 import { startRulesScheduler, renderRuleEmail } from './rulesScheduler.js';
-import { interpretCommand, executeActions, getBriefing } from './voiceAssistant.js';
+import { interpretCommand, executeActions, getBriefing, textToSpeech } from './voiceAssistant.js';
 
 // ===== APPLICATION SETUP =====
 const app = express();
@@ -2833,6 +2833,26 @@ app.post('/api/voice/command', voiceLimiter, async (req, res) => {
   } catch (err) {
     console.error('❌ Kunde inte tolka röstkommandot:', err.message);
     res.status(500).json({ error: err.message || 'Kunde inte tolka kommandot', code: 'VOICE_PARSE_FAILED' });
+  }
+});
+
+// ✅ Mänsklig, flytande röst via ElevenLabs istället för webbläsarens
+// robotaktiga inbyggda talsyntes. Texten capas — det här är alltid ett
+// kort talat svar, aldrig en lång text, och ElevenLabs tar betalt per
+// tecken.
+app.post('/api/voice/speak', voiceLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireVoiceAssistantEnabled(email, res))) return;
+  const text = String(req.body?.text || '').trim().slice(0, 600);
+  if (!text) return res.status(400).json({ error: 'Ingen text angavs', code: 'MISSING_TEXT' });
+  try {
+    const audio = await textToSpeech(text);
+    res.set('Content-Type', 'audio/mpeg');
+    res.send(audio);
+  } catch (err) {
+    console.error('❌ Kunde inte skapa talsvar:', err.message);
+    res.status(500).json({ error: err.message || 'Kunde inte skapa talsvar', code: 'TTS_FAILED' });
   }
 });
 
