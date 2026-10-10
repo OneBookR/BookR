@@ -44,18 +44,42 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
+// ✅ Modulnivå-referens som håller utterance-objektet vid liv — i flera
+// webbläsare kan garbage collection annars tysta talet helt om inget
+// håller en referens till det, en känd och lätt att missa bugg i Web
+// Speech API. Samma anledning till de 80ms fördröjningen efter
+// cancel(): cancel()+speak() i samma tick kan tysta NÄSTA replik helt.
+let currentUtterance = null;
+
 function speak(text, { onEnd } = {}) {
   if (!text || !window.speechSynthesis) { onEnd?.(); return; }
   try {
-    window.speechSynthesis.cancel(); // aldrig två överlappande repliker
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'sv-SE';
-    utter.onend = () => onEnd?.();
-    utter.onerror = () => onEnd?.();
-    window.speechSynthesis.speak(utter);
-  } catch {
-    onEnd?.();
-  }
+    window.speechSynthesis.cancel();
+  } catch { /* inget att avbryta */ }
+
+  setTimeout(() => {
+    try {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'sv-SE';
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        currentUtterance = null;
+        onEnd?.();
+      };
+      utter.onend = finish;
+      utter.onerror = finish;
+      currentUtterance = utter;
+      window.speechSynthesis.speak(utter);
+      // ✅ Säkerhetsnät: onend/onerror är inte 100% pålitliga i alla
+      // webbläsare — UI:t ska ALDRIG kunna fastna i "pratar"-läget utan
+      // en väg vidare, oavsett vad talsyntesen gör.
+      setTimeout(finish, Math.max(4000, text.length * 90));
+    } catch {
+      onEnd?.();
+    }
+  }, 80);
 }
 
 // Orben — samma visuella idé som godkändes i mockupen, nu byggd på
@@ -165,6 +189,17 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
   const stopSpeaking = () => {
     skipContinueRef.current = true;
     try { window.speechSynthesis.cancel(); } catch {}
+    setSpeaking(false);
+  };
+
+  // ✅ Alltid synlig nödutgång under ett röstsamtal — oavsett vad
+  // taligenkänningen eller talsyntesen råkar göra i bakgrunden ska man
+  // alltid kunna ta sig tillbaka till textfältet och skriva/prata igen.
+  const forceReset = () => {
+    skipContinueRef.current = true;
+    try { window.speechSynthesis.cancel(); } catch {}
+    recognitionRef.current?.stop();
+    setListening(false);
     setSpeaking(false);
   };
 
@@ -301,9 +336,12 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
             <Typography sx={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', textAlign: 'center', minHeight: 36, maxWidth: 560 }}>
               {listening ? (liveTranscript || 'Lyssnar...') : (lastResult || pending?.preview || 'Svarar...')}
             </Typography>
-            <Button onClick={listening ? stopListening : stopSpeaking} sx={secondaryButtonSx}>
-              {listening ? 'Avbryt' : 'Tyst'}
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button onClick={listening ? stopListening : stopSpeaking} sx={secondaryButtonSx}>
+                {listening ? 'Avbryt' : 'Tyst'}
+              </Button>
+              <Button onClick={forceReset} sx={secondaryButtonSx}>Skriv istället</Button>
+            </Box>
           </Box>
         ) : (
           <>
