@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box, Typography, TextField, Button, Paper, Alert, Container, Chip,
   Drawer, IconButton, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions,
-  Collapse
+  Collapse, Snackbar
 } from '@mui/material';
 import { Add, DeleteOutline, CheckCircle, ArrowForward, Event, Close, OpenWith, ArrowUpward, ArrowDownward, Visibility, Edit } from '@mui/icons-material';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
@@ -10,6 +10,7 @@ import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import moment from 'moment';
 import { apiRequest } from '../utils/apiConfig.js';
 import { setTaskDraftState } from '../utils/taskDraftGuard.js';
+import TaskManagerCalendarConsentCard from '../components/TaskManagerCalendarConsentCard.jsx';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -47,6 +48,17 @@ const Task = ({ user }) => {
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [busyEvents, setBusyEvents] = useState([]);
+
+  // ✅ Task Manager — riktig kalenderläsning/-skrivning (samtyckesbaserat,
+  // se TaskManagerCalendarConsentCard.jsx). realEvents är händelser med
+  // RIKTIG titel/beskrivning/plats, bara hämtade när consent är på.
+  const [realEventsConsent, setRealEventsConsent] = useState(Boolean(user?.taskManagerCalendarConsent));
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [realEvents, setRealEvents] = useState([]);
+  const [realEventBusyId, setRealEventBusyId] = useState(null);
+  const [editingRealEvent, setEditingRealEvent] = useState(null); // { id, title, description, start, end }
+  const [quickCreate, setQuickCreate] = useState(null); // { start, end, title, description }
+  const [realEventError, setRealEventError] = useState('');
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTask, setDrawerTask] = useState(null); // null = skapa ny uppgift
@@ -90,12 +102,52 @@ const Task = ({ user }) => {
     }
   }, []);
 
+  const loadRealEvents = useCallback(async () => {
+    if (!realEventsConsent) { setRealEvents([]); return; }
+    try {
+      const now = new Date();
+      const horizon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+      const response = await apiRequest(
+        `/api/calendar/real-events?start=${encodeURIComponent(now.toISOString())}&end=${encodeURIComponent(horizon.toISOString())}`
+      );
+      const data = await response.json();
+      if (response.ok) setRealEvents(data.events || []);
+    } catch (error) {
+      console.error('Error loading real calendar events:', error);
+    }
+  }, [realEventsConsent]);
+
   useEffect(() => {
     if (user?.email) {
       loadTasks();
       loadBusyEvents();
+      loadRealEvents();
     }
-  }, [user?.email, loadTasks, loadBusyEvents]);
+  }, [user?.email, loadTasks, loadBusyEvents, loadRealEvents]);
+
+  const handleEnableCalendarConsent = async () => {
+    setConsentBusy(true);
+    try {
+      const res = await apiRequest('/api/calendar/task-manager-consent', {
+        method: 'POST',
+        body: JSON.stringify({ consent: true })
+      });
+      if (res.ok) setRealEventsConsent(true);
+    } catch (error) {
+      console.error('Error enabling calendar consent:', error);
+    } finally {
+      setConsentBusy(false);
+    }
+  };
+
+  const handleDisableCalendarConsent = () => {
+    setRealEventsConsent(false);
+    setRealEvents([]);
+    apiRequest('/api/calendar/task-manager-consent', {
+      method: 'POST',
+      body: JSON.stringify({ consent: false })
+    }).catch(() => {});
+  };
 
   // ✅ Håller App.jsx (headerns navigation) informerad om ett osparat
   // förslag finns, så den kan fråga innan man navigerar bort från sidan
@@ -136,12 +188,50 @@ const Task = ({ user }) => {
 
   const draftColor = drawerTask ? taskColor(drawerTask.id) : '#3455a4';
 
+  // ✅ realEvents hämtas (när consent är på) från HELA primary-kalendern,
+  // så den innehåller även händelser BookR själv skapat för bekräftade
+  // task-pass — annars skulle de renderas dubbelt (en gång som 'task'-
+  // block, en gång som generiskt 'realEvent'-block ovanpå).
+  const bookrOwnedEventIds = useMemo(
+    () => new Set(tasks.flatMap(t => (t.scheduledSlots || []).map(s => s.eventId))),
+    [tasks]
+  );
+  const visibleRealEvents = useMemo(
+    () => realEvents.filter(e => !bookrOwnedEventIds.has(e.id)),
+    [realEvents, bookrOwnedEventIds]
+  );
+  // busyEvents (från /api/calendar/events) läser också primary-kalendern,
+  // så samma händelse skulle annars visas två gånger: en gång som rött
+  // "Upptagen"-block, en gång med sin riktiga titel. Matchar på start|end
+  // eftersom busyEvents aldrig får ett riktigt event-id.
+  const realEventKeySet = useMemo(
+    () => new Set(visibleRealEvents.map(e => `${e.start}|${e.end}`)),
+    [visibleRealEvents]
+  );
+
   const calendarEvents = useMemo(() => {
-    const busy = busyEvents.map(e => ({
-      title: 'Upptagen',
+    const busy = busyEvents
+      .filter(e => !realEventKeySet.has(`${e.start}|${e.end}`))
+      .map(e => ({
+        title: 'Upptagen',
+        start: new Date(e.start),
+        end: new Date(e.end),
+        resource: 'busy'
+      }));
+    const realEventBlocks = visibleRealEvents.map(e => ({
+      id: e.id,
+      title: e.title,
       start: new Date(e.start),
       end: new Date(e.end),
-      resource: 'busy'
+      resource: 'realEvent',
+      // ✅ Bara återkommande händelser låses helt i v1 (undviker att av
+      // misstag bara lösgöra en instans ur en serie). Möten med andra
+      // deltagare är INTE låsta — de varnar bara innan en ändring sparas,
+      // se handleRealEventChange/handleDeleteRealEvent.
+      locked: e.isRecurring,
+      hasOtherAttendees: e.hasOtherAttendees,
+      description: e.description,
+      location: e.location
     }));
     const taskBlocks = tasks.flatMap(t =>
       (t.scheduledSlots || []).map(slot => {
@@ -174,9 +264,9 @@ const Task = ({ user }) => {
         overlaps
       };
     });
-    return [...busy, ...taskBlocks, ...proposed];
+    return [...busy, ...taskBlocks, ...proposed, ...realEventBlocks];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busyEvents, tasks, proposedSlots, occupiedIntervals, draftColor, recentlyAddedEventIds]);
+  }, [busyEvents, tasks, proposedSlots, occupiedIntervals, draftColor, recentlyAddedEventIds, visibleRealEvents, realEventKeySet]);
 
   const proposedTotalHours = useMemo(
     () => Math.round((proposedSlots || []).reduce((sum, s) => sum + (Number(s.duration) || 0), 0) * 100) / 100,
@@ -195,6 +285,151 @@ const Task = ({ user }) => {
       duration: Math.round(((end.getTime() - start.getTime()) / 3_600_000) * 100) / 100
     } : s)));
   }, []);
+
+  // ✅ Drag/resize på en RIKTIG kalenderhändelse. Möten med andra
+  // deltagare varnas om innan ändringen sparas (Google/Microsoft mejlar
+  // normalt övriga deltagare vid ändring) — avbryts varningen görs
+  // ingenting, kalendern återgår automatiskt eftersom inget state
+  // hann uppdateras.
+  const handleRealEventChange = useCallback(async ({ event, start, end }) => {
+    if (event.hasOtherAttendees) {
+      const ok = window.confirm('Andra är bjudna på det här mötet — att flytta det kan mejla dem om ändringen. Spara ändå?');
+      if (!ok) return;
+    }
+    const previous = realEvents;
+    setRealEvents(list => list.map(e => (e.id === event.id ? { ...e, start: start.toISOString(), end: end.toISOString() } : e)));
+    setRealEventBusyId(event.id);
+    try {
+      const response = await apiRequest(`/api/calendar/events/${encodeURIComponent(event.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ start: start.toISOString(), end: end.toISOString() })
+      });
+      if (!response.ok) throw new Error('save failed');
+    } catch (error) {
+      setRealEvents(previous);
+      setRealEventError('Kunde inte spara ändringen i kalendern. Försök igen.');
+    } finally {
+      setRealEventBusyId(null);
+    }
+  }, [realEvents]);
+
+  const handleCalendarEventChange = useCallback((args) => {
+    if (args.event.resource === 'proposed') return handleProposedEventChange(args);
+    if (args.event.resource === 'realEvent') return handleRealEventChange(args);
+  }, [handleProposedEventChange, handleRealEventChange]);
+
+  const handleSelectEvent = useCallback((event) => {
+    if (event.resource !== 'realEvent') return;
+    if (event.locked) {
+      setRealEventError('Återkommande möten går inte att ändra från BookR än.');
+      return;
+    }
+    setEditingRealEvent({
+      id: event.id,
+      title: event.title,
+      description: event.description || '',
+      start: toLocalInputValue(event.start),
+      end: toLocalInputValue(event.end),
+      hasOtherAttendees: event.hasOtherAttendees
+    });
+  }, []);
+
+  const handleSelectSlot = useCallback(({ start, end }) => {
+    if (!realEventsConsent) return;
+    setQuickCreate({
+      start: toLocalInputValue(start),
+      end: toLocalInputValue(end),
+      title: '',
+      description: ''
+    });
+  }, [realEventsConsent]);
+
+  const handleSaveRealEvent = async () => {
+    if (!editingRealEvent) return;
+    setRealEventBusyId(editingRealEvent.id);
+    try {
+      const response = await apiRequest(`/api/calendar/events/${encodeURIComponent(editingRealEvent.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          title: editingRealEvent.title,
+          description: editingRealEvent.description,
+          start: new Date(editingRealEvent.start).toISOString(),
+          end: new Date(editingRealEvent.end).toISOString()
+        })
+      });
+      if (response.ok) {
+        setRealEvents(list => list.map(e => (e.id === editingRealEvent.id ? {
+          ...e,
+          title: editingRealEvent.title,
+          description: editingRealEvent.description,
+          start: new Date(editingRealEvent.start).toISOString(),
+          end: new Date(editingRealEvent.end).toISOString()
+        } : e)));
+        setEditingRealEvent(null);
+      } else {
+        setRealEventError('Kunde inte spara ändringen.');
+      }
+    } catch (error) {
+      setRealEventError('Kunde inte spara ändringen.');
+    } finally {
+      setRealEventBusyId(null);
+    }
+  };
+
+  const handleDeleteRealEvent = async () => {
+    if (!editingRealEvent) return;
+    const msg = editingRealEvent.hasOtherAttendees
+      ? 'Det här mötet har andra deltagare — att radera det kan skicka ett avbokningsmejl till dem. Radera ändå?'
+      : 'Radera den här kalenderhändelsen?';
+    if (!window.confirm(msg)) return;
+    setRealEventBusyId(editingRealEvent.id);
+    try {
+      const response = await apiRequest(`/api/calendar/events/${encodeURIComponent(editingRealEvent.id)}`, { method: 'DELETE' });
+      if (response.ok) {
+        setRealEvents(list => list.filter(e => e.id !== editingRealEvent.id));
+        setEditingRealEvent(null);
+      } else {
+        setRealEventError('Kunde inte radera händelsen.');
+      }
+    } catch (error) {
+      setRealEventError('Kunde inte radera händelsen.');
+    } finally {
+      setRealEventBusyId(null);
+    }
+  };
+
+  const handleCreateRealEvent = async () => {
+    if (!quickCreate?.title?.trim()) return;
+    try {
+      const response = await apiRequest('/api/calendar/events', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: quickCreate.title,
+          description: quickCreate.description,
+          start: new Date(quickCreate.start).toISOString(),
+          end: new Date(quickCreate.end).toISOString()
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.eventId) {
+        setRealEvents(list => [...list, {
+          id: data.eventId,
+          title: quickCreate.title,
+          description: quickCreate.description,
+          location: '',
+          start: new Date(quickCreate.start).toISOString(),
+          end: new Date(quickCreate.end).toISOString(),
+          isRecurring: false,
+          hasOtherAttendees: false
+        }]);
+        setQuickCreate(null);
+      } else {
+        setRealEventError('Kunde inte skapa händelsen.');
+      }
+    } catch (error) {
+      setRealEventError('Kunde inte skapa händelsen.');
+    }
+  };
 
   // ✅ "Nästa pass" (nästa ändå-kommande arbetspass) är bara meningsfullt
   // medan det finns MER kvar att göra. När uppgiften är helt klar (0 h kvar)
@@ -676,11 +911,18 @@ const Task = ({ user }) => {
         {/* Kalender */}
         <Paper elevation={0} sx={{ ...glassCardSx, minHeight: { xs: 520, lg: 760 }, display: 'flex', flexDirection: 'column' }}>
           <Box sx={{ p: { xs: 2.5, md: 3 }, pb: 1.5 }}>
+            <TaskManagerCalendarConsentCard
+              consent={realEventsConsent}
+              busy={consentBusy}
+              onEnable={handleEnableCalendarConsent}
+              onDisable={handleDisableCalendarConsent}
+            />
             <Typography variant="h5" sx={{ fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.04em', mb: 1 }}>
               Kalender — kommande 14 dagar
             </Typography>
             <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', alignItems: 'center' }}>
               <LegendDot color="#b42318" label="Upptaget" />
+              {realEventsConsent && <LegendDot color="#475569" label="Riktig händelse" />}
               {tasks.map(t => <LegendDot key={t.id} color={taskColor(t.id)} label={t.name} />)}
               {proposedSlots?.length > 0 && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12, fontWeight: 700, color: draftColor }}>
@@ -736,11 +978,28 @@ const Task = ({ user }) => {
               endAccessor="end"
               style={{ height: '100%' }}
               resizable
-              draggableAccessor={event => event.resource === 'proposed'}
-              resizableAccessor={event => event.resource === 'proposed'}
-              onEventDrop={handleProposedEventChange}
-              onEventResize={handleProposedEventChange}
+              selectable={realEventsConsent}
+              draggableAccessor={event => event.resource === 'proposed' || (event.resource === 'realEvent' && !event.locked)}
+              resizableAccessor={event => event.resource === 'proposed' || (event.resource === 'realEvent' && !event.locked)}
+              onEventDrop={handleCalendarEventChange}
+              onEventResize={handleCalendarEventChange}
+              onSelectEvent={handleSelectEvent}
+              onSelectSlot={handleSelectSlot}
               eventPropGetter={(event) => {
+                if (event.resource === 'realEvent') {
+                  // ✅ Grå/låst stil för återkommande händelser (ingen
+                  // drag/redigering/radering i v1), annars en distinkt men
+                  // neutral stil — skild både från uppgifts-färgerna och
+                  // från "Upptagen"-rött, så riktiga händelser syns som en
+                  // egen kategori.
+                  return {
+                    style: {
+                      backgroundColor: event.locked ? '#94a3b8' : '#475569', color: '#ffffff',
+                      border: '1.5px dashed #ffffff', borderRadius: '6px', fontWeight: 700, fontSize: '12px', padding: '2px 4px',
+                      cursor: event.locked ? 'default' : 'move'
+                    }
+                  };
+                }
                 if (event.resource === 'proposed') {
                   // ✅ Tidigare en svagt rand-randig, nästan osynlig ton
                   // (~15 % opacitet ovanpå vit bakgrund) — syntes knappt.
@@ -998,6 +1257,96 @@ const Task = ({ user }) => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Redigera en RIKTIG kalenderhändelse (consent-gated, se
+          TaskManagerCalendarConsentCard) — till skillnad från dialogen
+          ovan gäller den här GODTYCKLIGA primary-kalenderhändelser, inte
+          bara BookR-skapade uppgiftspass, och har därför titel/beskrivning
+          samt en raderingsknapp. */}
+      <Dialog open={Boolean(editingRealEvent)} onClose={() => setEditingRealEvent(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Ändra kalenderhändelse</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            {editingRealEvent?.hasOtherAttendees && (
+              <Alert severity="info" sx={{ borderRadius: 3 }}>Andra är bjudna på det här mötet — att ändra det kan mejla dem om ändringen.</Alert>
+            )}
+            <TextField
+              label="Titel" fullWidth sx={fieldSx}
+              value={editingRealEvent?.title || ''}
+              onChange={(e) => setEditingRealEvent(prev => ({ ...prev, title: e.target.value }))}
+            />
+            <TextField
+              label="Beskrivning" fullWidth multiline rows={2} sx={fieldSx}
+              value={editingRealEvent?.description || ''}
+              onChange={(e) => setEditingRealEvent(prev => ({ ...prev, description: e.target.value }))}
+            />
+            <TextField
+              label="Start" type="datetime-local" fullWidth sx={fieldSx}
+              InputLabelProps={{ shrink: true }}
+              value={editingRealEvent?.start || ''}
+              onChange={(e) => setEditingRealEvent(prev => ({ ...prev, start: e.target.value }))}
+            />
+            <TextField
+              label="Slut" type="datetime-local" fullWidth sx={fieldSx}
+              InputLabelProps={{ shrink: true }}
+              value={editingRealEvent?.end || ''}
+              onChange={(e) => setEditingRealEvent(prev => ({ ...prev, end: e.target.value }))}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditingRealEvent(null)}>Avbryt</Button>
+          <Button color="error" onClick={handleDeleteRealEvent} disabled={realEventBusyId === editingRealEvent?.id}>
+            Radera
+          </Button>
+          <Button variant="contained" onClick={handleSaveRealEvent} disabled={realEventBusyId === editingRealEvent?.id} sx={primaryButtonSx}>
+            Spara
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Skapa en ny RIKTIG kalenderhändelse — öppnas av att klicka/dra i
+          en tom lucka i gridet (bara aktivt när consent är på, se
+          selectable/onSelectSlot på kalendern). */}
+      <Dialog open={Boolean(quickCreate)} onClose={() => setQuickCreate(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Ny kalenderhändelse</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Titel" fullWidth autoFocus sx={fieldSx}
+              value={quickCreate?.title || ''}
+              onChange={(e) => setQuickCreate(prev => ({ ...prev, title: e.target.value }))}
+            />
+            <TextField
+              label="Beskrivning" fullWidth multiline rows={2} sx={fieldSx}
+              value={quickCreate?.description || ''}
+              onChange={(e) => setQuickCreate(prev => ({ ...prev, description: e.target.value }))}
+            />
+            <TextField
+              label="Start" type="datetime-local" fullWidth sx={fieldSx}
+              InputLabelProps={{ shrink: true }}
+              value={quickCreate?.start || ''}
+              onChange={(e) => setQuickCreate(prev => ({ ...prev, start: e.target.value }))}
+            />
+            <TextField
+              label="Slut" type="datetime-local" fullWidth sx={fieldSx}
+              InputLabelProps={{ shrink: true }}
+              value={quickCreate?.end || ''}
+              onChange={(e) => setQuickCreate(prev => ({ ...prev, end: e.target.value }))}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQuickCreate(null)}>Avbryt</Button>
+          <Button variant="contained" onClick={handleCreateRealEvent} disabled={!quickCreate?.title?.trim()} sx={primaryButtonSx}>
+            Skapa
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={Boolean(realEventError)} autoHideDuration={5000} onClose={() => setRealEventError('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity="error" onClose={() => setRealEventError('')} sx={{ width: '100%' }}>{realEventError}</Alert>
+      </Snackbar>
     </Container>
   );
 };
