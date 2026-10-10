@@ -22,7 +22,7 @@ import {
   saveAdminCalendarToken, createDemoBooking, getDemoBooking, updateDemoBooking,
   markDemoLoginStarted, markDemoLoginCompleted, markDemoCalendarViewed,
   setUserBilling, getUserBilling, checkAndConsumeSession, getMonthlyUsage,
-  saveLeadProfile, setLeadProfileStatus, setCalendarDetailsConsent,
+  saveLeadProfile, setLeadProfileStatus, setCalendarDetailsConsent, setTaskManagerCalendarConsent,
   getInvitationsByEmail, respondToInvitation,
   saveDirectAccessToken, getStoredDirectAccessToken, createDirectAccessRequest, getDirectAccessRequestsFor,
   getDirectAccessRequest, respondToDirectAccessRequest, createDirectAccessLink,
@@ -1129,6 +1129,75 @@ async function fetchUpcomingMeetingsWithDetails(token, provider, timeMin, timeMa
       end: e.end?.dateTime || null,
       hangoutLink: e.hangoutLink || null,
       conferenceUri: e.hangoutLink ? null : e._link
+    }));
+}
+
+// ===== TASK MANAGER — riktiga kalenderhändelser (titel m.m.) =====
+// Egen funktion, skild från fetchAllCalendarEvents/fetchCalendarById ovan
+// (den integritetskritiska huvudvägen för ALLA användare, oavsett samtycke
+// — de ska ALDRIG börja läsa titel). Modellerad på
+// fetchUpcomingMeetingsWithDetails ovan, men utan dess "måste ha en
+// möteslänk"-filter (Task Manager ska visa ALLA riktiga händelser, inte
+// bara videomöten) och utan 5-resultatstaket (det är ett kalender-grid,
+// inte ett litet kort). Får BARA anropas efter uttryckligt samtycke
+// (taskManagerCalendarConsent) — se requireTaskManagerCalendarConsent
+// nedan, som gate:ar alla routes som använder den här.
+//
+// BARA primary-kalendern: varje händelse som returneras måste gå att
+// skriva till via createSimpleCalendarEvent/updateCalendarEvent/
+// deleteCalendarEvent (server.js, de hårdkodar primary/me) — en
+// sekundär/delad kalender skulle se redigerbar ut i gridet men tyst
+// misslyckas vid första drag/radering.
+//
+// hasOtherAttendees skickas med så frontend kan varna innan en ändring på
+// ett möte med andra deltagare faktiskt sparas (Google/Microsoft mejlar
+// normalt övriga deltagare vid ändring/avbokning) — själva deltagarlistan
+// (namn/mejl) lämnar aldrig den här funktionen.
+const TASK_MANAGER_MAX_EVENTS = 250; // 14-dagarsfönster i gridet — inte CONFIG.calendar.maxEvents (2500), som är till för hela busy/free-jämförelsen
+
+async function fetchTaskManagerCalendarEvents(token, provider, timeMin, timeMax) {
+  if (provider === 'microsoft') {
+    const url = `https://graph.microsoft.com/v1.0/me/calendarView?` +
+      `startDateTime=${encodeURIComponent(timeMin)}&endDateTime=${encodeURIComponent(timeMax)}&` +
+      `$select=id,subject,bodyPreview,location,start,end,isAllDay,isCancelled,type,attendees&` +
+      `$orderby=start/dateTime&$top=${TASK_MANAGER_MAX_EVENTS}`;
+    const response = await fetchWithRetry(url, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Prefer': 'outlook.timezone="UTC"' }
+    });
+    const data = await response.json();
+    return (data.value || [])
+      .filter(e => !e.isCancelled && !e.isAllDay && e.start?.dateTime)
+      .map(e => ({
+        id: e.id,
+        title: e.subject || '(Ingen titel)',
+        description: e.bodyPreview || '',
+        location: e.location?.displayName || '',
+        start: e.start.dateTime.includes('Z') ? e.start.dateTime : `${e.start.dateTime.split('.')[0]}Z`,
+        end: e.end.dateTime.includes('Z') ? e.end.dateTime : `${e.end.dateTime.split('.')[0]}Z`,
+        isRecurring: e.type !== 'singleInstance',
+        hasOtherAttendees: (e.attendees || []).length > 0
+      }));
+  }
+
+  const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
+    `timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&` +
+    `singleEvents=true&orderBy=startTime&maxResults=${TASK_MANAGER_MAX_EVENTS}&showDeleted=false&` +
+    `fields=items(id,summary,description,location,start,end,status,recurringEventId,attendees/self)`;
+  const response = await fetchWithRetry(url, {
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+  });
+  const data = await response.json();
+  return (data.items || [])
+    .filter(e => e.status !== 'cancelled' && e.start?.dateTime) // start.date utan dateTime = heldagshändelse, filtreras bort
+    .map(e => ({
+      id: e.id,
+      title: e.summary || '(Ingen titel)',
+      description: e.description || '',
+      location: e.location || '',
+      start: e.start.dateTime,
+      end: e.end.dateTime,
+      isRecurring: Boolean(e.recurringEventId),
+      hasOtherAttendees: (e.attendees || []).length > 1 || (e.attendees || []).some(a => !a.self)
     }));
 }
 
@@ -2461,6 +2530,7 @@ app.get('/api/auth/me', async (req, res) => {
   let billingStatus = null;
   let leadProfileStatus = null;
   let calendarDetailsConsent = false;
+  let taskManagerCalendarConsent = false;
   if (db && req.user.email) {
     try {
       const b = await getUserBilling(req.user.email);
@@ -2468,6 +2538,7 @@ app.get('/api/auth/me', async (req, res) => {
       billingStatus = b.billingStatus;
       leadProfileStatus = b.leadProfileStatus;
       calendarDetailsConsent = b.calendarDetailsConsent;
+      taskManagerCalendarConsent = b.taskManagerCalendarConsent;
     } catch { /* free */ }
   }
 
@@ -2480,7 +2551,7 @@ app.get('/api/auth/me', async (req, res) => {
   }
   const demoOnly = Boolean(req.session.demoOnly) && !paid;
 
-  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus, leadProfileStatus, calendarDetailsConsent, isAdmin: isAdminEmail(req.user.email) });
+  res.json({ ...req.user, demoOnly, analyticsId, plan, billingStatus, leadProfileStatus, calendarDetailsConsent, taskManagerCalendarConsent, isAdmin: isAdminEmail(req.user.email) });
 });
 
 // ===== FEATURE FLAGS =====
@@ -3382,10 +3453,35 @@ app.post('/api/task/schedule', taskLimiter, async (req, res) => {
   }
 });
 
+// ✅ Samtyckeskontroll för Task Managers riktiga kalenderläsning/-skrivning
+// — fail CLOSED om kontrollen av någon anledning inte går att göra (t.ex.
+// Firebase nere). Det här är en skriv-kapabel funktion (kan radera/flytta
+// riktiga händelser), fel håll att vara "öppen som standard" på.
+async function requireTaskManagerCalendarConsent(req, res) {
+  try {
+    const consent = Boolean((await getUserBilling(req.user.email)).taskManagerCalendarConsent);
+    if (!consent) {
+      res.status(403).json({ error: 'Kräver samtycke för att läsa/ändra din riktiga kalender', code: 'CONSENT_REQUIRED' });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('❌ Kunde inte kontrollera kalender-samtycke:', err.message);
+    res.status(403).json({ error: 'Kräver samtycke för att läsa/ändra din riktiga kalender', code: 'CONSENT_REQUIRED' });
+    return false;
+  }
+}
+
 // POST /api/calendar/events { title, description, start, end } — lägg ett planerat arbetspass i egen kalender
+// ✅ Nu samtyckesgrindad (taskManagerCalendarConsent) — denna route fanns
+// redan men anropades inte från någonstans i frontend, så gate:ningen
+// bryter inget befintligt flöde. Skriver ett riktigt kalenderevent, hör
+// därför hemma bakom samma samtycke som resten av Task Managers
+// riktiga-kalender-funktioner.
 app.post('/api/calendar/events', taskLimiter, async (req, res) => {
   const email = requireUser(req, res);
   if (!email) return;
+  if (!(await requireTaskManagerCalendarConsent(req, res))) return;
 
   const { title, description, start, end } = req.body || {};
   if (!title || !start || !end || isNaN(new Date(start)) || isNaN(new Date(end))) {
@@ -3402,6 +3498,86 @@ app.post('/api/calendar/events', taskLimiter, async (req, res) => {
   } catch (err) {
     console.error('❌ Kunde inte skapa kalenderhändelse:', err.message);
     res.status(500).json({ error: 'Kunde inte skapa kalenderhändelse', code: 'CALENDAR_CREATE_FAILED' });
+  }
+});
+
+// ===== TASK MANAGER — riktig kalenderläsning/-skrivning (samtyckesbaserat) =====
+// Egen limiter: samma gräns som taskLimiter men skild instans så en kedja
+// av snabba drag/resize-anrop i kalendergridet inte kan tränga undan
+// vanlig uppgifts-trafik eller tvärtom.
+const realCalendarLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+
+// POST /api/calendar/task-manager-consent { consent: boolean }
+app.post('/api/calendar/task-manager-consent', realCalendarLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!db) return res.status(503).json({ error: 'Inte tillgängligt just nu', code: 'FIREBASE_UNAVAILABLE' });
+
+  const consent = Boolean(req.body?.consent);
+  try {
+    await setTaskManagerCalendarConsent(email, consent);
+    gdprLog('Task manager calendar consent changed', { email: anonymizeEmail(email), consent });
+    res.json({ success: true, consent });
+  } catch (err) {
+    console.error('❌ Kunde inte spara kalender-samtycke:', err.message);
+    res.status(500).json({ error: 'Kunde inte spara. Försök igen.', code: 'SAVE_FAILED' });
+  }
+});
+
+// GET /api/calendar/real-events?start=ISO&end=ISO — riktiga händelser (titel, beskrivning, plats) från primary-kalendern
+app.get('/api/calendar/real-events', realCalendarLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireTaskManagerCalendarConsent(req, res))) return;
+
+  const start = new Date(req.query.start);
+  const end = new Date(req.query.end);
+  if (isNaN(start) || isNaN(end) || end <= start) {
+    return res.status(400).json({ error: 'Ogiltigt datumintervall', code: 'INVALID_RANGE' });
+  }
+
+  try {
+    const events = await fetchTaskManagerCalendarEvents(req.user.accessToken, req.user.provider || 'google', start.toISOString(), end.toISOString());
+    res.json({ events });
+  } catch (err) {
+    console.error('❌ Kunde inte hämta riktiga kalenderhändelser:', err.message);
+    res.status(500).json({ error: 'Kunde inte hämta kalenderhändelser', code: 'CALENDAR_FETCH_FAILED' });
+  }
+});
+
+// PATCH /api/calendar/events/:eventId { title?, description?, start?, end? } — ändra en GODTYCKLIG riktig händelse
+// (till skillnad från PATCH /api/tasks/:id/slots/:eventId: ingen scheduledSlots-bokföring, funkar på vilken
+// primary-kalenderhändelse som helst, inte bara sådana BookR själv skapat)
+app.patch('/api/calendar/events/:eventId', realCalendarLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireTaskManagerCalendarConsent(req, res))) return;
+
+  const { title, description, start, end } = req.body || {};
+  if (start !== undefined && isNaN(new Date(start))) return res.status(400).json({ error: 'Ogiltig starttid', code: 'INVALID_EVENT' });
+  if (end !== undefined && isNaN(new Date(end))) return res.status(400).json({ error: 'Ogiltig sluttid', code: 'INVALID_EVENT' });
+
+  try {
+    await updateCalendarEvent({ accessToken: req.user.accessToken, provider: req.user.provider || 'google', eventId: req.params.eventId, title, description, start, end });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Kunde inte ändra kalenderhändelsen:', err.message);
+    res.status(500).json({ error: 'Kunde inte ändra kalenderhändelsen', code: 'CALENDAR_UPDATE_FAILED' });
+  }
+});
+
+// DELETE /api/calendar/events/:eventId — radera en GODTYCKLIG riktig händelse
+app.delete('/api/calendar/events/:eventId', realCalendarLimiter, async (req, res) => {
+  const email = requireUser(req, res);
+  if (!email) return;
+  if (!(await requireTaskManagerCalendarConsent(req, res))) return;
+
+  try {
+    await deleteCalendarEvent({ accessToken: req.user.accessToken, provider: req.user.provider || 'google', eventId: req.params.eventId });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Kunde inte radera kalenderhändelsen:', err.message);
+    res.status(500).json({ error: 'Kunde inte radera kalenderhändelsen', code: 'CALENDAR_DELETE_FAILED' });
   }
 });
 

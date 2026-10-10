@@ -452,7 +452,7 @@ async function setUserBilling(email, data) {
 async function getUserBilling(email) {
   try {
     const docSnap = await getDb().collection('users').doc(email.toLowerCase().trim()).get();
-    if (!docSnap.exists) return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null, calendarDetailsConsent: false };
+    if (!docSnap.exists) return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null, calendarDetailsConsent: false, taskManagerCalendarConsent: false };
     const d = docSnap.data();
     return {
       plan: d.plan || 'free',
@@ -472,11 +472,16 @@ async function getUserBilling(email) {
       // tid på kalenderhändelser för "Kommande möten"-kortet på
       // dashboarden — helt separat från kärnfunktionen (kalenderjämförelse),
       // som aldrig läser mer än ledigt/upptaget. Se /api/calendar/upcoming.
-      calendarDetailsConsent: Boolean(d.calendarDetailsConsent)
+      calendarDetailsConsent: Boolean(d.calendarDetailsConsent),
+      // ✅ EGEN, bredare flagga för Task Manager: samtycke till BÅDE att
+      // läsa riktiga titlar OCH att ändra/flytta/radera/skapa händelser i
+      // huvudkalendern därifrån. Medvetet skild från calendarDetailsConsent
+      // ovan (som bara är läsning) — se setTaskManagerCalendarConsent.
+      taskManagerCalendarConsent: Boolean(d.taskManagerCalendarConsent)
     };
   } catch (err) {
     console.error('Error getting user billing:', err);
-    return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null, calendarDetailsConsent: false };
+    return { plan: 'free', billingStatus: null, appAccess: false, leadProfileStatus: null, calendarDetailsConsent: false, taskManagerCalendarConsent: false };
   }
 }
 
@@ -528,6 +533,26 @@ async function setCalendarDetailsConsent(email, consent) {
     }, { merge: true });
   } catch (err) {
     console.error('Error setting calendar details consent:', err);
+    throw err;
+  }
+}
+
+// ✅ Samtycke till Task Manager: BÅDE att läsa riktiga titlar/beskrivningar/
+// platser på huvudkalendern OCH att BookR (inklusive BookR AI-agenten) får
+// ändra, flytta, radera och lägga till händelser där. Medvetet EN flagga
+// för båda — skriv är meningslöst utan läs, och det är en sammanhängande
+// funktion. Egen flagga, SKILD från calendarDetailsConsent ovan (som bara
+// gäller läsning av mötestitlar för "Kommande möten"-kortet) — det här är
+// ett strikt BREDARE undantag från integritetspolicyns löfte och ska
+// därför inte återanvända en smalare befintlig flagga.
+async function setTaskManagerCalendarConsent(email, consent) {
+  try {
+    await getDb().collection('users').doc(email.toLowerCase().trim()).set({
+      taskManagerCalendarConsent: Boolean(consent),
+      taskManagerCalendarConsentAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Error setting task manager calendar consent:', err);
     throw err;
   }
 }
@@ -1381,6 +1406,9 @@ export {
 
   // Kommande möten — samtycke till att läsa mötestitlar
   setCalendarDetailsConsent,
+
+  // Task Manager — samtycke till riktig kalenderläsning + skrivning
+  setTaskManagerCalendarConsent,
 
   // GDPR & Audit
   deleteUserData,
