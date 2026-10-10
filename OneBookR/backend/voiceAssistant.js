@@ -8,7 +8,10 @@
 // entrypointen och startar Express/app.listen vid import, så en
 // cirkulär import därifrån hade startat en andra serverinstans).
 // Återanvänder bara den redan existerande, testade
-// `fetchOrganizedMeetingsWithAttendees` från rulesScheduler.js.
+// `fetchOrganizedMeetingsWithAttendees` från rulesScheduler.js — men
+// ENDAST för ägarens egen kalender. En annan persons Direktåtkomst-
+// kalender läses alltid via den egna, minimala fetchBusyIntervalsOnly
+// nedan (bara start/slut, aldrig titel) — se dess kommentar för varför.
 //
 // ✅ Entitetsuppslagning ("vem är Valdemar?") görs INTE längre av egen
 // kod som fuzzy-matchar en namnsträng — Claude får själv all kontext
@@ -33,6 +36,43 @@ import { getDirectAccessToken } from './token-refresh.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = 'BookR <noreply@onebookr.se>';
+
+// ✅ MINIMAL busy/fri-hämtning för NÅGON ANNANS kalender via Direktåtkomst
+// — medvetet EGEN, separat funktion, skild från
+// fetchOrganizedMeetingsWithAttendees (som läser titel + deltagarnamn).
+// Direktåtkomst ger access till kalendern för JÄMFÖRELSE (hitta en tid
+// som passar båda) — det är inte samma sak som samtycke till att BookR
+// läser och håller kvar den andra personens mötestitlar i minnet. Samma
+// "läs bara det du faktiskt behöver"-princip som resten av appens
+// integritetspolicy bygger på (se gdpr-utils.js). Returnerar BARA
+// {start, end} per upptaget tillfälle, aldrig titel/plats/deltagare.
+async function fetchBusyIntervalsOnly(accessToken, provider, timeMinISO, timeMaxISO) {
+  if (provider === 'microsoft') {
+    const url = `https://graph.microsoft.com/v1.0/me/calendarView?` +
+      `startDateTime=${encodeURIComponent(timeMinISO)}&endDateTime=${encodeURIComponent(timeMaxISO)}&` +
+      `$select=isCancelled,showAs,start,end&$top=250`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Prefer': 'outlook.timezone="UTC"' } });
+    if (!res.ok) throw new Error(`Microsoft Graph ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    return (data.value || [])
+      .filter(e => !e.isCancelled && e.showAs !== 'free' && e.start?.dateTime && e.end?.dateTime)
+      .map(e => ({
+        start: e.start.dateTime.includes('Z') ? e.start.dateTime : `${e.start.dateTime.split('.')[0]}Z`,
+        end: e.end.dateTime.includes('Z') ? e.end.dateTime : `${e.end.dateTime.split('.')[0]}Z`
+      }));
+  }
+
+  const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
+    `timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(timeMaxISO)}&` +
+    `singleEvents=true&orderBy=startTime&maxResults=250&showDeleted=false&` +
+    `fields=items(status,transparency,start,end)`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } });
+  if (!res.ok) throw new Error(`Google Calendar ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return (data.items || [])
+    .filter(e => e.status !== 'cancelled' && e.transparency !== 'transparent' && e.start?.dateTime)
+    .map(e => ({ start: e.start.dateTime, end: e.end.dateTime }));
+}
 const CLAUDE_MODEL = 'claude-sonnet-5-5';
 const LOOKAHEAD_MS = 21 * 24 * 60 * 60 * 1000; // tre veckor — räcker för "nästa vecka"
 
@@ -420,14 +460,16 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
     // kalender, kolla ÄVEN mot den så tiden passar båda. Finns ingen sådan
     // koppling (eller går uppslaget fel) bokar vi ändå — bara mot egen
     // kalender — precis som en vanlig kalenderinbjudan alltid går att
-    // skicka utan att man kan läsa mottagarens kalender.
+    // skicka utan att man kan läsa mottagarens kalender. Läser bara
+    // busy/fri (fetchBusyIntervalsOnly) — ALDRIG personens mötestitlar,
+    // det är inte vad Direktåtkomst gavs för.
     let usedMutual = false;
     if (directAccessEmailSet.has(personEmail)) {
       try {
         const otherToken = await getDirectAccessToken(personEmail);
         if (otherToken) {
-          const otherEvents = await fetchOrganizedMeetingsWithAttendees(otherToken.accessToken, otherToken.provider, searchFrom.toISOString(), searchTo.toISOString());
-          busy = busy.concat(otherEvents.filter(e => e.start && e.end).map(e => ({ start: e.start, end: e.end })));
+          const otherBusy = await fetchBusyIntervalsOnly(otherToken.accessToken, otherToken.provider, searchFrom.toISOString(), searchTo.toISOString());
+          busy = busy.concat(otherBusy);
           usedMutual = true;
         }
       } catch (err) {
@@ -472,14 +514,16 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
     // Direktåtkomst OCH själv kopplat sin kalender, kolla ÄVEN mot den så
     // den nya tiden passar båda — inte bara kolla om DEN GAMLA tiden är
     // ledig hos en själv. Faller tyst tillbaka till bara egen kalender om
-    // uppslaget misslyckas eller personen saknar Direktåtkomst.
+    // uppslaget misslyckas eller personen saknar Direktåtkomst. Läser
+    // bara busy/fri (fetchBusyIntervalsOnly) — ALDRIG personens
+    // mötestitlar.
     let usedMutual = false;
     if (directAccessEmailSet.has(personEmail)) {
       try {
         const otherToken = await getDirectAccessToken(personEmail);
         if (otherToken) {
-          const otherEvents = await fetchOrganizedMeetingsWithAttendees(otherToken.accessToken, otherToken.provider, targetFrom.toISOString(), targetTo.toISOString());
-          busy = busy.concat(otherEvents.filter(e => e.start && e.end).map(e => ({ start: e.start, end: e.end })));
+          const otherBusy = await fetchBusyIntervalsOnly(otherToken.accessToken, otherToken.provider, targetFrom.toISOString(), targetTo.toISOString());
+          busy = busy.concat(otherBusy);
           usedMutual = true;
         }
       } catch (err) {
