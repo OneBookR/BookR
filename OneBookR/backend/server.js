@@ -4012,7 +4012,7 @@ app.get('/auth/logout', (req, res) => {
 
 // ===== GDPR ENDPOINTS (Art. 15 rätt till tillgång, Art. 17 rätt till radering) =====
 
-app.get('/api/gdpr/export', (req, res) => {
+app.get('/api/gdpr/export', async (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'Authentication required' });
 
   const userEmail = req.user.email;
@@ -4031,6 +4031,18 @@ app.get('/api/gdpr/export', (req, res) => {
     }
   }
 
+  // ✅ En Art. 15-export ska visa vad som FAKTISKT är registrerat om just
+  // den här personen — inte bara generisk policytext. De här två är
+  // frivilliga, återkalleliga undantag från grundlöftet (ingen titel/
+  // plats/deltagare läses som standard), så de måste redovisas explicit.
+  let consent = { calendarDetailsConsent: false, taskManagerCalendarConsent: false };
+  if (db) {
+    try {
+      const b = await getUserBilling(userEmail);
+      consent = { calendarDetailsConsent: Boolean(b.calendarDetailsConsent), taskManagerCalendarConsent: Boolean(b.taskManagerCalendarConsent) };
+    } catch { /* faller tillbaka på false/false */ }
+  }
+
   const exportData = {
     exportDate: new Date().toISOString(),
     requestedBy: userEmail,
@@ -4040,25 +4052,33 @@ app.get('/api/gdpr/export', (req, res) => {
       displayName: req.user.displayName || req.user.name?.givenName || null
     },
     activeCalendarSessions: userGroups,
+    yourActiveConsents: {
+      calendarDetailsConsent: consent.calendarDetailsConsent, // "Kommande möten" på dashboarden — läsning av mötestitlar för videomöten
+      taskManagerCalendarConsent: consent.taskManagerCalendarConsent // "Uppgifter" — läsning OCH skrivning (ändra/flytta/radera/skapa) på din primära kalender
+    },
     dataBookRStores: [
       'E-postadress (för identifiering och inbjudningar)',
       'OAuth-provider (Google eller Microsoft)',
       'Aktiva gruppsessioner och tillhörande mötestider',
+      'Uppgifter och regler du skapat i Uppgifter/Regler, tills du själv tar bort dem',
+      'Historik över kommandon du gett Kommandon-assistenten, tills du raderar kontot',
       'Anonym serverlogg för felsökning (utan personlig data)'
     ],
-    dataBookRDoesNotStore: [
-      'Kalenderevents, titlar, platser eller beskrivningar',
+    dataBookRDoesNotStoreByDefault: [
+      'Kalenderevents, titlar, platser eller beskrivningar — läses bara om du aktivt slagit på "Kommande möten" eller "Uppgifter" (se yourActiveConsents ovan)',
       'Kontaktuppgifter utöver e-post',
-      'OAuth-tokens sparas ej permanent — rensas vid utloggning'
+      'OAuth-tokens sparas ej permanent i sessionen — rensas vid utloggning (Direktåtkomst är ett separat, frivilligt undantag, se integritetspolicyn)'
     ],
-    dataRetentionPolicy: 'All sessionsdata raderas automatiskt efter 24 timmar.',
-    legalBasis: 'Berättigat intresse (tillhandahålla kalenderjämförelsetjänst). Analytik-cookies kräver aktivt samtycke.',
+    dataRetentionPolicy: 'Gruppsessioner och sessions-cookie raderas automatiskt efter 24 timmar. Uppgifter, regler, mallar, Direktåtkomst-kopplingar och kommandohistorik sparas tills du själv tar bort dem eller raderar hela kontot.',
+    legalBasis: 'Avtal (Art. 6.1b, för att tillhandahålla tjänsten) och berättigat intresse (Art. 6.1f, säkerhetsloggning). "Kommande möten", "Uppgifter" och analys-/marknadsföringscookies kräver ditt aktiva samtycke (Art. 6.1a) — se yourActiveConsents.',
     subProcessors: [
       { name: 'Google LLC', purpose: 'OAuth-autentisering och kalenderåtkomst', location: 'USA (EU-US DPF)' },
       { name: 'Microsoft Corporation', purpose: 'OAuth-autentisering och kalenderåtkomst', location: 'USA (EU-US DPF)' },
       { name: 'Resend Inc.', purpose: 'E-postutskick för inbjudningar', location: 'USA' },
       { name: 'Railway Corp.', purpose: 'Serverdrift och hosting', location: 'USA' },
-      { name: 'Google Firebase', purpose: 'Anonym driftsloggning', location: 'USA (EU-US DPF)' }
+      { name: 'Google Firebase', purpose: 'Anonym driftsloggning', location: 'USA (EU-US DPF)' },
+      { name: 'Anthropic PBC', purpose: 'Tolkning av dina röst-/textkommandon i Kommandon-funktionen', location: 'USA' },
+      { name: 'ElevenLabs Inc.', purpose: 'Talsyntes för BookRs muntliga svar i Kommandon-funktionen', location: 'USA' }
     ],
     yourRights: {
       access: 'Du har rätt att få tillgång till din data — detta är den exporten.',
