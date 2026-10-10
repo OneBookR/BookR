@@ -2847,9 +2847,9 @@ app.post('/api/voice/speak', voiceLimiter, async (req, res) => {
   const text = String(req.body?.text || '').trim().slice(0, 600);
   if (!text) return res.status(400).json({ error: 'Ingen text angavs', code: 'MISSING_TEXT' });
   try {
-    const audio = await textToSpeech(text);
-    res.set('Content-Type', 'audio/mpeg');
-    res.send(audio);
+    const { buffer, contentType } = await textToSpeech(text);
+    res.set('Content-Type', contentType);
+    res.send(buffer);
   } catch (err) {
     console.error('❌ Kunde inte skapa talsvar:', err.message);
     res.status(500).json({ error: err.message || 'Kunde inte skapa talsvar', code: 'TTS_FAILED' });

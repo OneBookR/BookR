@@ -653,8 +653,21 @@ async function textToSpeech(text) {
       voice_settings: { stability: 0.5, similarity_boost: 0.75 }
     })
   });
-  if (!res.ok) throw new Error(`ElevenLabs API ${res.status}: ${await res.text()}`);
-  return Buffer.from(await res.arrayBuffer());
+  const contentType = res.headers.get('content-type') || '';
+  // ✅ ElevenLabs kan svara med JSON (t.ex. ogiltig nyckel, fel voice_id,
+  // slut på krediter) — ibland även med en 200-status. Om det INTE
+  // faktiskt är ljud ska det ALDRIG skickas vidare som om det vore det;
+  // annars blir webbläsarens fel bara ett obegripligt "uppspelningsfel"
+  // istället för den riktiga anledningen.
+  if (!res.ok || !contentType.startsWith('audio/')) {
+    const body = await res.text();
+    throw new Error(`ElevenLabs API ${res.status} (${contentType || 'okänd typ'}): ${body.slice(0, 500)}`);
+  }
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.length < 100) {
+    throw new Error(`ElevenLabs returnerade ett ovanligt litet ljudsvar (${buffer.length} bytes) — troligen inte giltigt ljud.`);
+  }
+  return { buffer, contentType };
 }
 
 export { interpretCommand, executeActions, getBriefing, textToSpeech };

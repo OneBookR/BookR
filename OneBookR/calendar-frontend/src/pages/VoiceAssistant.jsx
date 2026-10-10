@@ -103,9 +103,15 @@ async function speak(text, { onEnd, onError } = {}) {
       onEnd?.();
     };
     el.onended = finish;
-    el.onerror = (e) => {
-      console.error('[Röst] Uppspelningsfel:', e);
-      onError?.('uppspelningsfel');
+    // ✅ Tar med MediaError-koden och blobbens storlek/typ i felet —
+    // "uppspelningsfel" ensamt säger ingenting om VARFÖR. Koderna är
+    // standardiserade: 1=avbruten, 2=nätverksfel, 3=kunde inte avkoda,
+    // 4=formatet stöds inte/okänt.
+    el.onerror = () => {
+      const codeNames = { 1: 'avbruten', 2: 'nätverksfel', 3: 'kunde inte avkoda ljudet', 4: 'format stöds inte' };
+      const reason = codeNames[el.error?.code] || 'okänt fel';
+      console.error('[Röst] Uppspelningsfel:', { code: el.error?.code, reason, blobSize: blob.size, blobType: blob.type });
+      onError?.(`${reason} (${blob.size} bytes, ${blob.type || 'okänd typ'})`);
       finish();
     };
     await el.play();
