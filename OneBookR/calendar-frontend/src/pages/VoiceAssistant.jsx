@@ -91,12 +91,9 @@ async function speak(text, { onEnd, onError } = {}) {
       throw new Error(body.error || `TTS ${res.status}`);
     }
     const blob = await res.blob();
-    // ✅ "format stöds inte" trots en giltig audio/mpeg-blob av rimlig
-    // storlek pekar på en känd WebKit-bugg: Safari/Chrome på iOS vägrar
-    // ibland spela upp blob:-URL:er i en <audio>-tagg (fungerar i
-    // Chrome/Edge på datorn), men samma ljud som en data:-URI fungerar
-    // konsekvent överallt. Filen är alltid kort (en mening) så base64-
-    // overheaden spelar ingen roll.
+    // data:-URI istället för en blob:-URL — ofarligt (filen är alltid
+    // kort) och undviker eventuella blob:-URL-kvirkar helt, även om det
+    // visade sig inte vara ROTORSAKEN (se nedan).
     const dataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result);
@@ -105,6 +102,15 @@ async function speak(text, { onEnd, onError } = {}) {
     });
     const el = getTtsAudioEl();
     el.src = dataUrl;
+    // ✅ ROTORSAKEN till "format stöds inte" trots giltigt ljud: elementet
+    // ÅTERANVÄNDS (samma <audio>-tagg spelade nyss upp upplåsnings-klippet
+    // som en WAV-data:-URI). Enligt spec ska webbläsaren läsa om källan
+    // automatiskt när .src byts, men WebKit (Safari/Chrome på iOS) är känt
+    // opålitligt med det på ett ALDREDA ANVÄNT element — source-bytet
+    // "fastnar" i det gamla elementets tillstånd tills man uttryckligen
+    // tvingar en omläsning med .load(). Utan den här raden försöker
+    // WebKit spela upp enligt det förra laddningsförsöket, inte det nya.
+    el.load();
 
     let done = false;
     const finish = () => {
