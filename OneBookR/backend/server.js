@@ -1423,7 +1423,16 @@ if (IS_PRODUCTION) {
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "https:", "http:"],
         frameSrc: ["'self'", "https://accounts.google.com", "https://login.microsoftonline.com"],
-        workerSrc: ["'self'", "blob:"]
+        workerSrc: ["'self'", "blob:"],
+        // ✅ DEN FAKTISKA ROTORSAKEN till "format stöds inte": ingen
+        // media-src-direktiv fanns, så den ärvde default-src ("'self'"
+        // bara). En data:-URI (eller blob:) i <audio src> är INTE 'self'
+        // — CSP blockerade därför resursen helt tyst, och webbläsaren
+        // rapporterar ett CSP-blockerat medieelement som MediaError-kod 4
+        // (SRC_NOT_SUPPORTED), identiskt med ett äkta avkodningsfel. Det
+        // förklarar varför ljudet alltid var giltigt (rätt storlek, rätt
+        // content-type) men ändå aldrig gick att spela upp.
+        mediaSrc: ["'self'", "data:", "blob:"]
       }
     },
     crossOriginEmbedderPolicy: false,
