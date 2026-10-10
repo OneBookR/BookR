@@ -466,11 +466,31 @@ async function planAction(toolName, input, events, provider, knownEmails, ownerE
 
     const targetFrom = new Date(input.target_date_from);
     const targetTo = new Date(input.target_date_to + 'T23:59:59');
-    const busy = events.filter(e => e.id !== meeting.id && e.start && e.end).map(e => ({ start: e.start, end: e.end }));
-    const slot = findNextFreeSlot(busy, durationMinutes, targetFrom, targetTo);
-    if (!slot) return { error: `Hittade ingen ledig tid mellan ${input.target_date_from} och ${input.target_date_to}.` };
+    let busy = events.filter(e => e.id !== meeting.id && e.start && e.end).map(e => ({ start: e.start, end: e.end }));
 
-    const preview = `Flyttar "${meeting.title}" från ${formatStockholmTime(meeting.start)} till ${formatStockholmTime(slot.start)}, och meddelar ${input.with_person_email}.`;
+    // ✅ Samma bonus-kontroll som book_meeting redan gör: har personen
+    // Direktåtkomst OCH själv kopplat sin kalender, kolla ÄVEN mot den så
+    // den nya tiden passar båda — inte bara kolla om DEN GAMLA tiden är
+    // ledig hos en själv. Faller tyst tillbaka till bara egen kalender om
+    // uppslaget misslyckas eller personen saknar Direktåtkomst.
+    let usedMutual = false;
+    if (directAccessEmailSet.has(personEmail)) {
+      try {
+        const otherToken = await getDirectAccessToken(personEmail);
+        if (otherToken) {
+          const otherEvents = await fetchOrganizedMeetingsWithAttendees(otherToken.accessToken, otherToken.provider, targetFrom.toISOString(), targetTo.toISOString());
+          busy = busy.concat(otherEvents.filter(e => e.start && e.end).map(e => ({ start: e.start, end: e.end })));
+          usedMutual = true;
+        }
+      } catch (err) {
+        console.error(`[Kommandon] Kunde inte läsa ${personEmail}s kalender, bokar om bara mot egen:`, err.message);
+      }
+    }
+
+    const slot = findNextFreeSlot(busy, durationMinutes, targetFrom, targetTo);
+    if (!slot) return { error: `Hittade ingen ledig tid mellan ${input.target_date_from} och ${input.target_date_to}${usedMutual ? ' som passar er båda' : ''}.` };
+
+    const preview = `Flyttar "${meeting.title}" från ${formatStockholmTime(meeting.start)} till ${formatStockholmTime(slot.start)}${usedMutual ? ' (kollat mot bådas kalendrar)' : ''}, och meddelar ${input.with_person_email}.`;
     return {
       preview,
       card: { what: `Boka om "${meeting.title}"`, withWhom: input.with_person_email, when: `${formatStockholmTime(meeting.start)} → ${formatStockholmTime(slot.start)}` },
