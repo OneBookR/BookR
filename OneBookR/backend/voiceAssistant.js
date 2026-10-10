@@ -650,7 +650,13 @@ async function textToSpeech(text) {
     body: JSON.stringify({
       text,
       model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      // ✅ Hög stability (0.5 var defaulten) gör rösten monoton/"stel" —
+      // ElevenLabs håller leveransen extremt konsekvent vilket på
+      // bekostnad av naturlig variation i betoning. Sänkt hit + ett
+      // style-värde (exaggeration mot röstens egen karaktär) ger en
+      // betydligt mer levande, mänsklig leverans. use_speaker_boost
+      // förbättrar tydlighet/likhet med källrösten.
+      voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true }
     })
   });
   const contentType = res.headers.get('content-type') || '';
