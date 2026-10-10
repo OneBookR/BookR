@@ -407,7 +407,10 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
         setLastResult(data.result);
         notify('Klart!');
         setConversationHistory([]);
-        speakIfVoice(data.result, false);
+        // ✅ Ett riktigt samtal, inte en fråga i taget — efter att BookR
+        // svarat fortsätter den lyssna direkt, precis som Claude/ChatGPTs
+        // röstläge. Ingen ny knapptryckning för att fortsätta prata.
+        speakIfVoice(data.result, true);
       }
       setCommand('');
       loadAll();
