@@ -232,6 +232,24 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
   // som väntar på svar — inte när man skrev i textfältet, då ska orben
   // inte dyka upp alls.
   const isVoiceLoadingRef = useRef(false);
+  // ✅ KRITISKT för ett sammanhängande samtal: recognition.onresult och
+  // speak()s onEnd registreras EN GÅNG på långlivade objekt (SpeechRecognition/
+  // <audio>) och kallar sedan submitCommand/startListening via dessa refar
+  // istället för att stänga direkt över funktionen. Utan det skulle hela
+  // den självfortsättande röstkedjan (lyssna → tänk → svara → lyssna igen)
+  // fortsätta använda de FÖRSTA, numera inaktuella versionerna av
+  // submitCommand/startListening genom hela samtalet — vilket i praktiken
+  // betydde att conversationHistory (och allt annat de läser från React-
+  // state) frös vid sitt värde från den allra första knapptryckningen.
+  // Det här var den faktiska orsaken till att BookR "glömde" vad som
+  // sagts efter första repliken i ett röstsamtal.
+  const submitCommandRef = useRef(null);
+  const startListeningRef = useRef(null);
+  const conversationHistoryRef = useRef(conversationHistory);
+  const updateConversationHistory = (next) => {
+    conversationHistoryRef.current = next;
+    setConversationHistory(next);
+  };
 
   const notify = (message, severity = 'success') => setToast({ open: true, message, severity });
 
@@ -278,7 +296,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
       // krävs, det är hela poängen med att kunna köra det handsfree.
       if (result.isFinal) {
         setListening(false);
-        submitCommand(transcript, true);
+        submitCommandRef.current(transcript, true);
       }
     };
     recognition.onerror = () => setListening(false);
@@ -363,7 +381,9 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
           .map(c => ({ name: c.name || '', email: c.email }));
       } catch { /* korrupt localStorage — strunta i kontakterna, inte kritiskt */ }
 
-      const res = await apiRequest('/api/voice/command', { method: 'POST', body: JSON.stringify({ command: text, contacts, conversationHistory }) });
+      // ✅ Läser från refen, INTE från den slutna conversationHistory-
+      // variabeln — se kommentaren vid conversationHistoryRef för varför.
+      const res = await apiRequest('/api/voice/command', { method: 'POST', body: JSON.stringify({ command: text, contacts, conversationHistory: conversationHistoryRef.current }) });
       const data = await res.json().catch(() => ({}));
 
       const speakIfVoice = (message, continueListening) => {
@@ -371,7 +391,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
         // ✅ Mute: visa svaret tyst istället för att läsa upp det, men
         // fortsätt samtalet (lyssna igen) precis som om det pratat klart.
         if (muted) {
-          if (continueListening) startListening();
+          if (continueListening) startListeningRef.current();
           return;
         }
         skipContinueRef.current = false;
@@ -379,7 +399,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
         speak(message, {
           onEnd: () => {
             setSpeaking(false);
-            if (continueListening && !skipContinueRef.current) startListening();
+            if (continueListening && !skipContinueRef.current) startListeningRef.current();
           },
           // ✅ Visar den RIKTIGA anledningen om talsyntesen misslyckas,
           // istället för att bara tystna utan förklaring.
@@ -393,16 +413,16 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
         // kommando är sannolikt bara svaret på den frågan. Pratar man med
         // mikrofonen fortsätter BookR att lyssna automatiskt efter att
         // den läst upp frågan — ingen ny knapptryckning behövs.
-        setConversationHistory(data.conversationHistory || []);
+        updateConversationHistory(data.conversationHistory || []);
         speakIfVoice(data.error, true);
       } else if (data.needsConfirmation) {
         setPending({ preview: data.preview, cards: data.cards, pendingActionId: data.pendingActionId });
-        setConversationHistory([]);
+        updateConversationHistory([]);
         speakIfVoice(data.preview, false);
       } else if (data.executed) {
         setLastResult(data.result);
         notify('Klart!');
-        setConversationHistory([]);
+        updateConversationHistory([]);
         // ✅ Ett riktigt samtal, inte en fråga i taget — efter att BookR
         // svarat fortsätter den lyssna direkt, precis som Claude/ChatGPTs
         // röstläge. Ingen ny knapptryckning för att fortsätta prata.
@@ -438,6 +458,10 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
       setLoading(false);
     }
   };
+
+  // Hålls uppdaterade varje render — se kommentaren vid submitCommandRef.
+  submitCommandRef.current = submitCommand;
+  startListeningRef.current = startListening;
 
   const phase = listening ? 'listening' : speaking ? 'speaking' : (loading && isVoiceLoadingRef.current) ? 'thinking' : null;
   const voiceActive = Boolean(phase);
@@ -475,7 +499,7 @@ export default function VoiceAssistant({ user, onNavigateBack }) {
           <Typography variant="body2" sx={{ color: 'var(--text-secondary)' }}>
             Fortsätter föregående fråga — svara direkt, du behöver inte upprepa kommandot.
           </Typography>
-          <Button size="small" onClick={() => { setConversationHistory([]); setLastResult(''); }} sx={{ textTransform: 'none', fontWeight: 700 }}>
+          <Button size="small" onClick={() => { updateConversationHistory([]); setLastResult(''); }} sx={{ textTransform: 'none', fontWeight: 700 }}>
             Börja om
           </Button>
         </Box>
